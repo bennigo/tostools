@@ -10,7 +10,7 @@
 import logging
 from os import statvfs
 
-url_rest_tos = "https://vi-api.vedur.is:11223/tos/v1"
+url_rest_tos = "https://vi-api.vedur.is/tos/v1"
 
 
 def get_logger(name=__name__, level=logging.WARNING):
@@ -129,9 +129,10 @@ def searchStation(
     comment
     """
 
-    import requests
     import json
     import sys
+
+    import requests
 
     # logging settings
     module_logger = get_logger(name=__name__, level=loglevel)
@@ -173,6 +174,8 @@ def searchStation(
     for station_identifier in station_identifiers:
         for domain in domains:
             # Construct POST query
+            # body = {"code": code, "value": 'GPS st\\u00f6\\u00f0'}
+            # body = {"code": code, "value": u'GPS stöð'}
             body = {"code": code, "value": station_identifier}
 
             if domain == "remote_sensing_platform":
@@ -184,7 +187,7 @@ def searchStation(
             try:
                 response = requests.post(
                     url_rest + "/entity/search/" + entity_type + "/" + domain + "/",
-                    data=json.dumps(body),
+                    data=json.dumps(body), headers = {'Content-Type': 'application/json'}
                 )
             except requests.ConnectionError as error:
                 module_logger.error(
@@ -406,9 +409,10 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
         url_res: rest service endpoint to access TOS
     """
 
-    import requests
     import sys
     from datetime import datetime
+
+    import requests
 
     # logging settings
     module_logger = get_logger(name=__name__, level=loglevel)
@@ -723,8 +727,9 @@ def fileList(
     """
 
     from datetime import timedelta
-    from gtimes import timefunc as tf
     from pathlib import PurePath
+
+    from gtimes import timefunc as tf
     from gtimes.timefunc import datefRinex
 
     # logging settings
@@ -843,9 +848,9 @@ def extract_from_rheader(rheader, loglevel=logging.WARNING):
 
     """
     import re
-    import fortranformat as ff
-
     from datetime import datetime as dt
+
+    import fortranformat as ff
     from gtimes.timefunc import datefRinex
 
     module_logger = get_logger(name=__name__, level=loglevel)
@@ -926,17 +931,15 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
         don't match the rinex header
     """
 
-    from pathlib import Path, PurePath
     from datetime import datetime as dt
     from datetime import timedelta
-    import numpy as np
+    from pathlib import Path, PurePath
 
-    from gtimes.timefunc import datefRinex
-    from gtimes import timefunc as tf
     import geofunc.geo as geo
-
-    from pyproj import CRS
-    from pyproj import Transformer
+    import numpy as np
+    from gtimes import timefunc as tf
+    from gtimes.timefunc import datefRinex
+    from pyproj import CRS, Transformer
 
     # defining coordinate systems
     itrf2008 = CRS("EPSG:5332")
@@ -1509,7 +1512,6 @@ def fix_rinex_header(
 ):
     """ """
     import re
-
     from pathlib import Path
 
     # logging settings
@@ -1583,6 +1585,7 @@ def fix_rinex_line(label, rinex_correction_dict, rinex_dict, loglevel=logging.WA
     """ """
 
     import re
+
     import fortranformat as ff
 
     # logging settings
@@ -1725,8 +1728,8 @@ def read_rinex_header(rfile, loglevel=logging.WARNING):
     output:
         dictionary containing the file name and string containing the header section of the rinex file
     """
-    import sys
     import re
+    import sys
     from pathlib import Path
 
     # logging settings
@@ -1781,18 +1784,20 @@ def main(level=logging.debug):
     """
     quering metadata from tos and comparing to relevant rinex files
     """
+    import logging
     import re
     import sys
-    import logging
-    import tos
-    import pandas as pd
-    from pathlib import Path
     from datetime import datetime, timedelta
+    from pathlib import Path
+
+    import pandas as pd
+
     import gps_metadata_functions as gpsf
+    import tos
 
     # logging settings
     # logger = get_logger(name=__name__, level=logging.DEBUG)
-    url_rest_tos = "https://vi-api.vedur.is:11223/tos/v1"
+    url_rest_tos = "https://vi-api.vedur.is/tos/v1"
     # print(module_logger.getEffectiveLevel())
 
     stationInfo_list = []

@@ -47,6 +47,7 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
     # logging settings
     module_logger = get_logger(name=__name__, level=loglevel)
 
+    print(station)
     station_headers = [key for key in station.keys() if key != "device_history"]
     station_attributes = tuple(
         value
@@ -110,26 +111,26 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
 
                 if not raw_format:
                     if "antenna_height" in device_headers:
-                        device_headers[
-                            device_headers.index("antenna_height")
-                        ] = "Height"
+                        device_headers[device_headers.index("antenna_height")] = (
+                            "Height"
+                        )
                     if "antenna_reference_point" in device_headers:
                         device_headers[
                             device_headers.index("antenna_reference_point")
                         ] = "Ref."
 
                     if "monument_height" in device_headers:
-                        device_headers[
-                            device_headers.index("monument_height")
-                        ] = "Height"
+                        device_headers[device_headers.index("monument_height")] = (
+                            "Height"
+                        )
                     if "monument_offset_north" in device_headers:
                         device_headers[
                             device_headers.index("monument_offset_north")
                         ] = "North"
                     if "monument_offset_east" in device_headers:
-                        device_headers[
-                            device_headers.index("monument_offset_east")
-                        ] = "East"
+                        device_headers[device_headers.index("monument_offset_east")] = (
+                            "East"
+                        )
 
                     if "serial_number" in device_headers:
                         device_headers[device_headers.index("serial_number")] = "SN"
@@ -336,8 +337,9 @@ def sessionsList(station, date_format="%Y-%m-%d %H:%M:%S"):
 def getStationList(subsets={}):
     """ """
 
-    import gps_metadata_qc as gpsqc
     from datetime import datetime
+
+    import gps_metadata_qc as gpsqc
 
     station_list = []
     keyorder = [
@@ -405,8 +407,9 @@ def getStationList(subsets={}):
 def print_station_list(station_list, sortby="marker"):
     """ """
 
-    from tabulate import tabulate
     from operator import itemgetter
+
+    from tabulate import tabulate
 
     station_list[:] = sorted(station_list, key=itemgetter(sortby))
     keylist = [
@@ -421,7 +424,7 @@ def print_station_list(station_list, sortby="marker"):
     ]
     value_list = [list(item.values()) for item in station_list]
 
-    print(tabulate(value_list, headers=keylist))
+    # print(tabulate(value_list, headers=keylist))
 
     return station_list
 
@@ -429,8 +432,9 @@ def print_station_list(station_list, sortby="marker"):
 def count_GPS_stations(station_list):
     """ """
 
-    from tabulate import tabulate
     from operator import itemgetter
+
+    from tabulate import tabulate
 
     station_list[:] = sorted(station_list, key=itemgetter("date_from"))
 
@@ -459,22 +463,23 @@ def count_GPS_stations(station_list):
 def main():
     """ """
 
-    from tabulate import tabulate
-    from operator import itemgetter
-    import pandas as pd
     from datetime import datetime as dt
+    from operator import itemgetter
+
+    import pandas as pd
+    from tabulate import tabulate
 
     station_list = getStationList(subsets={"IMO": True})
 
     sorted_station_list = print_station_list(station_list, sortby="marker")
-    ISGPS = pd.DataFrame(sorted_station_list)
-    ISGPS.set_index("marker", inplace=True)
-    ISGPS["date_from"] = pd.to_datetime(ISGPS["date_from"])
-    ISGPS = ISGPS[ISGPS["date_from"] < dt(2018, 1, 1)]
-    print(ISGPS[["name", "date_from", "lon", "lat"]])
-    ISGPS[["name", "date_from", "lon", "lat"]].to_csv("stations.list", sep="\t")
+    isgps = pd.DataFrame(sorted_station_list)
+    isgps.set_index("marker", inplace=True)
+    isgps["date_from"] = pd.to_datetime(isgps["date_from"], errors="coerce")
+    isgps = isgps[isgps["date_from"] < dt(2018, 1, 1)]
+    # print(ISGPS[["name", "date_from", "lon", "lat"]])
+    isgps[["name", "date_from", "lon", "lat"]].to_csv("stations.list", sep="\t")
 
-    # count_GPS_stations(station_list)
+    count_GPS_stations(station_list)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
-#!/usr/bin/python3
-
+#!python
 import logging
 
 
@@ -17,7 +16,7 @@ def main():
     # logging settings
     # logger = get_logger(name=__name__, level=logging.DEBUG)
 
-    url_rest_tos = "https://vi-api.vedur.is:11223/tos/v1"
+    url_rest_tos = "vi-api.vedur.is/tos/v1"
     stationInfo_list = []
 
     # print(module_logger.getEffectiveLevel())
@@ -45,7 +44,7 @@ def main():
     server_options.add_argument(
         "-s", "--server", type=str, default="vi-api.vedur.is", help="Host:"
     )
-    server_options.add_argument("-p", "--port", type=int, default=11223, help="Port:")
+    server_options.add_argument("-p", "--port", type=int, default=443, help="Port:")
     server_options.add_argument(
         "-r", "--rest", type=str, default="/tos/v1", help="Top levels REST path"
     )
