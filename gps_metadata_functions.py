@@ -8,7 +8,17 @@
 #
 
 import logging
+import json
+import pandas as pd
 
+from operator import itemgetter
+from datetime import datetime as dt
+from datetime import datetime, timedelta
+
+from tabulate import tabulate
+from operator import itemgetter
+
+import gps_metadata_qc as gpsqc
 
 def get_logger(name=__name__, level=logging.WARNING):
     """
@@ -42,12 +52,10 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
     """
     print station history
     """
-    from tabulate import tabulate
 
     # logging settings
     module_logger = get_logger(name=__name__, level=loglevel)
 
-    print(station)
     station_headers = [key for key in station.keys() if key != "device_history"]
     station_attributes = tuple(
         value
@@ -189,10 +197,11 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
         # print(print_header_string)
         # print(headers_list)
         # print(print_header_string.format(*headers_list[0]))
-        print("-" * 240)
+        print("-" * 200)
         # print(attributes_string_list)
         for string, value in zip(attributes_string_list, devices_list):
-            print(string.format(*value))
+            print(string)
+            # print(string.format(*value))
 
 
 def getSession(station, session_nr, loglevel=logging.WARNING):
@@ -209,10 +218,11 @@ def getSession(station, session_nr, loglevel=logging.WARNING):
     return session
 
 
-def printStationInfo(station):
+def printStationInfo(station, loglevel=logging.WARNING):
     """ """
 
-    from datetime import datetime, timedelta
+    # logging
+    module_logger = get_logger(name=__name__, level=loglevel)
 
     header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
     # print(header)
@@ -222,7 +232,7 @@ def printStationInfo(station):
         try:
             time_from = item["time_from"].strftime("%Y %j %H %M %S")
         except:
-            print(
+            module_logger.warning(
                 "time_from has wrong type should be datetime, format is {0}: exiting program ...".format(
                     type(item["time_from"])
                 )
@@ -235,55 +245,76 @@ def printStationInfo(station):
             time_to = "9999 999 00 00 00"
 
         # receiver type
-        if item["antenna"]["model"] is None:
+
+        if "antenna" in item.keys():
+            if item["antenna"]["model"] is None:
+                antenna_type = "---------------"
+            else:
+                antenna_type = item["antenna"]["model"]
+
+            # receiver sn
+            if item["antenna"]["serial_number"] is None:
+                antenna_SN = "---------------"
+            else:
+                antenna_SN = item["antenna"]["serial_number"]
+
+            # Antenna height and offsets
+            antenna_height = (
+                item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
+            )
+            antenna_N = item["monument"]["monument_offset_north"]
+            antenna_E = item["monument"]["monument_offset_east"]
+
+            if item["antenna"]["antenna_reference_point"] is None:
+                antenna_reference_point = "-----"
+            else:
+                antenna_reference_point = item["antenna"]["antenna_reference_point"]
+
+        else:
+            antenna_height = 0.0000
+            antenna_reference_point = "DHARP"
+            antenna_N = 0.0000
+            antenna_E = 0.0000
             antenna_type = "---------------"
-        else:
-            antenna_type = item["antenna"]["model"]
-
-        # receiver SN
-        if item["antenna"]["serial_number"] is None:
             antenna_SN = "---------------"
-        else:
-            antenna_SN = item["antenna"]["serial_number"]
-
-        # Antenna height and offsets
-        antenna_height = (
-            item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
-        )
-        antenna_N = item["monument"]["monument_offset_north"]
-        antenna_E = item["monument"]["monument_offset_east"]
 
         # receiver type
-        if item["gnss_receiver"]["model"] is None:
+        if "gnss_receiver" in item.keys():
+            if item["gnss_receiver"]["model"] is None:
+                receiver_type = "--------------------"
+            else:
+                receiver_type = item["gnss_receiver"]["model"]
+
+            # receiver SN
+            if item["gnss_receiver"]["serial_number"] is None:
+                receiver_SN = "--------------------"
+            else:
+                receiver_SN = item["gnss_receiver"]["serial_number"]
+
+            # receiver firmware
+            if item["gnss_receiver"]["firmware_version"] is None:
+                firmware_version = "--------------------"
+            else:
+                firmware_version = item["gnss_receiver"]["firmware_version"]
+
+            # receiver software
+            if item["gnss_receiver"]["software_version"] is None:
+                software_version = "-----"
+            else:
+                software_version = item["gnss_receiver"]["software_version"]
+            # -------------------------------------------------------
+        else:
             receiver_type = "--------------------"
-        else:
-            receiver_type = item["gnss_receiver"]["model"]
-
-        # receiver SN
-        if item["gnss_receiver"]["serial_number"] is None:
-            receiver_SN = "--------------------"
-        else:
-            receiver_SN = item["gnss_receiver"]["serial_number"]
-
-        # receiver firmware
-        if item["gnss_receiver"]["firmware_version"] is None:
             firmware_version = "--------------------"
-        else:
-            firmware_version = item["gnss_receiver"]["firmware_version"]
-
-        # receiver software
-        if item["gnss_receiver"]["software_version"] is None:
             software_version = "-----"
-        else:
-            software_version = item["gnss_receiver"]["software_version"]
-        # -------------------------------------------------------
+            receiver_SN = "--------------------"
 
         # radome
-        try:
+        if "radome" in item.keys():
             dome = item["radome"]["model"]
-        except:
+        else:
             dome = "NONE"
-
+        
         # header='*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN'
         sessionLine = " {0:4.4}  {1:17.17} {2:17.17}  {3:17.17}  {4: 1.4f}  {5:5.5}  {6: 1.4f}  {7: 1.4f}  {8:20.20}  {9:20.20}  {10:>5.5}  {11:20.20}  {12:15.15}  {13:5.5}  {14:20.20}".format(
             station["marker"].upper(),
@@ -291,7 +322,7 @@ def printStationInfo(station):
             time_from,
             time_to,
             antenna_height,
-            item["antenna"]["antenna_reference_point"],
+            antenna_reference_point,
             antenna_N,
             antenna_E,
             receiver_type[:21],
@@ -336,10 +367,6 @@ def sessionsList(station, date_format="%Y-%m-%d %H:%M:%S"):
 
 def getStationList(subsets={}):
     """ """
-
-    from datetime import datetime
-
-    import gps_metadata_qc as gpsqc
 
     station_list = []
     keyorder = [
@@ -407,10 +434,6 @@ def getStationList(subsets={}):
 def print_station_list(station_list, sortby="marker"):
     """ """
 
-    from operator import itemgetter
-
-    from tabulate import tabulate
-
     station_list[:] = sorted(station_list, key=itemgetter(sortby))
     keylist = [
         "marker",
@@ -431,10 +454,6 @@ def print_station_list(station_list, sortby="marker"):
 
 def count_GPS_stations(station_list):
     """ """
-
-    from operator import itemgetter
-
-    from tabulate import tabulate
 
     station_list[:] = sorted(station_list, key=itemgetter("date_from"))
 
@@ -462,12 +481,6 @@ def count_GPS_stations(station_list):
 
 def main():
     """ """
-
-    from datetime import datetime as dt
-    from operator import itemgetter
-
-    import pandas as pd
-    from tabulate import tabulate
 
     station_list = getStationList(subsets={"IMO": True})
 
