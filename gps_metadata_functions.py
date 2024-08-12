@@ -229,6 +229,9 @@ def printStationInfo(station, loglevel=logging.WARNING):
 
     stationInfo_list = []
     for item in station["device_history"]:
+        module_logger.debug(
+            "item: %s", json.dumps(item, default=gpsqc.datetime_serializer, indent=2)
+        )
         try:
             time_from = item["time_from"].strftime("%Y %j %H %M %S")
         except:

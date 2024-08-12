@@ -670,6 +670,7 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
             for attribute in attribute_history:
                 module_logger.debug("attribute: %s", json.dumps(attribute, indent=2))
                 connection["device"] = attribute
+                module_logger.warning("connection: %s", json.dumps(connection, indent=2))
                 device_sessions.append(connection.copy())
             
         else:
@@ -687,13 +688,13 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
                 device["code_entity_subtype"],
             )
             module_logger.debug(
-                "\njson reponse from %sin device:\n%s\n",
+                "\njson reponse from %s in device:\n%s\n",
                 request_url,
                 json.dumps(device, indent=2),
             )
 
     # Sort by time_from
-    device_sessions.sort(key=lambda d: d["time_from"])
+    device_sessions.sort(key=lambda d: d["device"]["date_from"])
     module_logger.info(
         "device_sessions: \n%s",
         json.dumps(
@@ -704,20 +705,20 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
         "device_sessions: %s",
         json.dumps(
             [
-                f"{item['time_from']}-{item['time_to']}: {item['device']['code_entity_subtype']}"
-                for item in sorted(device_sessions, key=lambda x: x["time_from"])
+                f"{item['device']['date_from']}-{item['device']['date_to']}: {item['device']['code_entity_subtype']}"
+                for item in sorted(device_sessions, key=lambda x: x["device"]["date_from"])
             ],
             indent=2,
         ),
     )
 
-    sessions_start = iter(sorted({session["time_from"] for session in device_sessions}))
+    sessions_start = iter(sorted({session["device"]["date_from"] for session in device_sessions}))
     sessions_end = iter(
         sorted(
             {
-                session["time_to"]
+                session["device"]["date_to"]
                 for session in device_sessions
-                if (session["time_to"] is not None)
+                if (session["device"]["date_to"] is not None)
             }
         )
     )
@@ -751,21 +752,21 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
 
             device = session["device"]
             module_logger.debug("device: \n%s", json.dumps(device, indent=2))
-            module_logger.debug("---------- %s: %s - %s ---------", device["code_entity_subtype"], session["time_from"], session["time_to"])
-            module_logger.debug(device_structure(device.copy()))
+            module_logger.warning("---------- %s: %s - %s ---------", device["code_entity_subtype"], session["device"]["date_from"], session["device"]["date_to"])
 
             if end:
-                if session["time_from"] <= start:
-                    if session["time_to"] is not None and session["time_to"] >= end:
+                if session["device"]["date_from"] <= start:
+                    if session["device"]["date_to"] is not None and session["device"]["date_to"] >= end:
+                        station_session[device['code_entity_subtype']] = device_structure(device.copy())
                         module_logger.warning(device_structure(device.copy()))
+                    elif session["device"]["date_to"] is None:
                         station_session[device['code_entity_subtype']] = device_structure(device.copy())
-
-                    elif session["time_to"] is None:
-                        station_session[device['code_entity_subtype']] = device_structure(device.copy())
-
+                        module_logger.warning(device_structure(device.copy()))
             else:
-                if session["time_to"] is None:
+                if session["device"]["date_to"] is None:
                     station_session[device['code_entity_subtype']] = device_structure(device.copy())
+                    module_logger.warning(device_structure(device.copy()))
+                     
         module_logger.debug("%s", json.dumps(station_session, default=datetime_serializer, indent=2))
         station_history.append(station_session)
         module_logger.warning("---------------------------------\n")
@@ -1896,7 +1897,7 @@ def test_gps_metadata(loglevel=logging.WARNING):
     for sta in ["VMEY"]:  # , "AUST", "VMEY"]:
 
         station = gps_metadata(sta, url_rest_tos, loglevel=logging.WARNING)
-        module_logger.debug(
+        module_logger.warning(
             "station: %s", json.dumps(station, default=datetime_serializer, indent=2)
         )
         module_logger.debug(
@@ -1910,9 +1911,9 @@ def test_gps_metadata(loglevel=logging.WARNING):
         #
         # gpsf.printStationHistory(station, raw_format=False, loglevel=logging.WARNING)
 
-        stationInfo_list += gpsf.printStationInfo(station)
-        for infoline in stationInfo_list:
-            print(infoline)
+        # stationInfo_list += gpsf.printStationInfo(station)
+        # for infoline in stationInfo_list:
+        #     print(infoline)
 
         start = datetime(2002, 3, 29)
         end = datetime(2022, 4, 23)
