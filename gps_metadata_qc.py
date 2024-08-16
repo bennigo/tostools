@@ -28,8 +28,15 @@ import gps_metadata_functions as gpsf
 url_rest_tos = "https://vi-api.vedur.is/tos/v1"
 request_timeout = 10
 
+# defining coordinate systems
+itrf2008 = CRS("EPSG:5332")
+wgs84 = CRS("EPSG:4326")
+# setting up the transformations.
+itrf08towgs84 = Transformer.from_crs(itrf2008, wgs84)
+wgs84toitrf08 = Transformer.from_crs(wgs84, itrf2008)
 
-def get_logger(name=__name__, level=logging.WARNING):
+
+def get_logger(name=__name__):
     """
     logger to use within the modules
     """
@@ -44,7 +51,7 @@ def get_logger(name=__name__, level=logging.WARNING):
 
     # Create logger
     logger = logging.getLogger(name)
-    logger.setLevel(level)
+    # logger.setLevel(level)
 
     if logger.hasHandlers():
         logger.handlers.clear()
@@ -146,7 +153,7 @@ def searchStation(
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     if domains is None:
         domains = [
@@ -280,7 +287,7 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     sort out history within device
     """
 
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
     tmp_connections = []
     connections = []
 
@@ -300,13 +307,15 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     key_list = [
         "serial_number",
         "model",
+        "date_start",
         "firmware_version",
         "software_version",
         "antenna_height",
+        "monument_height",
         "antenna_offset_north",
         "antenna_offset_east",
         "antenna_reference_point",
-        "date_from",
+        "date_from",  # add keys above this point
         "date_to",
     ]
     collection = dict.fromkeys(key_list[:-2])
@@ -337,21 +346,12 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
         connection["code_entity_subtype"] = device["code_entity_subtype"]
 
         for item in device["attributes"]:
-            module_logger.debug("item:\n%s", json.dumps(item, indent=2))
-
             if (item["date_from"], item["date_to"]) != sub_session:
                 continue
             if item["date_from"] >= session_end if session_end else False:
                 continue
             if item["date_to"] <= session_start if item["date_to"] else False:
                 continue
-            # if sub_session[0] != item["date_from"]:
-            #     module_logger.debug(
-            #         "Not matching date_from: %s, Skipping: \n%s",
-            #         sub_session[0],
-            #         json.dumps(item, indent=2),
-            #     )
-            #     continue
 
             # NOTE: ignoring items that have 0 or negative duration
             if item["date_to"] is not None:
@@ -367,7 +367,7 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
                 connection[item["code"]] = item["value"]
                 collection[item["code"]] = item["value"]
 
-                module_logger.info(
+                module_logger.warning(
                     "%s-%s:: item['code']: %s, item['value']: %s",
                     item["date_from"],
                     item["date_to"],
@@ -451,9 +451,9 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
                 for connection in tmp_connections
                 if (connection["date_from"], connection["date_to"]) == sub_session
             )
-            collection.update(zip(key_list[8:], sub_session))
+            collection.update(zip(key_list[-2:], sub_session))
             for connection in session_collection:
-                for key in key_list[2:8]:
+                for key in key_list[2:-2]:
                     if connection[key]:
                         collection[key] = connection[key]
                         module_logger.info("%s: %s", key, connection[key])
@@ -472,7 +472,14 @@ def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     """
 
     contact = {}
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
+    imo_id = 1256
+    abbreviation = ""
+    name_en = ""
+    email = ""
+    primary_contact = ""
+    department = ""
+    address_en = ""
 
     owner_response = requests.get(
         url_rest + "/entity_contacts/" + str(id_entity_parent) + "/",
@@ -481,13 +488,40 @@ def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     owners = owner_response.json()
     module_logger.debug("Owners %s", json.dumps(owners, indent=2))
     for owner in owners:
+        if owner["name"] == "Veðurstofa Íslands":
+            abbreviation = "IMO"
+            name_en = "Icelandic Meteorological Office"
+            email = "gnss@vedur.is"
+            primary_contact = "Infrastructure Division"
+            department = "Infrastructure Division"
+            address_en = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
+
+            
         contact[owner["role"]] = {
             "role_is": owner["role_is"],
             "name": owner["name"],
+            "address": owner["address"],
+            "comment": owner["comment"],
+            "phone_primary": owner["phone_primary"],
+            "ssid": owner["ssid"],
+            "abbreviation": abbreviation,
+            "name_en": name_en,
+            "email": email,
+            "primary_contact": primary_contact,
+            "department": department,
+            "address_en": address_en,
         }
         module_logger.debug("{}: {}".format(owner["role_is"], owner["name"]))
 
+
     if not owners:
+        # get IMO info as default contact
+        response = requests.get(
+            url_rest + "/contact/" + str(imo_id) + "/",
+            timeout=request_timeout,
+    )
+        owner = response.json()
+
         module_logger.info("No owners found at: %s. Setting default", url_rest)
         contact["owner"] = {
             "role_is": "Eigandi stöðvar",
@@ -513,20 +547,14 @@ def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
         )
 
     if "contact" not in contact.keys():
-        contact["contact"] = {
-            "role_is": "tengiliður stöðvar",
-            "name": "Veðurstofa Íslands",
-        }
+        contact["contact"] = contact["owner"]
         module_logger.debug(
             "Setting role of contact: {}: {}".format(
                 contact["contact"]["role_is"], contact["contact"]["name"]
             )
         )
     if "operator" not in contact.keys():
-        contact["operator"] = {
-            "role_is": "Rekstraraðili stöðvar",
-            "name": "Veðurstofa Íslands",
-        }
+        contact["operator"] = contact["operator"]
         module_logger.debug(
             "Setting role of contact: {}: {}".format(
                 contact["operator"]["role_is"], contact["operator"]["name"]
@@ -546,11 +574,48 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    station, devices_history = get_station_metadata(station_identifier, url_rest, loglevel=loglevel)
+
+    module_logger.debug(json.dumps(station, indent=2))
+    module_logger.debug(json.dumps(devices_history, indent=2))
+
+    device_sessions = get_device_sessions(devices_history, url_rest, loglevel=loglevel)
+
+    # Sort by time_from
+    device_sessions.sort(key=lambda d: d["device"]["date_from"])
+    module_logger.info(
+        "device_sessions: \n%s",
+        json.dumps(
+            sorted(device_sessions, key=lambda x: x["device"]["date_from"]), indent=2
+        ),
+    )
+    module_logger.warning(
+        "device_sessions: %s",
+        json.dumps(
+            [
+                f"{item['device']['date_from']}-{item['device']['date_to']}: {item['device']['code_entity_subtype']}"
+                for item in sorted(device_sessions, key=lambda x: x["device"]["date_from"])
+            ],
+            indent=2,
+        ),
+    )
+
+    station["device_history"] = get_device_history(device_sessions, loglevel=loglevel)
+
+    module_logger.debug("station: %s", json.dumps(station, default=datetime_serializer, indent=2))
+
+    return station
+
+def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
+    """"""
+
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
     domain = "geophysical"
-    # code = "marker"
-    # Tos wants lower case marker
-    # stat = stat.lower()
     try:
         station = searchStation(
             station_identifier,
@@ -604,113 +669,31 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
 
     station["contact"] = getContacts(id_entity, url_rest)
     for attribute in devices_history["attributes"]:
+        module_logger.debug(attribute["code"])
         if attribute["code"] in [
             "marker",
             "name",
             "iers_domes_number",
             "in_network_epos",
+            "geological_characteristic",
+            "bedrock_condition",
+            "bedrock_type",
+            "is_near_fault_zones",
+            "date_start",
         ]:
             station[attribute["code"]] = attribute["value"]
         elif attribute["code"] in ["lon", "lat", "altitude"]:
             station[attribute["code"]] = float(attribute["value"])
-    module_logger.debug(json.dumps(station, indent=2))
 
-    device_sessions = []
-    devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
-    for connection in devices_history["children_connections"]:
-        # NOTE: ignoring sessions that have 0 duration
-        if connection["time_from"] == connection["time_to"]:
-            module_logger.debug(
-                "Session start is the same as session end: {}, end: {}".format(
-                    connection["time_from"], connection["time_to"]
-                )
-            )
-            continue
+    return station, devices_history
 
-        # NOTE: sending a request for device history
-        id_entity_child = connection["id_entity_child"]
-        request_url = f"{url_rest}/history/entity/{str(id_entity_child)}/"
-        try:
-            devices_response = requests.get(request_url, timeout=request_timeout)
-            device = devices_response.json()
-            module_logger.debug("device {}".format(device))
-        except:
-            module_logger.error("failed to establish connection to {}".format(url_rest))
-            sys.exit(1)
 
-        if device["code_entity_subtype"] in devices_used:
-            module_logger.debug(
-                "\n================= \
-                \nitem in devices_history[\"children_connections\"]: \
-                \n%s\nSending request: %s \
-                \nreturned device as json \
-                \n device['code_entity_subtype']: %s\
-                \n-----------------\n",
-                json.dumps(connection, indent=2),
-                request_url,
-                device["code_entity_subtype"],
-            )
-            module_logger.debug(
-                "\njson reponse from %s in device:\n%s\n",
-                request_url,
-                json.dumps(device, indent=2),
-            )
+def get_device_history(device_sessions, loglevel=logging.WARNING):
+    """"""
 
-            attribute_history = device_attribute_history(
-                device,
-                connection["time_from"],
-                connection["time_to"],
-                loglevel=logging.WARNING,
-            )
-
-            module_logger.debug(
-                "attribute_history:\n%s", json.dumps(attribute_history, indent=2)
-            )
-
-            for attribute in attribute_history:
-                module_logger.debug("attribute: %s", json.dumps(attribute, indent=2))
-                connection["device"] = attribute
-                module_logger.warning("connection: %s", json.dumps(connection, indent=2))
-                device_sessions.append(connection.copy())
-            
-        else:
-            module_logger.debug(
-                "\n================= \
-                \nitem in devices_history[\"children_connections\"]: \
-                \n%s\nSending request: %s \
-                \nreturned device as json \
-                \nNOT in 'device_used': %s \
-                \n device['code_entity_subtype']: %s\
-                \n=================\n",
-                json.dumps(connection, indent=2),
-                request_url,
-                devices_used,
-                device["code_entity_subtype"],
-            )
-            module_logger.debug(
-                "\njson reponse from %s in device:\n%s\n",
-                request_url,
-                json.dumps(device, indent=2),
-            )
-
-    # Sort by time_from
-    device_sessions.sort(key=lambda d: d["device"]["date_from"])
-    module_logger.info(
-        "device_sessions: \n%s",
-        json.dumps(
-            sorted(device_sessions, key=lambda x: x["device"]["date_from"]), indent=2
-        ),
-    )
-    module_logger.warning(
-        "device_sessions: %s",
-        json.dumps(
-            [
-                f"{item['device']['date_from']}-{item['device']['date_to']}: {item['device']['code_entity_subtype']}"
-                for item in sorted(device_sessions, key=lambda x: x["device"]["date_from"])
-            ],
-            indent=2,
-        ),
-    )
+    # logging settings
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     sessions_start = iter(sorted({session["device"]["date_from"] for session in device_sessions}))
     sessions_end = iter(
@@ -771,16 +754,98 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
         station_history.append(station_session)
         module_logger.warning("---------------------------------\n")
 
-    station["device_history"] = station_history
-    module_logger.debug(station)
+    return station_history
 
-    return station
+
+def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
+    """"""
+
+    module_logger = get_logger(name=__name__)
+
+    domain = "geophysical"
+    device_sessions = []
+    devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
+    for connection in devices_history["children_connections"]:
+        # NOTE: ignoring sessions that have 0 duration
+        if connection["time_from"] == connection["time_to"]:
+            module_logger.debug(
+                "Session start is the same as session end: {}, end: {}".format(
+                    connection["time_from"], connection["time_to"]
+                )
+            )
+            continue
+
+        # NOTE: sending a request for device history
+        id_entity_child = connection["id_entity_child"]
+        request_url = f"{url_rest}/history/entity/{str(id_entity_child)}/"
+        try:
+            devices_response = requests.get(request_url, timeout=request_timeout)
+            device = devices_response.json()
+            module_logger.debug("device {}".format(device))
+        except:
+            module_logger.error("failed to establish connection to {}".format(url_rest))
+            sys.exit(1)
+
+        if device["code_entity_subtype"] in devices_used:
+            module_logger.debug(
+                "\n================= \
+                \nitem in devices_history[\"children_connections\"]: \
+                \n%s\nSending request: %s \
+                \nreturned device as json \
+                \n device['code_entity_subtype']: %s\
+                \n-----------------\n",
+                json.dumps(connection, indent=2),
+                request_url,
+                device["code_entity_subtype"],
+            )
+            module_logger.warning(
+                "\njson reponse from %s in device:\n%s\n",
+                request_url,
+                json.dumps(device, indent=2),
+            )
+
+            attribute_history = device_attribute_history(
+                device,
+                connection["time_from"],
+                connection["time_to"],
+                loglevel=logging.WARNING,
+            )
+
+            module_logger.debug(
+                "attribute_history:\n%s", json.dumps(attribute_history, indent=2)
+            )
+
+            for attribute in attribute_history:
+                connection["device"] = attribute
+                device_sessions.append(connection.copy())
+            
+        else:
+            module_logger.debug(
+                "\n================= \
+                \nitem in devices_history[\"children_connections\"]: \
+                \n%s\nSending request: %s \
+                \nreturned device as json \
+                \nNOT in 'device_used': %s \
+                \n device['code_entity_subtype']: %s\
+                \n=================\n",
+                json.dumps(connection, indent=2),
+                request_url,
+                devices_used,
+                device["code_entity_subtype"],
+            )
+            module_logger.debug(
+                "\njson reponse from %s in device:\n%s\n",
+                request_url,
+                json.dumps(device, indent=2),
+            )
+
+    return device_sessions
 
 
 def device_structure(device, loglevel=logging.INFO):
     """"""
 
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     module_logger.debug("device_session: {}".format(device["code_entity_subtype"]))
 
@@ -813,7 +878,11 @@ def device_structure(device, loglevel=logging.INFO):
         }
 
     elif device["code_entity_subtype"] == "monument":
-        monument_height = device["antenna_height"]
+        if device["monument_height"]:
+            monument_height = device["monument_height"]
+        else:
+            monument_height = device["antenna_height"]
+
         if monument_height is None:
             monument_height = 0.0
         else:
@@ -842,6 +911,302 @@ def device_structure(device, loglevel=logging.INFO):
         return {}
 
 
+def site_log(station_identifier, loglevel=logging.WARNING):
+    """"""
+    
+    module_logger=get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    module_logger.info(station_identifier)
+
+    # station = gps_metadata(station_identifier, url_rest_tos, loglevel=logging.CRITICAL)
+    station, devices_history = get_station_metadata(station_identifier, url_rest_tos, loglevel=loglevel)
+    device_sessions = get_device_sessions(devices_history, url_rest_tos, loglevel=loglevel)
+
+    devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
+    module_logger.setLevel(logging.CRITICAL)
+    module_logger.debug("station: %s", json.dumps(station, default=datetime_serializer, indent=2))
+
+    # sessions_start = iter(sorted(session["device"]["date_from"] for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver"))
+    sessions = list(session for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver")
+    sessions.sort(key=lambda x: x['device']['date_from'])
+    for session in sessions:
+        module_logger.warning("session: %s\n%s", session["device"]["code_entity_subtype"], json.dumps(session, default=datetime_serializer, indent=2))
+    module_logger.setLevel(loglevel)
+
+    #NOTE: 1.   Site Identification of the GNSS Monument
+    site_name = station.get("name", "")
+    marker = station.get("marker", "").upper()
+    iers_domes = station.get("iers_domes_number", "")
+    cdp_num = station.get("cdp_num", "")
+    monument_height = "(m)"
+    monument_inscription = ""
+    monument_description =""
+    foundation = ""
+    foundation_depth = "(m)"
+
+    monument_iter = (session for session in device_sessions if session["device"]["code_entity_subtype"] == "monument")
+    for item in monument_iter:
+        if item["time_to"] is None:
+            device = item.get("device", {})
+            monument_height_fl = float(device.get("monument_height", 0.0))
+            monument_offset_north = device["antenna_offset_north"]
+            if monument_offset_north is None:
+                monument_offset_north_fl = 0.0
+            else:
+                monument_offset_north_fl = float(monument_offset_north)
+
+            monument_offset_east = device["antenna_offset_east"]
+            if monument_offset_east is None:
+                monument_offset_east_fl = 0.0
+            else:
+                monument_offset_east_fl = float(monument_offset_east)
+
+            monument_height = f"{monument_height_fl} m"
+            monument_inscription = device.get("inscription", "")
+            monument_description =device.get("description", "")
+            foundation = device.get("foundation", "")
+            foundation_depth = device.get("foundation_depth", "(m)")
+            if not foundation_depth == "(m)":
+                foundation_depth = foundation_depth + " m"
+
+    marker_description = station.get("marker_description", "")
+    station_start_date = station.get("date_start", "")
+    station_start_date = datetime.strptime(station_start_date, '%Y-%m-%d %H:%M').strftime('%Y-%m-%dT%H:%MZ')
+    geological_characteristic = station.get("geological_characteristic", "").upper()
+    bedrock_type = station.get("bedrock_type", "").upper()
+    bedrock_condition = station.get("bedrock_condition", "").upper()
+    fracture_spacing = station.get("fracture_spacing", "")
+    fault_zone = station.get("is_near_fault_zones", "").upper()
+
+
+    #NOTE: 2.   Site Location Information
+    llh = (station["lat"], station["lon"], station["altitude"])
+    itrf = wgs84toitrf08.transform(*llh)
+    coord_keys = ["X", "Y", "Z", "lat", "lon", "alt"]
+    coordinates = dict(zip(coord_keys, (*itrf,*llh)))
+
+    city = station.get("city", "")
+    state = station.get("state", "N/A")
+    country = station.get("country", "ISL")
+    tectonic_plate = station.get("tectonic_plate", "")
+    x_coordinate = coordinates.get("X", "")
+    y_coordinate = coordinates.get("Y", "")
+    z_coordinate = coordinates.get("Z", "")
+    latitude = coordinates.get("lat", "")
+    longitude = coordinates.get("lon", "")
+    elevation = coordinates.get("alt", "")
+
+    #NOTE: 3.   GNSS Receiver Information
+    receiver_list = list(session for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver")
+    receiver_list.sort(key=lambda x: x['device']['date_from'])
+    receiver_info = "\n3.   GNSS Receiver Information\n\n"
+    for session_nr, session in enumerate(receiver_list):
+        device = session["device"]
+        device_type = device.get("model", "")
+        satellite_system = device.get("satellite_system", "GPS")
+        serial_number = device.get("serial_number", "000000")
+        firmware_version = device.get("firmware_version", "")
+        elevation_cuttoff = device.get("elevation_cuttoff", "0 deg")
+        date_installed = device["date_from"]
+        if  date_installed is None:
+                date_installed = "CCYY-MM-DDThh:mmZ"
+        else:
+            date_installed = datetime.strptime(date_installed, '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%dT%H:%MZ')
+        date_removed = device["date_to"]
+        if  date_removed is None:
+                date_removed = "CCYY-MM-DDThh:mmZ"
+        else:
+            date_removed = datetime.strptime(date_removed, '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%dT%H:%MZ')
+        temperature_stab = device.get("temperature_stab", "")
+        add_information =  device.get("add_information", "")
+
+        receiver_info += (
+            f"3.{session_nr+1}  Receiver Type            : {device_type}\n"
+            f"     Satellite System         : {satellite_system}\n"
+            f"     Serial Number            : {serial_number}\n"
+            f"     Firmware Version         : {firmware_version}\n"
+            f"     Elevation Cutoff Setting : {elevation_cuttoff}\n"
+            f"     Date Installed           : {date_installed}\n"
+            f"     Date Removed             : {date_removed}\n"
+            f"     Temperature Stabiliz.    : {temperature_stab}\n"
+            f"     Additional Information   : {add_information}\n\n"
+        )
+    # print(receiver_info)
+
+    #NOTE: 4.   GNSS Antenna Information
+    antenna_list = list(session for session in device_sessions if session["device"]["code_entity_subtype"] == "antenna")
+    antenna_list.sort(key=lambda x: x['device']['date_from'])
+    antenna_info = "\n4.   GNSS Antenna Information\n"
+    for session_nr, session in enumerate(antenna_list):
+        device = session["device"]
+        device_type = device.get("model", "")
+        serial_number = device.get("serial_number", "000000")
+        arp = device.get("antenna_reference_point", "")
+
+        if device["monument_height"]:
+            monument_height = device["monument_height"]
+        else:
+            monument_height = device["antenna_height"]
+
+        if monument_height is None:
+            monument_height = 0.0
+        else:
+            monument_height = float(monument_height)
+        antenna_height = "{0:.4f}".format(monument_height + monument_height_fl)
+
+        antenna_offset_north = device["antenna_offset_north"]
+        if antenna_offset_north is None:
+            antenna_offset_north_fl = 0.0
+        else:
+            antenna_offset_north_fl = float(antenna_offset_north)
+        antenna_offset_north = "{0:.4f}".format(antenna_offset_north_fl + monument_offset_north_fl)
+
+        antenna_offset_east = device["antenna_offset_east"]
+        if antenna_offset_east is None:
+            antenna_offset_east_fl = 0.0
+        else:
+            antenna_offset_east_fl = float(antenna_offset_east)
+        antenna_offset_east = "{0:.4f}".format(antenna_offset_east_fl + monument_offset_east_fl)
+
+        alignment = device.get("antenna_alignment", "0 deg")
+        #NOTE: radome is moved to the end of for loop as it needs end dates
+
+        cable_type = device.get("antenna_cable_type", "")
+        cable_length = device.get("antenna_cable_length", "")
+
+        date_installed = device["date_from"]
+        if  date_installed is None:
+                date_installed = "CCYY-MM-DDThh:mmZ"
+        else:
+            date_installed = datetime.strptime(date_installed, '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%dT%H:%MZ')
+        date_removed = device["date_to"]
+        if  date_removed is None:
+                date_removed = "CCYY-MM-DDThh:mmZ"
+        else:
+            date_removed = datetime.strptime(date_removed, '%Y-%m-%dT%H:%M:%S').strftime('%Y-%m-%dT%H:%MZ')
+
+        add_information =  device.get("add_information", "")
+
+        #NOTE: checking RADOME
+        radome_list = list(session for session in device_sessions if session["device"]["code_entity_subtype"] == "radome")
+        radome_list.sort(key=lambda x: x['device']['date_from'])
+        for radome in radome_list:
+            antenna_radome = "NONE"
+            antenna_radome_serial = ""
+            if device["date_from"] <= radome["time_from"]:
+                if device["date_to"] is not None:
+                    if (radome["time_to"] is not None) :
+                        if radome["time_to"] <= device["date_to"]:
+                            antenna_radome = radome.get("device", {}).get("model", "NONE")
+                            antenna_radome_serial = radome.get("device", {}).get("radome_serial_number", "")
+                else:
+                    antenna_radome = radome.get("device", {}).get("model", "NONE")
+                    antenna_radome_serial = radome.get("device", {}).get("radome_serial_number", "")
+
+        antenna_info += (
+            f"\n4.{session_nr+1}  Antenna Type             : {device_type}\n"
+            f"     Serial Number            : {serial_number}\n"
+            f"     Antenna Reference Point  : {arp[-3:]}\n"
+            f"     Marker->ARP Up Ecc. (m)  : {antenna_height}\n"
+            f"     Marker->ARP North Ecc(m) : {antenna_offset_north}\n"
+            f"     Marker->ARP East Ecc(m)  : {antenna_offset_east}\n"
+            f"     Alignment from True N    : {alignment}\n"
+            f"     Antenna Radome Type      : {antenna_radome}\n"
+            f"     Radome Serial Number     : {antenna_radome_serial}\n"
+            f"     Antenna Cable Type       : {cable_type}\n"
+            f"     Antenna Cable Length     : {cable_length}\n"
+            f"     Date Installed           : {date_installed}\n"
+            f"     Date Removed             : {date_removed}\n"
+            f"     Additional Information   : {add_information}\n"
+        )
+    # print(antenna_info)
+    
+    #NOTE: 11.  On-Site, Point of Contact Agency Information
+    contact = station["contact"]['contact']
+    module_logger.debug("contact: \n%s", json.dumps(contact, indent=2))
+
+    agency = contact.get("name_en", "")
+    address = contact.get("address_en", "")
+    abbreviation = contact.get("abbreviation", "")
+    phone_primary = contact.get("phone_primary", "")
+    email = contact.get("email", "")
+    primary_contact = contact.get("primary_contact", "")
+    department = contact.get("department", "")
+    
+
+    contact_info = (
+        f"\n\n11.   On-Site, Point of Contact Agency Information\n\n"
+        f"     Agency                   : {agency}\n"
+        f"                              : {department}\n"
+        f"     Preferred Abbreviation   : {abbreviation}\n"
+        f"     Mailing Address          : {address}\n"
+        f"     Primary Contact            \n"
+        f"       Contact Name           : {primary_contact}\n"
+        f"       Telephone (primary)    : +354 {phone_primary}\n"
+        f"       Telephone (secondary)  : \n"
+        f"       Fax                    : \n"
+        f"       E-mail                 : {email}\n"
+        f"     Secondary Contact          \n"
+        f"       Contact Name           : \n"
+        f"       Telephone (primary)    : \n"
+        f"       Telephone (secondary)  : \n"
+        f"       Fax                    : \n"
+        f"       E-mail                 : \n"
+        f"     Additional Information   : (multiple lines)"
+    )
+
+    ascii_site_log = (
+        f"{marker}ISL Site Information Form (site log)\n"
+        f"    International GNSS Service\n"
+        f"    See Instructions at:\n"
+        f"      https://files.igs.org/pub/station/general/sitelog_instr.txt\n\n\n"
+        f"0.   Form\n\n"
+        f"     Prepared by (full name)  : IMO Operator gnss@vedur.is\n"
+        f"     Date Prepared            : {datetime.now().strftime('%Y-%m-%d')}\n"
+        f"     Report Type              : NEW\n"
+        f"     If Update:\n"
+        f"      Previous Site Log       : \n"
+        f"      Modified/Added Sections : \n\n\n"
+        f"1.   Site Identification of the GNSS Monument\n"
+        f"     Site Name                : {site_name}\n"
+        f"     Four Character ID        : {marker}\n"
+        f"     Monument Inscription     : {monument_inscription}\n"
+        f"     IERS DOMES Number        : {iers_domes}\n"
+        f"     CDP Number               : {cdp_num}\n"
+        f"     Monument Description     : {monument_description}\n"
+        f"       Height of the Monument : {monument_height}\n"
+        f"       Monument Foundation    : {foundation}\n"
+        f"       Foundation Depth       : {foundation_depth}\n"
+        f"     Marker Description       : {marker_description}\n"
+        f"     Date Installed           : {station_start_date}\n"
+        f"     Geologic Characteristic  : {geological_characteristic}\n"
+        f"       Bedrock Type           : {bedrock_type}\n"
+        f"       Bedrock Condition      : {bedrock_condition}\n"
+        f"       Fracture Spacing       : {fracture_spacing}\n"
+        f"       Fault zones nearby     : {fault_zone}\n"
+        f"         Distance/activity    : \n"
+        f"     Additional Information   : \n\n\n"
+        f"2.   Site Location Information\n"
+        f"     City or Town             : {city}\n"
+        f"     State or Province        : {state}\n"
+        f"     Country                  : {country}\n"
+        f"     Tectonic Plate           : {tectonic_plate}\n"
+        f"     Approximate Position (ITRF)\n"
+        f"       X coordinate (m)       : {x_coordinate:.1f}\n"
+        f"       Y coordinate (m)       : {y_coordinate:.1f}\n"
+        f"       Z coordinate (m)       : {z_coordinate:.1f}\n"
+        f"       Latitude (N is +)      : {latitude:.5f}\n"
+        f"       Longitude (E is +)     : {longitude:.5f}\n"
+        f"       Elevation (m,ellips.)  : {elevation:.1f}\n"
+        f"     Additional Information   : \n\n"
+        f"{receiver_info}"
+        f"{antenna_info}"
+        f"{contact_info}"
+    )
+
+    print(ascii_site_log)
+
 def fileList(
     station,
     start=None,
@@ -861,7 +1226,7 @@ def fileList(
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     filesList = []
     stat = station["marker"].upper()
@@ -975,7 +1340,7 @@ def extract_from_rheader(rheader, loglevel=logging.WARNING):
         and rinex file name and path in key "rinex file"
 
     """
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     module_logger.debug(
         "Rinex file: {1} in directory {0}".format(*rheader["rinex file"])
@@ -1053,15 +1418,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
         don't match the rinex header
     """
 
-    # defining coordinate systems
-    itrf2008 = CRS("EPSG:5332")
-    wgs84 = CRS("EPSG:4326")
-    # setting up the transformations.
-    itrf08towgs84 = Transformer.from_crs(itrf2008, wgs84)
-    wgs84toitrf08 = Transformer.from_crs(wgs84, itrf2008)
-
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     module_logger.debug("session.keys: {}".format(session.keys()))
     module_logger.debug("session dictionary: {}".format(session))
@@ -1624,7 +1982,7 @@ def fix_rinex_header(
 ):
     """ """
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
     module_logger.info(
         'keys in "rinex_correction_dict" {}'.format(rinex_correction_dict.keys())
     )
@@ -1694,7 +2052,7 @@ def fix_rinex_line(label, rinex_correction_dict, rinex_dict, loglevel=logging.WA
     """ """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
     rinex_header_line, fortran_format = rinex_labels()
 
     module_logger.debug(
@@ -1739,7 +2097,7 @@ def fix_rinex_line(label, rinex_correction_dict, rinex_dict, loglevel=logging.WA
 def read_gzip_file(rfile, loglevel=logging.WARNING):
     """ """
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     try:
         with gzip.open(rfile, "rb") as f:
@@ -1767,7 +2125,7 @@ def read_zzipped_file(rfile, loglevel=logging.WARNING):
     """
 
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     try:
         with open(rfile, "rb") as f:
@@ -1784,7 +2142,7 @@ def read_text_file(rfile, loglevel=logging.WARNING):
     """ """
 
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     try:
         with open(rfile, "r") as f:
@@ -1804,7 +2162,7 @@ def read_rinex_file(rfile, loglevel=logging.WARNING):
     """ """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     if rfile.suffix == ".Z":
         rfile_content = read_zzipped_file(rfile, loglevel=logging.WARNING)
@@ -1830,7 +2188,7 @@ def read_rinex_header(rfile, loglevel=logging.WARNING):
         dictionary containing the file name and string containing the header section of the rinex file
     """
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     rheader = None
     rfile = Path(rfile)
@@ -1888,16 +2246,16 @@ def datetime_serializer(obj):
 
 def test_gps_metadata(loglevel=logging.WARNING):
     """"""
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     stationInfo_list = []
     rheader = []
 
-    for sta in ["VMEY"]:  # , "AUST", "VMEY"]:
+    for sta in ["RHOF"]:  # , "AUST", "VMEY"]:
 
-        station = gps_metadata(sta, url_rest_tos, loglevel=logging.WARNING)
-        module_logger.warning(
+        station = gps_metadata(sta, url_rest_tos, loglevel=loglevel)
+        module_logger.debug(
             "station: %s", json.dumps(station, default=datetime_serializer, indent=2)
         )
         module_logger.debug(
@@ -1911,9 +2269,9 @@ def test_gps_metadata(loglevel=logging.WARNING):
         #
         # gpsf.printStationHistory(station, raw_format=False, loglevel=logging.WARNING)
 
-        # stationInfo_list += gpsf.printStationInfo(station)
-        # for infoline in stationInfo_list:
-        #     print(infoline)
+        stationInfo_list += gpsf.printStationInfo(station)
+        for infoline in stationInfo_list:
+            print(infoline)
 
         start = datetime(2002, 3, 29)
         end = datetime(2022, 4, 23)
@@ -1974,11 +2332,11 @@ def test_gps_metadata(loglevel=logging.WARNING):
 def test_device_attribute_history(loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     domain = "geophysical"
-    station_identifier = "VMEY"
+    station_identifier = "RHOF"
     station = searchStation(
         station_identifier,
         url_rest=url_rest_tos,
@@ -2099,9 +2457,12 @@ def main(level=logging.WARNING):
     quering metadata from tos and comparing to relevant rinex files
     """
     # logging settings
-    # logger = get_logger(name=__name__, level=level)
-    test_gps_metadata()
+    logger = get_logger(name=__name__)
+    logger.setLevel(level)
+    # test_gps_metadata(loglevel=logging.CRITICAL)
     # test_device_attribute_history()
+
+    site_log("RHOF",loglevel=logging.CRITICAL)
 
     # print(module_logger.getEffectiveLevel())
 
