@@ -465,21 +465,34 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
 
     return connections
 
+def additional_contact_fields(contact_name):
+    """"""
+    contact_add = {}
+
+    if contact_name == "Veðurstofa Íslands":
+        contact_add["abbreviation"] = "IMO"
+        contact_add["name_en"] = "Icelandic Meteorological Office"
+        contact_add["email"] = "gnss@vedur.is"
+        contact_add["primary_contact"] = "GNSS operator"
+        contact_add["department"] = "Infrastructure Division"
+        contact_add["address_en"] = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
+        contact_add["main_url"] = "https://vedur.is"
+        contact_add["main_url_en"] = "https://en.vedur.is"
+
+    return contact_add
+
 
 def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     """
     get station contacts
     """
 
-    contact = {}
     module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    contact = {}
     imo_id = 1256
-    abbreviation = ""
-    name_en = ""
-    email = ""
-    primary_contact = ""
-    department = ""
-    address_en = ""
+    owner_addition = {}
 
     owner_response = requests.get(
         url_rest + "/entity_contacts/" + str(id_entity_parent) + "/",
@@ -489,30 +502,26 @@ def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     module_logger.debug("Owners %s", json.dumps(owners, indent=2))
     for owner in owners:
         if owner["name"] == "Veðurstofa Íslands":
-            abbreviation = "IMO"
-            name_en = "Icelandic Meteorological Office"
-            email = "gnss@vedur.is"
-            primary_contact = "Infrastructure Division"
-            department = "Infrastructure Division"
-            address_en = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
+            owner_addition = additional_contact_fields(owner['name'])
 
-            
         contact[owner["role"]] = {
+            "id_entity": owner["id_contact"],
             "role_is": owner["role_is"],
             "name": owner["name"],
             "address": owner["address"],
             "comment": owner["comment"],
             "phone_primary": owner["phone_primary"],
             "ssid": owner["ssid"],
-            "abbreviation": abbreviation,
-            "name_en": name_en,
-            "email": email,
-            "primary_contact": primary_contact,
-            "department": department,
-            "address_en": address_en,
+            "abbreviation": owner_addition["abbreviation"],
+            "name_en": owner_addition["name_en"],
+            "email": owner_addition["email"],
+            "primary_contact": owner_addition["primary_contact"],
+            "department": owner_addition["department"],
+            "address_en": owner_addition["address_en"],
+            "main_url": owner_addition["main_url"],
+            "main_url_en": owner_addition["main_url_en"],
         }
-        module_logger.debug("{}: {}".format(owner["role_is"], owner["name"]))
-
+        module_logger.debug("%s: %s", owner["role_is"], owner["name"])
 
     if not owners:
         # get IMO info as default contact
@@ -554,7 +563,7 @@ def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
             )
         )
     if "operator" not in contact.keys():
-        contact["operator"] = contact["operator"]
+        contact["operator"] = contact["contact"]
         module_logger.debug(
             "Setting role of contact: {}: {}".format(
                 contact["operator"]["role_is"], contact["operator"]["name"]
@@ -941,7 +950,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     cdp_num = station.get("cdp_num", "")
     monument_height = "(m)"
     monument_inscription = ""
-    monument_description =""
+    monument_description = ""
     foundation = ""
     foundation_depth = "(m)"
 
@@ -964,8 +973,8 @@ def site_log(station_identifier, loglevel=logging.WARNING):
 
             monument_height = f"{monument_height_fl} m"
             monument_inscription = device.get("inscription", "")
-            monument_description =device.get("description", "")
-            foundation = device.get("foundation", "")
+            monument_description =device.get("description", "STEEL MAST")
+            foundation = device.get("foundation", "STEEL RODS")
             foundation_depth = device.get("foundation_depth", "(m)")
             if not foundation_depth == "(m)":
                 foundation_depth = foundation_depth + " m"
@@ -986,10 +995,10 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     coord_keys = ["X", "Y", "Z", "lat", "lon", "alt"]
     coordinates = dict(zip(coord_keys, (*itrf,*llh)))
 
-    city = station.get("city", "")
+    city = station.get("city", station['name'])
     state = station.get("state", "N/A")
-    country = station.get("country", "ISL")
-    tectonic_plate = station.get("tectonic_plate", "")
+    country = station.get("country", "Iceland")
+    tectonic_plate = station.get("tectonic_plate", "EURASIAN")
     x_coordinate = coordinates.get("X", "")
     y_coordinate = coordinates.get("Y", "")
     z_coordinate = coordinates.get("Z", "")
@@ -1040,9 +1049,12 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     antenna_info = "\n4.   GNSS Antenna Information\n"
     for session_nr, session in enumerate(antenna_list):
         device = session["device"]
+
         device_type = device.get("model", "")
         serial_number = device.get("serial_number", "000000")
-        arp = device.get("antenna_reference_point", "")
+        arp = device.get("antenna_reference_point", "BPA")
+        if arp == "DHARP":
+            arp = "BPA"
 
         if device["monument_height"]:
             monument_height = device["monument_height"]
@@ -1105,12 +1117,13 @@ def site_log(station_identifier, loglevel=logging.WARNING):
                     antenna_radome_serial = radome.get("device", {}).get("radome_serial_number", "")
 
         antenna_info += (
-            f"\n4.{session_nr+1}  Antenna Type             : {device_type}\n"
+            f"\n4.{session_nr+1}  Antenna Type             : {device_type}    {antenna_radome}\n"
+                                                             # ASH701073.1     SNOW
             f"     Serial Number            : {serial_number}\n"
             f"     Antenna Reference Point  : {arp[-3:]}\n"
-            f"     Marker->ARP Up Ecc. (m)  : {antenna_height}\n"
-            f"     Marker->ARP North Ecc(m) : {antenna_offset_north}\n"
-            f"     Marker->ARP East Ecc(m)  : {antenna_offset_east}\n"
+            f"     Marker->ARP Up Ecc. (m)  :   {antenna_height}\n"
+            f"     Marker->ARP North Ecc(m) :   {antenna_offset_north}\n"
+            f"     Marker->ARP East Ecc(m)  :   {antenna_offset_east}\n"
             f"     Alignment from True N    : {alignment}\n"
             f"     Antenna Radome Type      : {antenna_radome}\n"
             f"     Radome Serial Number     : {antenna_radome_serial}\n"
@@ -1154,6 +1167,78 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         f"       Fax                    : \n"
         f"       E-mail                 : \n"
         f"     Additional Information   : (multiple lines)"
+    )
+
+    #NOTE: 12. Responsible Agency (if different from 11.)
+    if station["contact"]['contact']["id_entity"] == station["contact"]['operator']['id_entity']:
+        contact = {}
+
+        agency = contact.get("name_en", "")
+        address = contact.get("address_en", "")
+        abbreviation = contact.get("abbreviation", "")
+        phone_primary = contact.get("phone_primary", "")
+        if phone_primary != "":
+            phone_primary = +354 + phone_primary
+        email = contact.get("email", "")
+        primary_contact = contact.get("primary_contact", "")
+        department = contact.get("department", "")
+    else:
+        contact = station["contact"]['operator']
+        module_logger.debug("contact: \n%s", json.dumps(contact, indent=2))
+
+        agency = contact.get("name_en", "")
+        address = contact.get("address_en", "")
+        abbreviation = contact.get("abbreviation", "")
+        phone_primary = contact.get("phone_primary", "")
+        email = contact.get("email", "")
+        primary_contact = contact.get("primary_contact", "")
+        department = contact.get("department", "")
+
+
+    operator_info = (
+        f"\n\n\n12.  Responsible Agency (if different from 11.)\n\n"
+        f"     Agency                   : {agency}\n"
+        f"                              : {department}\n"
+        f"     Preferred Abbreviation   : {abbreviation}\n"
+        f"     Mailing Address          : {address}\n"
+        f"     Primary Contact            \n"
+        f"       Contact Name           : {primary_contact}\n"
+        f"       Telephone (primary)    : {phone_primary}\n"
+        f"       Telephone (secondary)  : \n"
+        f"       Fax                    : \n"
+        f"       E-mail                 : {email}\n"
+        f"     Secondary Contact          \n"
+        f"       Contact Name           : \n"
+        f"       Telephone (primary)    : \n"
+        f"       Telephone (secondary)  : \n"
+        f"       Fax                    : \n"
+        f"       E-mail                 : \n"
+        f"     Additional Information   : (multiple lines)"
+    )
+        
+    #NOTE: 13.  More Information
+    operator = station["contact"]['operator']
+    primary_data_center = operator.get("abbreviation", "")
+    if station["contact"]['operator']["id_entity"] != station["contact"]['owner']['id_entity']:
+        secondary_data_center = station["contact"]['owner'].get("abbreviation", "")
+    else:
+        secondary_data_center = ""
+    main_url = operator["main_url_en"]
+    map_url = ""
+
+    more_info = (
+        f"\n\n\n13.  More Information\n\n"
+        f"     Primary Data Center      : {primary_data_center}\n"
+        f"     Secondary Data Center    : {secondary_data_center}\n"
+        f"     URL for More Information : {main_url}\n"
+        f"     Hardcopy on File\n"
+        f"       Site Map               : {map_url}\n"
+        f"       Site Diagram           : (Y or URL)\n"
+        f"       Horizon Mask           : (Y or URL)\n"
+        f"       Monument Description   : (Y or URL)\n"
+        f"       Site Pictures          : (Y or URL)\n"
+        f"     Additional Information   : (multiple lines)\n"
+        f"     Antenna Graphics with Dimensions"
     )
 
     ascii_site_log = (
@@ -1203,6 +1288,8 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         f"{receiver_info}"
         f"{antenna_info}"
         f"{contact_info}"
+        f"{operator_info}"
+        f"{more_info}"
     )
 
     print(ascii_site_log)
