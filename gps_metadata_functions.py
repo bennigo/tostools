@@ -7,18 +7,18 @@
 #
 #
 
-import logging
 import json
-import pandas as pd
-
-from operator import itemgetter
+import logging
+from datetime import datetime
 from datetime import datetime as dt
-from datetime import datetime, timedelta
-
-from tabulate import tabulate
+from datetime import timedelta
 from operator import itemgetter
+
+import pandas as pd
+from tabulate import tabulate
 
 import gps_metadata_qc as gpsqc
+
 
 def get_logger(name=__name__, level=logging.WARNING):
     """
@@ -317,7 +317,7 @@ def printStationInfo(station, loglevel=logging.WARNING):
             dome = item["radome"]["model"]
         else:
             dome = "NONE"
-        
+
         # header='*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN'
         sessionLine = " {0:4.4}  {1:17.17} {2:17.17}  {3:17.17}  {4: 1.4f}  {5:5.5}  {6: 1.4f}  {7: 1.4f}  {8:20.20}  {9:20.20}  {10:>5.5}  {11:20.20}  {12:15.15}  {13:5.5}  {14:20.20}".format(
             station["marker"].upper(),
@@ -482,20 +482,36 @@ def count_GPS_stations(station_list):
     print(tabulate(station_count, headers=keylist))
 
 
+def grep_line_aslist(listf, text):
+    """"""
+    with open(listf, "r") as f:
+        for line in f:
+            if text in line:
+                return line.split()
+        else:
+            return [text, ""]
+
+
 def main():
     """ """
 
-    station_list = getStationList(subsets={"IMO": True})
-
-    sorted_station_list = print_station_list(station_list, sortby="marker")
-    isgps = pd.DataFrame(sorted_station_list)
-    isgps.set_index("marker", inplace=True)
-    isgps["date_from"] = pd.to_datetime(isgps["date_from"], errors="coerce")
-    isgps = isgps[isgps["date_from"] < dt(2018, 1, 1)]
+    # station_list = getStationList(subsets={"IMO": True})
+    #
+    # sorted_station_list = print_station_list(station_list, sortby="marker")
+    # isgps = pd.DataFrame(sorted_station_list)
+    # isgps.set_index("marker", inplace=True)
+    # isgps["date_from"] = pd.to_datetime(isgps["date_from"], errors="coerce")
+    # isgps = isgps[isgps["date_from"] < dt(2018, 1, 1)]
     # print(ISGPS[["name", "date_from", "lon", "lat"]])
-    isgps[["name", "date_from", "lon", "lat"]].to_csv("stations.list", sep="\t")
+    # isgps[["name", "date_from", "lon", "lat"]].to_csv("stations.list", sep="\t")
 
-    count_GPS_stations(station_list)
+    # count_GPS_stations(station_list)
+
+    antenna = "ASH701945C_M"
+    antennaf = "antenna_arp.list"
+    marker = "TREE"
+    platefile = "./station-plate"
+    print(grep_line_aslist(platefile, marker))
 
 
 if __name__ == "__main__":

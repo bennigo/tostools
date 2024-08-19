@@ -367,7 +367,7 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
                 connection[item["code"]] = item["value"]
                 collection[item["code"]] = item["value"]
 
-                module_logger.warning(
+                module_logger.debug(
                     "%s-%s:: item['code']: %s, item['value']: %s",
                     item["date_from"],
                     item["date_to"],
@@ -807,7 +807,7 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
                 request_url,
                 device["code_entity_subtype"],
             )
-            module_logger.warning(
+            module_logger.debug(
                 "\njson reponse from %s in device:\n%s\n",
                 request_url,
                 json.dumps(device, indent=2),
@@ -817,7 +817,7 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
                 device,
                 connection["time_from"],
                 connection["time_to"],
-                loglevel=logging.WARNING,
+                loglevel=logging.CRITICAL,
             )
 
             module_logger.debug(
@@ -958,7 +958,17 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     for item in monument_iter:
         if item["time_to"] is None:
             device = item.get("device", {})
-            monument_height_fl = float(device.get("monument_height", 0.0))
+
+            # monument_height_fl = float(device.get("monument_height", 0.0))
+            monument_height_fl = device["monument_height"]
+            if monument_height_fl is None:
+                monument_height_fl = device["antenna_height"]
+
+            if monument_height_fl is None:
+                monument_height_fl = 0.0
+            else:
+                monument_height_fl = float(monument_height_fl)
+
             monument_offset_north = device["antenna_offset_north"]
             if monument_offset_north is None:
                 monument_offset_north_fl = 0.0
@@ -998,7 +1008,15 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     city = station.get("city", station['name'])
     state = station.get("state", "N/A")
     country = station.get("country", "Iceland")
-    tectonic_plate = station.get("tectonic_plate", "EURASIAN")
+    tectonic_plate = station.get("tectonic_plate", "")
+    if tectonic_plate == "":
+        plate_name = {
+            "EURA": "EURASIAN",
+            "NOAM": "NORTH AMERICAN",
+        }
+        plate_short = gpsf.grep_line_aslist("./station-plate",marker)[1]
+        tectonic_plate =  plate_name[plate_short] if plate_short != "" else "UNKNOWN"
+
     x_coordinate = coordinates.get("X", "")
     y_coordinate = coordinates.get("Y", "")
     z_coordinate = coordinates.get("Z", "")
@@ -1054,7 +1072,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         serial_number = device.get("serial_number", "000000")
         arp = device.get("antenna_reference_point", "BPA")
         if arp == "DHARP":
-            arp = "BPA"
+            arp = gpsf.grep_line_aslist("./antenna_arp.list", device_type)[1]
 
         if device["monument_height"]:
             monument_height = device["monument_height"]
@@ -1134,7 +1152,144 @@ def site_log(station_identifier, loglevel=logging.WARNING):
             f"     Additional Information   : {add_information}\n"
         )
     # print(antenna_info)
-    
+
+    other_info = (
+        f"\n5.   Surveyed Local Ties\n\n"
+        f"5.x  Tied Marker Name         : \n"
+        f"     Tied Marker Usage        : (SLR/VLBI/LOCAL CONTROL/FOOTPRINT/etc)\n"
+        f"     Tied Marker CDP Number   : (A4)\n"
+        f"     Tied Marker DOMES Number : (A9)\n"
+        f"     Differential Components from GNSS Marker to the tied monument (ITRS)\n"
+        f"       dx (m)                 : (m)\n"
+        f"       dy (m)                 : (m)\n"
+        f"       dz (m)                 : (m)\n"
+        f"     Accuracy (mm)            : (mm)\n"
+        f"     Survey method            : (GPS CAMPAIGN/TRILATERATION/TRIANGULATION/etc)\n"
+        f"     Date Measured            : (CCYY-MM-DDThh:mmZ)\n"
+        f"     Additional Information   : (multiple lines)\n\n\n"
+        f"6.   Frequency Standard\n\n"
+        f"6.1  Standard Type            : (INTERNAL or EXTERNAL H-MASER/CESIUM/etc)\n"
+        f"       Input Frequency        : (if external)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"6.x  Standard Type            : (INTERNAL or EXTERNAL H-MASER/CESIUM/etc)\n"
+        f"       Input Frequency        : (if external)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n\n"
+        f"7.   Collocation Information\n\n"
+        f"7.1  Instrumentation Type     : (GPS/GLONASS/DORIS/PRARE/SLR/VLBI/TIME/etc)\n"
+        f"       Status                 : (PERMANENT/MOBILE)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"7.x  Instrumentation Type     : (GPS/GLONASS/DORIS/PRARE/SLR/VLBI/TIME/etc)\n"
+        f"       Status                 : (PERMANENT/MOBILE)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n\n"
+        f"8.   Meteorological Instrumentation\n\n"
+        f"8.1.1 Humidity Sensor Model   : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy (% rel h)     : (% rel h)\n"
+        f"       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.1.x Humidity Sensor Model   : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy (% rel h)     : (% rel h)\n"
+        f"       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.2.1 Pressure Sensor Model   : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy               : (hPa)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.2.x Pressure Sensor Model   : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy               : (hPa)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.3.1 Temp. Sensor Model      : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy               : (deg C)\n"
+        f"       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.3.x Temp. Sensor Model      : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Data Sampling Interval : (sec)\n"
+        f"       Accuracy               : (deg C)\n"
+        f"       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.4.1 Water Vapor Radiometer  : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Distance to Antenna    : (m)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.4.x Water Vapor Radiometer  : \n"
+        f"       Manufacturer           : \n"
+        f"       Serial Number          : \n"
+        f"       Distance to Antenna    : (m)\n"
+        f"       Height Diff to Ant     : (m)\n"
+        f"       Calibration date       : (CCYY-MM-DD)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Notes                  : (multiple lines)\n\n"
+        f"8.5.1 Other Instrumentation   : (multiple lines)\n\n"
+        f"8.5.x Other Instrumentation   : (multiple lines)\n\n\n"
+        f"9.  Local Ongoing Conditions Possibly Affecting Computed Position\n\n"
+        f"9.1.1 Radio Interferences     : (TV/CELL PHONE ANTENNA/RADAR/etc)\n"
+        f"       Observed Degradations  : (SN RATIO/DATA GAPS/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"9.1.x Radio Interferences     : (TV/CELL PHONE ANTENNA/RADAR/etc)\n"
+        f"       Observed Degradations  : (SN RATIO/DATA GAPS/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"9.2.1 Multipath Sources       : (METAL ROOF/DOME/VLBI ANTENNA/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"9.2.x Multipath Sources       : (METAL ROOF/DOME/VLBI ANTENNA/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"9.3.1 Signal Obstructions     : (TREES/BUILDINGS/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"9.3.x Signal Obstructions     : (TREES/BUILDINGS/etc)\n"
+        f"       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"       Additional Information : (multiple lines)\n\n"
+        f"10.  Local Episodic Effects Possibly Affecting Data Quality\n\n"
+        f"10.1 Date                     : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"     Event                    : (TREE CLEARING/CONSTRUCTION/etc)\n\n"
+        f"10.x Date                     : (CCYY-MM-DD/CCYY-MM-DD)\n"
+        f"     Event                    : (TREE CLEARING/CONSTRUCTION/etc)\n"
+    )
+
     #NOTE: 11.  On-Site, Point of Contact Agency Information
     contact = station["contact"]['contact']
     module_logger.debug("contact: \n%s", json.dumps(contact, indent=2))
@@ -1173,9 +1328,9 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     if station["contact"]['contact']["id_entity"] == station["contact"]['operator']['id_entity']:
         contact = {}
 
-        agency = contact.get("name_en", "")
-        address = contact.get("address_en", "")
-        abbreviation = contact.get("abbreviation", "")
+        agency = contact.get("name_en", "(multiple lines)")
+        address = contact.get("address_en", "(multiple lines)")
+        abbreviation = contact.get("abbreviation", "(A10)")
         phone_primary = contact.get("phone_primary", "")
         if phone_primary != "":
             phone_primary = +354 + phone_primary
@@ -1198,7 +1353,6 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     operator_info = (
         f"\n\n\n12.  Responsible Agency (if different from 11.)\n\n"
         f"     Agency                   : {agency}\n"
-        f"                              : {department}\n"
         f"     Preferred Abbreviation   : {abbreviation}\n"
         f"     Mailing Address          : {address}\n"
         f"     Primary Contact            \n"
@@ -1287,6 +1441,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         f"     Additional Information   : \n\n"
         f"{receiver_info}"
         f"{antenna_info}"
+        f"{other_info}"
         f"{contact_info}"
         f"{operator_info}"
         f"{more_info}"
