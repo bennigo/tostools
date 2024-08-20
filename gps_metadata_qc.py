@@ -472,7 +472,7 @@ def additional_contact_fields(contact_name):
     if contact_name == "Veðurstofa Íslands":
         contact_add["abbreviation"] = "IMO"
         contact_add["name_en"] = "Icelandic Meteorological Office"
-        contact_add["email"] = "gnss@vedur.is"
+        contact_add["email"] = "gnss-glass@vedur.is"
         contact_add["primary_contact"] = "GNSS operator"
         contact_add["department"] = "Infrastructure Division"
         contact_add["address_en"] = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
@@ -482,7 +482,7 @@ def additional_contact_fields(contact_name):
     return contact_add
 
 
-def getContacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
+def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     """
     get station contacts
     """
@@ -676,7 +676,7 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
         )
     )
 
-    station["contact"] = getContacts(id_entity, url_rest)
+    station["contact"] = get_contacts(id_entity, url_rest)
     for attribute in devices_history["attributes"]:
         module_logger.debug(attribute["code"])
         if attribute["code"] in [
@@ -2486,7 +2486,7 @@ def datetime_serializer(obj):
     raise TypeError("Type not serializable")
 
 
-def test_gps_metadata(loglevel=logging.WARNING):
+def test_gps_metadata(station_identifier, loglevel=logging.WARNING):
     """"""
     module_logger = get_logger(name=__name__)
     module_logger.setLevel(loglevel)
@@ -2494,7 +2494,7 @@ def test_gps_metadata(loglevel=logging.WARNING):
     stationInfo_list = []
     rheader = []
 
-    for sta in ["RHOF"]:  # , "AUST", "VMEY"]:
+    for sta in [station_identifier]:  # , "AUST", "VMEY"]:
 
         station = gps_metadata(sta, url_rest_tos, loglevel=loglevel)
         module_logger.debug(
@@ -2620,7 +2620,7 @@ def test_device_attribute_history(loglevel=logging.WARNING):
         )
     )
 
-    station["contact"] = getContacts(id_entity, url_rest_tos)
+    station["contact"] = get_contacts(id_entity, url_rest_tos)
     for attribute in devices_history["attributes"]:
         if attribute["code"] in [
             "marker",
@@ -2701,10 +2701,10 @@ def main(level=logging.WARNING):
     # logging settings
     logger = get_logger(name=__name__)
     logger.setLevel(level)
-    # test_gps_metadata(loglevel=logging.CRITICAL)
     # test_device_attribute_history()
 
-    site_log("RHOF",loglevel=logging.CRITICAL)
+    test_gps_metadata("RHOF", loglevel=logging.CRITICAL)
+    # site_log("ISAK",loglevel=logging.CRITICAL)
 
     # print(module_logger.getEffectiveLevel())
 
