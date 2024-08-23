@@ -1,4 +1,4 @@
-#!/usr/bin/python3.1
+#!/usr/bin/python3
 #
 # Project: gps_metadata
 # Authors: Benedikt Gunnar Ófeigsson
@@ -34,34 +34,6 @@ wgs84 = CRS("EPSG:4326")
 # setting up the transformations.
 itrf08towgs84 = Transformer.from_crs(itrf2008, wgs84)
 wgs84toitrf08 = Transformer.from_crs(wgs84, itrf2008)
-
-
-def get_logger(name=__name__):
-    """
-    logger to use within the modules
-    """
-
-    # Create log handler
-    logHandler = logging.StreamHandler()
-    # logHandler.setLevel(level)
-
-    # Set handler format
-    logFormat = logging.Formatter("[%(levelname)s] %(funcName)s: %(message)s")
-    logHandler.setFormatter(logFormat)
-
-    # Create logger
-    logger = logging.getLogger(name)
-    # logger.setLevel(level)
-
-    if logger.hasHandlers():
-        logger.handlers.clear()
-    # Add handler to logger
-    logger.addHandler(logHandler)
-
-    # Stop propagating the log messages to root logger
-    logger.propagate = False
-
-    return logger
 
 
 def rinex_labels():
@@ -153,7 +125,8 @@ def searchStation(
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     if domains is None:
         domains = [
@@ -209,9 +182,8 @@ def searchStation(
                 )
             except requests.ConnectionError as error:
                 module_logger.error(
-                    "Failed to establish connection to {} with error {}".format(
+                    "Failed to establish connection to %s with error %s", 
                         url_rest, error
-                    )
                 )
                 sys.exit(1)
 
@@ -287,7 +259,7 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     sort out history within device
     """
 
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     tmp_connections = []
     connections = []
 
@@ -472,7 +444,7 @@ def additional_contact_fields(contact_name):
     if contact_name == "Veðurstofa Íslands":
         contact_add["abbreviation"] = "IMO"
         contact_add["name_en"] = "Icelandic Meteorological Office"
-        contact_add["email"] = "gnss-glass@vedur.is"
+        contact_add["email"] = "gnss@vedur.is"
         contact_add["primary_contact"] = "GNSS operator"
         contact_add["department"] = "Infrastructure Division"
         contact_add["address_en"] = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
@@ -487,7 +459,7 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     get station contacts
     """
 
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     contact = {}
@@ -521,17 +493,18 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
             "main_url": owner_addition["main_url"],
             "main_url_en": owner_addition["main_url_en"],
         }
-        module_logger.debug("%s: %s", owner["role_is"], owner["name"])
+        module_logger.info("%s: %s", owner["role_is"], owner["name"])
 
     if not owners:
         # get IMO info as default contact
-        response = requests.get(
-            url_rest + "/contact/" + str(imo_id) + "/",
-            timeout=request_timeout,
-    )
-        owner = response.json()
+        #TODO: implement IMO as default contact if no contact
+        # response = requests.get(
+        #     url_rest + "/contact/" + str(imo_id) + "/",
+        #     timeout=request_timeout,
+        # )
+        # owner = response.json()
 
-        module_logger.info("No owners found at: %s. Setting default", url_rest)
+        module_logger.warning("No owners found at: %s. Setting default", url_rest)
         contact["owner"] = {
             "role_is": "Eigandi stöðvar",
             "name": "Veðurstofa Íslands",
@@ -549,7 +522,7 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
             "role_is": "Rekstraraðili stöðvar",
             "name": "Landmælingar Íslands",
         }
-        module_logger.debug(
+        module_logger.info(
             "Setting role of contact: {}: {}".format(
                 contact["operator"]["role_is"], contact["operator"]["name"]
             )
@@ -557,19 +530,19 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
 
     if "contact" not in contact.keys():
         contact["contact"] = contact["owner"]
-        module_logger.debug(
+        module_logger.info(
             "Setting role of contact: {}: {}".format(
                 contact["contact"]["role_is"], contact["contact"]["name"]
             )
         )
     if "operator" not in contact.keys():
         contact["operator"] = contact["contact"]
-        module_logger.debug(
+        module_logger.info(
             "Setting role of contact: {}: {}".format(
                 contact["operator"]["role_is"], contact["operator"]["name"]
             )
         )
-    module_logger.info("contact: {}".format(contact))
+    module_logger.info("contact: %s", json.dumps(contact, cls=gpsf.CustomeJSONEncoder, indent=2))
 
     return contact
 
@@ -583,25 +556,22 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     station, devices_history = get_station_metadata(station_identifier, url_rest, loglevel=loglevel)
+    if not station:
+        module_logger.warning("dictionary for station %s is empty returning", station_identifier)
+        return {}
 
-    module_logger.debug(json.dumps(station, indent=2))
-    module_logger.debug(json.dumps(devices_history, indent=2))
+    module_logger.debug("station: \n%s", json.dumps(station, indent=2))
+    module_logger.debug("device_history: \n%s",json.dumps(devices_history, indent=2))
 
     device_sessions = get_device_sessions(devices_history, url_rest, loglevel=loglevel)
 
     # Sort by time_from
     device_sessions.sort(key=lambda d: d["device"]["date_from"])
     module_logger.info(
-        "device_sessions: \n%s",
-        json.dumps(
-            sorted(device_sessions, key=lambda x: x["device"]["date_from"]), indent=2
-        ),
-    )
-    module_logger.warning(
         "device_sessions: %s",
         json.dumps(
             [
@@ -613,15 +583,14 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     )
 
     station["device_history"] = get_device_history(device_sessions, loglevel=loglevel)
-
-    module_logger.debug("station: %s", json.dumps(station, default=datetime_serializer, indent=2))
+    module_logger.debug("station: %s", json.dumps(station, cls=gpsf.CustomeJSONEncoder, indent=2))
 
     return station
 
 def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     domain = "geophysical"
@@ -640,7 +609,7 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
                 domain, station_identifier, error
             )
         )
-        return []
+        return [], []
 
     module_logger.debug(
         "TOS station %s dictionary:\n=================\n%s\n================",
@@ -649,16 +618,16 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
     )
 
     id_entity = station["id_entity"]
-    module_logger.warning(
+    module_logger.info(
         "station {} id_entity: {}".format(station_identifier, id_entity)
     )
     station = {}  # clear dictionary for later use
-    module_logger.warning(
+    module_logger.info(
         'Sending request "{}"'.format(
             url_rest + "/history/entity/" + str(id_entity) + "/"
         )
     )
-
+    
     response = requests.get(
         url_rest + "/history/entity/" + str(id_entity) + "/", timeout=request_timeout
     )
@@ -676,7 +645,7 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
         )
     )
 
-    station["contact"] = get_contacts(id_entity, url_rest)
+    station["contact"] = get_contacts(id_entity, url_rest, loglevel=loglevel)
     for attribute in devices_history["attributes"]:
         module_logger.debug(attribute["code"])
         if attribute["code"] in [
@@ -701,7 +670,7 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
     """"""
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     sessions_start = iter(sorted({session["device"]["date_from"] for session in device_sessions}))
@@ -721,7 +690,7 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
             end = next(sessions_end)
         except StopIteration:
             end = None
-        module_logger.warning(
+        module_logger.info(
             "====== session start-end: {}-{} ======".format(start, end)
         )
 
@@ -739,29 +708,29 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
         for session in device_sessions:
             module_logger.debug(
                 "Session: \n%s",
-                json.dumps(session, default=datetime_serializer, indent=2),
+                json.dumps(session, cls=gpsf.CustomeJSONEncoder, indent=2),
             )
 
             device = session["device"]
             module_logger.debug("device: \n%s", json.dumps(device, indent=2))
-            module_logger.warning("---------- %s: %s - %s ---------", device["code_entity_subtype"], session["device"]["date_from"], session["device"]["date_to"])
+            module_logger.info("---------- %s: %s - %s ---------", device["code_entity_subtype"], session["device"]["date_from"], session["device"]["date_to"])
 
             if end:
                 if session["device"]["date_from"] <= start:
                     if session["device"]["date_to"] is not None and session["device"]["date_to"] >= end:
                         station_session[device['code_entity_subtype']] = device_structure(device.copy())
-                        module_logger.warning(device_structure(device.copy()))
+                        module_logger.info(device_structure(device.copy()))
                     elif session["device"]["date_to"] is None:
                         station_session[device['code_entity_subtype']] = device_structure(device.copy())
-                        module_logger.warning(device_structure(device.copy()))
+                        module_logger.info(device_structure(device.copy()))
             else:
                 if session["device"]["date_to"] is None:
                     station_session[device['code_entity_subtype']] = device_structure(device.copy())
-                    module_logger.warning(device_structure(device.copy()))
+                    module_logger.info(device_structure(device.copy()))
                      
-        module_logger.debug("%s", json.dumps(station_session, default=datetime_serializer, indent=2))
+        module_logger.debug("%s", json.dumps(station_session, cls=gpsf.CustomeJSONEncoder, indent=2))
         station_history.append(station_session)
-        module_logger.warning("---------------------------------\n")
+        module_logger.info("=================================\n")
 
     return station_history
 
@@ -769,7 +738,7 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
 def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     domain = "geophysical"
     device_sessions = []
@@ -854,7 +823,7 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
 def device_structure(device, loglevel=logging.INFO):
     """"""
 
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     module_logger.debug("device_session: {}".format(device["code_entity_subtype"]))
 
@@ -923,7 +892,7 @@ def device_structure(device, loglevel=logging.INFO):
 def site_log(station_identifier, loglevel=logging.WARNING):
     """"""
     
-    module_logger=get_logger(name=__name__)
+    module_logger=gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     module_logger.info(station_identifier)
@@ -934,13 +903,13 @@ def site_log(station_identifier, loglevel=logging.WARNING):
 
     devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
     module_logger.setLevel(logging.CRITICAL)
-    module_logger.debug("station: %s", json.dumps(station, default=datetime_serializer, indent=2))
+    module_logger.debug("station: %s", json.dumps(station, cls=gpsf.CustomeJSONEncoder, indent=2))
 
     # sessions_start = iter(sorted(session["device"]["date_from"] for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver"))
     sessions = list(session for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver")
     sessions.sort(key=lambda x: x['device']['date_from'])
     for session in sessions:
-        module_logger.warning("session: %s\n%s", session["device"]["code_entity_subtype"], json.dumps(session, default=datetime_serializer, indent=2))
+        module_logger.warning("session: %s\n%s", session["device"]["code_entity_subtype"], json.dumps(session, cls=gpsf.CustomeJSONEncoder, indent=2))
     module_logger.setLevel(loglevel)
 
     #NOTE: 1.   Site Identification of the GNSS Monument
@@ -1468,7 +1437,8 @@ def fileList(
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     filesList = []
     stat = station["marker"].upper()
@@ -1522,7 +1492,7 @@ def fileList(
         module_logger.info("Index number: {}".format(session_nr))
 
         if session_flag:
-            flist = tf.datepathlist(formatString, "1D", time_from, time_to, closed=None)
+            flist = tf.datepathlist(formatString, "1D", time_from, time_to, closed='left')
             # Add one day to compensate for edge effect of open 'right' boundaries used in datepathlist
             # But not if last day is to day i.e end is
             endfile = PurePath(flist[-1]).name
@@ -1582,7 +1552,7 @@ def extract_from_rheader(rheader, loglevel=logging.WARNING):
         and rinex file name and path in key "rinex file"
 
     """
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     module_logger.debug(
         "Rinex file: {1} in directory {0}".format(*rheader["rinex file"])
@@ -1625,7 +1595,7 @@ def extract_from_rheader(rheader, loglevel=logging.WARNING):
 
             if matched_list[-1] == "TIME OF FIRST OBS":
                 # matched_list[:-3] = list(map(int, matched_list[:-3]))
-                time_first_obs = dt(*matched_list[:-4], round(float(matched_list[-4])))
+                time_first_obs = datetime(*matched_list[:-4], round(float(matched_list[-4])))
                 matched_list[:-1] = [time_first_obs, matched_list[-3], matched_list[-2]]
                 module_logger.debug(
                     "{}: {}".format(matched_list[-1], matched_list[:-1])
@@ -1661,7 +1631,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
     """
 
     # logging
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     module_logger.debug("session.keys: {}".format(session.keys()))
     module_logger.debug("session dictionary: {}".format(session))
@@ -1684,7 +1655,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
         match label:
             case "rinex file":
                 # This should always match
-                # Any mismach here will return a string with the rinex  file name This reprecents reprecents some serious issues which might be due to code bug or serious issue with file structure
+                # Any mismach here will return a string with the rinex  file name This reprecents reprecents
+                # some serious issues which might be due to code bug or serious issue with file structure
                 rinex_file_fullpath = Path(*rinex_dict[label])
 
                 module_logger.info("Rinex path: {}".format(rinex_file_fullpath))
@@ -1708,7 +1680,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
 
                 rinex_file = rinex_dict[label][1]
                 module_logger.info("Rinex file: {}".format(rinex_file))
-                TOS_marker = session["marker"].upper()
+                tos_marker = session["marker"].upper()
                 TOS_session_period = [
                     session["device_history"]["time_from"],
                     session["device_history"]["time_to"],
@@ -1733,12 +1705,12 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
 
                 module_logger.debug('{0} "{1}"'.format(label, rinex_file))
                 if (
-                    marker == TOS_marker
+                    marker == tos_marker
                     and date_from_rinex_fname.date() == time_of_first_obs.date()
                 ):
                     module_logger.debug(
                         '{0} "{1}" has matching name prefix with database marker "{2}" and the doy-year in {1} matches the date of first observation {3}'.format(
-                            label, rinex_file, TOS_marker, time_of_first_obs
+                            label, rinex_file, tos_marker, time_of_first_obs
                         )
                     )
 
@@ -1796,13 +1768,13 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                             return rinex_correction_dict
 
                 else:
-                    if marker != TOS_marker:
+                    if marker != tos_marker:
                         module_logger.error(
                             'Mismach with {0} "{1}" and matching name prefix in database marker "{2}" '.format(
-                                label, rinex_file, TOS_marker
+                                label, rinex_file, tos_marker
                             )
                         )
-                        rinex_correction_dict["TOS marker"] = [TOS_marker]
+                        rinex_correction_dict["TOS marker"] = [tos_marker]
 
                     if date_from_rinex_fname.date() != time_of_first_obs.date():
                         module_logger.error(
@@ -1822,20 +1794,20 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                 module_logger.info(
                     '"Marker name" in Rinex file: {}'.format(rinex_marker)
                 )
-                TOS_marker = session["marker"].upper()
-                if rinex_marker == TOS_marker:
+                tos_marker = session["marker"].upper()
+                if rinex_marker == tos_marker:
                     module_logger.debug(
                         'Label "{0}" is "{1}" in file "{2}", matches database marker "{3}"'.format(
-                            label, rinex_marker, rinex_dict["rinex file"], TOS_marker
+                            label, rinex_marker, rinex_dict["rinex file"], tos_marker
                         )
                     )
                 else:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label, rinex_marker, rinex_dict["rinex file"], TOS_marker
+                            label, rinex_marker, rinex_dict["rinex file"], tos_marker
                         )
                     )
-                    rinex_correction_dict[label] = [TOS_marker]
+                    rinex_correction_dict[label] = [tos_marker]
 
             case "MARKER NUMBER":
                 rinex_number = rinex_dict[label][0]
@@ -1854,7 +1826,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                         )
                     )
                 else:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label, rinex_number, rinex_dict["rinex file"], TOS_number
                         )
@@ -1873,13 +1845,15 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                 TOS_operator = session["contact"]["operator"]["name"]
                 module_logger.info('"operator "agency":\t{}'.format(TOS_operator))
 
+
+                #HACK: This part needs to be moved to tos
                 if TOS_operator == "Veðurstofa Íslands":
                     TOS_observer_agency = ["BGO/HMF", "Vedurstofa Islands"]
                 if TOS_operator == "Landmælingar Íslands":
                     TOS_observer_agency = ["LMI", "Landmaelingar Islands"]
 
                 if rinex_observer_agency[0] != TOS_observer_agency[0]:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_observer_agency[0],
@@ -1891,7 +1865,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     rinex_correction_dict[label] = contact_correction_list
 
                 if rinex_observer_agency[1] != TOS_observer_agency[1]:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_observer_agency[1],
@@ -1917,7 +1891,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                 TOS_receiver_sversion = TOS_receiver_attributes["software_version"]
 
                 if rinex_receiver[0] != TOS_receiver_serial:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label REC # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_receiver[0],
@@ -1938,7 +1912,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
 
                 if rinex_receiver[1] != TOS_receiver_model:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_receiver[1],
@@ -1959,7 +1933,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
 
                 if rinex_receiver[2] != TOS_receiver_sversion:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label VERS  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_receiver[2],
@@ -2005,7 +1979,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
 
                 if rinex_antenna[0] != TOS_antenna_serial:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label ANT # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_antenna[0],
@@ -2026,7 +2000,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
 
                 if rinex_antenna[1] != TOS_antenna_model:
-                    module_logger.warning(
+                    module_logger.info(
                         'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_antenna[1],
@@ -2053,7 +2027,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     None,
                     None,
                     "",
-                ]  # extra empty string for plank space in rinex file
+                ]  # extra empty string for blank space in rinex file
                 module_logger.info(
                     '"ANTENNA: DELTA H/E/N" in Rinex file:\t{}\t{}\t{}'.format(
                         *rinex_antenna_offset_HEN
@@ -2081,8 +2055,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
                 )
 
-                if rinex_antenna_offset_HEN[0] != TOS_antenna_offset_HEN[0]:
-                    module_logger.warning(
+                if abs(rinex_antenna_offset_HEN[0] - TOS_antenna_offset_HEN[0]) > 0.0001:
+                    module_logger.info(
                         'Label H  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_antenna_offset_HEN[0],
@@ -2102,8 +2076,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                         )
                     )
 
-                if rinex_antenna_offset_HEN[1] != TOS_antenna_offset_HEN[1]:
-                    module_logger.warning(
+                if abs(rinex_antenna_offset_HEN[1] - TOS_antenna_offset_HEN[1]) > 0.0001:
+                    module_logger.info(
                         'Label E  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_antenna_offset_HEN[1],
@@ -2123,8 +2097,8 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                         )
                     )
 
-                if rinex_antenna_offset_HEN[2] != TOS_antenna_offset_HEN[2]:
-                    module_logger.warning(
+                if abs(rinex_antenna_offset_HEN[2] - TOS_antenna_offset_HEN[2]) > 0.0001:
+                    module_logger.info(
                         'Label N  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                             label,
                             rinex_antenna_offset_HEN[2],
@@ -2172,7 +2146,7 @@ def compare_TOS_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     rinex_xyz_coord[:-1]
                 )
                 module_logger.info(
-                    "difference between ECEF coordinates between Rinex file and TOS database in meters:\t{0:>.4f}\t{1:>.4f}\t{2:>.4f}".format(
+                    "difference in ECEF coordinates between Rinex file and TOS database in meters:\t{0:>.4f}\t{1:>.4f}\t{2:>.4f}".format(
                         *Rinex_TOS_coord_difference
                     )
                 )
@@ -2224,7 +2198,7 @@ def fix_rinex_header(
 ):
     """ """
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.info(
         'keys in "rinex_correction_dict" {}'.format(rinex_correction_dict.keys())
     )
@@ -2294,7 +2268,7 @@ def fix_rinex_line(label, rinex_correction_dict, rinex_dict, loglevel=logging.WA
     """ """
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     rinex_header_line, fortran_format = rinex_labels()
 
     module_logger.debug(
@@ -2339,14 +2313,14 @@ def fix_rinex_line(label, rinex_correction_dict, rinex_dict, loglevel=logging.WA
 def read_gzip_file(rfile, loglevel=logging.WARNING):
     """ """
     # logging
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     try:
         with gzip.open(rfile, "rb") as f:
             file_content = f.read()
             module_logger.info("Opened: {}".format(rfile))
     except FileNotFoundError:
-        module_logger.exception("File {} not found".format(rfile))
+        module_logger.warning("File {} not found".format(rfile))
         return None
     except gzip.BadGzipFile:
         module_logger.error("File {} not a proper qzip file".format(rfile))
@@ -2367,14 +2341,14 @@ def read_zzipped_file(rfile, loglevel=logging.WARNING):
     """
 
     # logging
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     try:
         with open(rfile, "rb") as f:
             zipped_file_content = f.read()
             module_logger.info("Opened: {}".format(rfile))
     except FileNotFoundError:
-        module_logger.exception("File {} not found".format(rfile))
+        module_logger.warning("File {} not found".format(rfile))
         return None
 
     return unlzw(zipped_file_content).decode("utf-8")
@@ -2384,14 +2358,14 @@ def read_text_file(rfile, loglevel=logging.WARNING):
     """ """
 
     # logging
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     try:
         with open(rfile, "r") as f:
             file_content = f.read()
             module_logger.info("Opened: {}".format(rfile))
     except FileNotFoundError:
-        module_logger.exception("File {} not found".format(rfile))
+        module_logger.warning("File {} not found".format(rfile))
         return None
     except gzip.BadGzipFile:
         module_logger.error("File {} not a proper qzip file".format(rfile))
@@ -2404,7 +2378,7 @@ def read_rinex_file(rfile, loglevel=logging.WARNING):
     """ """
 
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
 
     if rfile.suffix == ".Z":
         rfile_content = read_zzipped_file(rfile, loglevel=logging.WARNING)
@@ -2430,27 +2404,27 @@ def read_rinex_header(rfile, loglevel=logging.WARNING):
         dictionary containing the file name and string containing the header section of the rinex file
     """
     # logging settings
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     rheader = None
     rfile = Path(rfile)
     module_logger.info("Path to rinex file: {}".format(rfile.parent))
     module_logger.info("Rinex file: {}".format(rfile.name))
 
-    rfile_content = read_rinex_file(rfile, loglevel=logging.WARNING)
+    rfile_content = read_rinex_file(rfile, loglevel=loglevel)
 
     if rfile_content:
         rheader = re.search(r"^.+(?:\n.+)+END OF HEADER", rfile_content).group()
 
-    if not rheader:
+    if rheader is None:
         module_logger.warning(
-            "Search for END OF HEADER did not return any result from the header of {}".format(
+            "Search for END OF HEADER did not return any result from the header of %s", 
                 rfile
             )
-        )
-        return None
+        return {"rinex file": [rfile.parent, rfile.name], "header": ""}
 
-    module_logger.debug("Rinex header: {}".format(rheader))
+    module_logger.debug("Rinex header: %s", rheader)
 
     return {"rinex file": [rfile.parent, rfile.name], "header": rheader}
 
@@ -2460,9 +2434,7 @@ def change_file_header(rheader, savedir=None):
 
     rfile = Path(*rheader["rinex file"])
     rfile_content = read_rinex_file(rfile, loglevel=logging.WARNING)
-    rfile_new_content = re.sub(
-        r"^.+(?:\n.+)+END OF HEADER", rheader["header"], rfile_content
-    )
+    rfile_new_content = re.sub(r"^.+(?:\n.+)+END OF HEADER", rheader["header"], rfile_content)
 
     if savedir:
         rfile = Path(savedir, rfile.name)
@@ -2473,112 +2445,15 @@ def change_file_header(rheader, savedir=None):
         f.write(bytes(rfile_new_content, "utf-8"))
 
 
-# import json
-# from datetime import datetime
-
-
-def datetime_serializer(obj):
+def test_device_attribute_history(station_identifier: str, loglevel=logging.WARNING):
     """
-    serialize datetime object
+    A funciton to test devie_attribute_history of a station
     """
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError("Type not serializable")
 
-
-def test_gps_metadata(station_identifier, loglevel=logging.WARNING):
-    """"""
-    module_logger = get_logger(name=__name__)
-    module_logger.setLevel(loglevel)
-
-    stationInfo_list = []
-    rheader = []
-
-    for sta in [station_identifier]:  # , "AUST", "VMEY"]:
-
-        station = gps_metadata(sta, url_rest_tos, loglevel=loglevel)
-        module_logger.debug(
-            "station: %s", json.dumps(station, default=datetime_serializer, indent=2)
-        )
-        module_logger.debug(
-            "station_history: %s",
-            json.dumps(
-                station["device_history"], default=datetime_serializer, indent=2
-            ),
-        )
-        # for item in station['device_history']:
-        #     print(f"{item['time_from']} - {item['time_to']}")
-        #
-        # gpsf.printStationHistory(station, raw_format=False, loglevel=logging.WARNING)
-
-        stationInfo_list += gpsf.printStationInfo(station)
-        for infoline in stationInfo_list:
-            print(infoline)
-
-        start = datetime(2002, 3, 29)
-        end = datetime(2022, 4, 23)
-        # session_nr = 0
-        # if station:
-        #     session_list = fileList(
-        #         station, start=None, end=None, loglevel=logging.WARNING
-        #     )
-        #     # for session in session_list:
-        #     #    print(session)
-        #
-        #     if session_list:
-        #         session = session_list[-1]
-                # print(session['session_number'])
-                # print(gpsf.sessionsList(station))
-                # rheader = read_rinex_header(session['filelist'][-1],loglevel=logging.WARNING)
-        # rheader = get_header(read_zzipped_file("./RHOF0870.02D.Z", loglevel=logging.WARNING))
-        # rheader = read_rinex_header("./RHOF0870.02D.Z",loglevel=logging.INFO)
-        # rheader = read_gzip_file("./RHOF0870.02D.gz", loglevel=logging.WARNING)
-        # rheader = read_rinex_header(session["filelist"][-1], loglevel=logging.WARNING)
-
-        # if rheader:
-        #     rinex_dict = extract_from_rheader(rheader, loglevel=logging.WARNING)
-        #
-        #     rinex_correction_dict = compare_TOS_to_rinex(
-        #         rinex_dict,
-        #         gpsf.getSession(station, session["session_number"]),
-        #         loglevel=logging.INFO,
-        #     )
-        # rmqdict(rinex_dict, rinex_correction_dict)
-        # rheader = fix_rinex_header(rinex_correction_dict, rinex_dict, rheader, loglevel=logging.WARNING)
-        # print(rheader['rinex file'])
-        # print(rheader['header'])
-        # change_file_header(rheader,savedir=Path.cwd())
-
-        # rfile_content = read_zzipped_file("./RHOF0870.02D.Z")
-        # pattern = r"^.+(?:\n.+)+END OF HEADER"
-        # mstring = re.compile(pattern)
-        # result = mstring.search(rfile_content)
-        # rfile_new = re.sub(mstring,rheader['header'],rfile_content)
-        # print(rfile_new)
-        # with open("tmp.txt", 'w') as f:
-        #    f.write(rfile_new)
-        # if rfile_new:
-
-        #   #matched_line = result.group()
-        #   print("{}".format(rfile_new))
-
-        # sessions = gpsf.sessionsList(station)
-        # print_attributes_string = "{:<19}  {:<19}  "
-        # for session in sessions:
-        #     print( print_attributes_string.format(*session) )
-
-    # for line in stationInfo_list:
-    #    print(line)
-
-
-def test_device_attribute_history(loglevel=logging.WARNING):
-    """"""
-
-    module_logger = get_logger(name=__name__)
+    module_logger = gpsf.get_logger(name=__name__)
     module_logger.setLevel(loglevel)
 
     domain = "geophysical"
-    station_identifier = "RHOF"
     station = searchStation(
         station_identifier,
         url_rest=url_rest_tos,
@@ -2694,17 +2569,222 @@ def test_device_attribute_history(loglevel=logging.WARNING):
         # device, session_start, session_end
 
 
+def test_gps_metadata(station_identifier: list, loglevel=logging.WARNING):
+    """ 
+    Testing gps metada funciton
+    """
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    rheader = []
+    for sta in station_identifier:  # , "AUST", "VMEY"]:
+        station = gps_metadata(sta, url_rest_tos, loglevel=loglevel)
+        module_logger.debug(
+            "station: %s", json.dumps(station, cls=gpsf.CustomeJSONEncoder, indent=2)
+        )
+        module_logger.debug(
+            "station_history: %s",
+            json.dumps(
+                station["device_history"], cls=gpsf.CustomeJSONEncoder, indent=2
+            ),
+        )
+        for item in station['device_history']:
+            print(f"{item['time_from']} - {item['time_to']}")
+
+        # gpsf.print_station_history(station, raw_format=False, loglevel=logging.WARNING)
+
+        stationInfo_list = []
+        stationInfo_list += gpsf.printStationInfo(station)
+        for infoline in stationInfo_list:
+            print(infoline)
+
+        start = datetime(2002, 3, 29)
+        end = datetime(2022, 4, 23)
+        session_nr = 0
+        # if station:
+        #     session_list = fileList(
+        #         station, start=None, end=None, loglevel=loglevel
+        #     )
+        #     # for session in session_list:
+        #     #    print(session)
+        #
+        #     if session_list:
+        #         session = session_list[-1]
+        #         module_logger.warning(session['session_number'])
+        #         module_logger.warning("%s", gpsf.sessionsList(station))
+        #         rheader = read_rinex_header(session['filelist'][-1],loglevel=loglevel)
+        #         module_logger.debug("rheader: \n%s\n%s", json.dumps(rheader["rinex file"], cls=gpsf.CustomeJSONEncoder, indent=2), rheader['header'])
+        #         # rheader = read_rinex_header("./RHOF0870.02D.Z",loglevel=logging.INFO)
+        #         # rheader = read_gzip_file("./RHOF0870.02D.gz", loglevel=logging.WARNING)
+        #         # rheader = read_rinex_header(session["filelist"][-1], loglevel=logging.WARNING)
+        #
+        #         if rheader['header']:
+        #             rinex_dict = extract_from_rheader(rheader, loglevel=loglevel)
+        #             module_logger.debug("%s\n%s", rinex_dict["rinex file"][1], json.dumps(rinex_dict, cls=gpsf.CustomeJSONEncoder, indent=2))
+        #
+        #             rinex_correction_dict = compare_TOS_to_rinex(
+        #                 rinex_dict,
+        #                 gpsf.getSession(station, session["session_number"]),
+        #                 loglevel=logging.INFO,
+        #             )
+        #             module_logger.warning("\n%s", json.dumps(rinex_correction_dict, cls=gpsf.CustomeJSONEncoder, indent=2))
+        #
+        #             rheader = fix_rinex_header(rinex_correction_dict, rinex_dict, rheader, loglevel=logging.WARNING)
+        #             module_logger.critical("%s\n%s", rheader["rinex file"][1], rheader["header"])
+        #             change_file_header(rheader,savedir=Path.cwd())
+
+        # rfile_content = read_zzipped_file("./RHOF0870.02D.Z")
+        # pattern = r"^.+(?:\n.+)+END OF HEADER"
+        # mstring = re.compile(pattern)
+        # result = mstring.search(rfile_content)
+        # rfile_new = re.sub(mstring,rheader['header'],rfile_content)
+        # print(rfile_new)
+        # with open("tmp.txt", 'w') as f:
+        #    f.write(rfile_new)
+        # if rfile_new:
+
+        #   #matched_line = result.group()
+        #   print("{}".format(rfile_new))
+
+        # sessions = gpsf.sessionsList(station)
+        # print_attributes_string = "{:<19}  {:<19}  "
+        # for session in sessions:
+        #     print( print_attributes_string.format(*session) )
+
+    # for line in stationInfo_list:
+    #    print(line)
+
+def check_station_rinex_headers(station_identifier, start=None, end=None, loglevel=logging.WARNING):
+    """
+    Go through a list of station rinex files and report on inconsistancies
+    """
+
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    station = gps_metadata(station_identifier, url_rest_tos, loglevel=loglevel)
+
+    if not station:
+        module_logger.warning("dictionary for station %s is empty returning", station_identifier)
+        #TODO: remember to return something other then None later
+        return
+
+    module_logger.debug(
+        "station_history: \n%s",
+        json.dumps(station["device_history"], cls=gpsf.CustomeJSONEncoder, indent=2
+        ),
+    )
+
+    session_list = fileList(
+        station, start=start, end=end, loglevel=loglevel
+    )
+    for session in session_list:
+        module_logger.debug(
+            "session: \n%s",
+            json.dumps(session, cls=gpsf.CustomeJSONEncoder, indent=2)
+        )
+
+    rheader = []
+    tos_session_metadata = {}
+    session_nr = tmp_nr = ""
+    rinex_correction_list = []
+    if session_list:
+        for session in session_list:
+            module_logger.debug(
+                "session: \n%s",
+                json.dumps(session, cls=gpsf.CustomeJSONEncoder, indent=2)
+            )
+            session_nr = session['session_number']
+            if session_nr != tmp_nr:
+                module_logger.warning("------ session_number: %s -------", session_nr)
+                tos_session_metadata = gpsf.getSession(station, session_nr)
+                module_logger.debug(
+                        "tos_session_metadata: \n%s", 
+                        json.dumps(tos_session_metadata,
+                        cls=gpsf.CustomeJSONEncoder, indent=2
+                    )
+                )
+
+                tmp_nr = session_nr
+
+            for file in session['filelist']:
+                rheader = read_rinex_header(file,loglevel=loglevel)
+                if rheader != "":
+                    module_logger.debug(
+                        "rheader: \n%s\n%s", 
+                        json.dumps(rheader["rinex file"],
+                        cls=gpsf.CustomeJSONEncoder, indent=2), rheader['header']
+                    )
+                    rinex_dict = extract_from_rheader(rheader, loglevel=loglevel)
+                    module_logger.debug(
+                        "%s\n%s", rinex_dict["rinex file"][1], 
+                        json.dumps(rinex_dict, cls=gpsf.CustomeJSONEncoder, indent=2)
+                    )
+                    rinex_correction_dict = compare_TOS_to_rinex(
+                        rinex_dict,
+                        tos_session_metadata,
+                        loglevel=loglevel,
+                    )
+                    module_logger.debug(
+                        "\n%s", 
+                        json.dumps(rinex_correction_dict, cls=gpsf.CustomeJSONEncoder, indent=2)
+                    )
+                    rinex_correction_list.append(rinex_correction_dict)
+
+                else:
+                    module_logger.warning(
+                        "No header found for \n%s\n%s",
+                        json.dumps(
+                            rheader["rinex file"],
+                            cls=gpsf.CustomeJSONEncoder,
+                            indent=2
+                        ), 
+                        rheader['header']
+                    )
+        
+        module_logger.warning(
+            "\n%s", 
+            json.dumps(rinex_correction_list, cls=gpsf.CustomeJSONEncoder, indent=2)
+        )
+
+    #     session = session_list[-1]
+    #     module_logger.warning(session['session_number'])
+    #     module_logger.warning("%s", gpsf.sessionsList(station))
+    #     rheader = read_rinex_header(session['filelist'][-1],loglevel=loglevel)
+    #     module_logger.debug("rheader: \n%s\n%s", json.dumps(rheader["rinex file"], cls=gpsf.CustomeJSONEncoder, indent=2), rheader['header'])
+    #     # rheader = read_rinex_header("./RHOF0870.02D.Z",loglevel=logging.INFO)
+    #     # rheader = read_gzip_file("./RHOF0870.02D.gz", loglevel=logging.WARNING)
+    #     # rheader = read_rinex_header(session["filelist"][-1], loglevel=logging.WARNING)
+    #
+    #     if rheader['header']:
+    #         rinex_dict = extract_from_rheader(rheader, loglevel=loglevel)
+    #         module_logger.debug("%s\n%s", rinex_dict["rinex file"][1], json.dumps(rinex_dict, cls=gpsf.CustomeJSONEncoder, indent=2))
+    #
+    #         rinex_correction_dict = compare_TOS_to_rinex(
+    #             rinex_dict,
+    #             gpsf.getSession(station, session["session_number"]),
+    #             loglevel=logging.INFO,
+    #         )
+    #         module_logger.warning("\n%s", json.dumps(rinex_correction_dict, cls=gpsf.CustomeJSONEncoder, indent=2))
+    #
+    #         rheader = fix_rinex_header(rinex_correction_dict, rinex_dict, rheader, loglevel=logging.WARNING)
+    #         module_logger.critical("%s\n%s", rheader["rinex file"][1], rheader["header"])
+    #         change_file_header(rheader,savedir=Path.cwd())
+
 def main(level=logging.WARNING):
     """
     quering metadata from tos and comparing to relevant rinex files
     """
     # logging settings
-    logger = get_logger(name=__name__)
+    logger = gpsf.get_logger(name=__name__)
     logger.setLevel(level)
-    # test_device_attribute_history()
-
-    test_gps_metadata("RHOF", loglevel=logging.CRITICAL)
-    # site_log("ISAK",loglevel=logging.CRITICAL)
+    sta_list = ["RHOF"]
+    # test_device_attribute_history("RHOF", loglevel=logging.WARNING)
+    # test_gps_metadata(sta_list, loglevel=logging.WARNING)
+    site_log("HVOL", loglevel=logging.CRITICAL)
+    # start = datetime(2002, 3, 20)
+    # end = datetime(2002, 3, 29)
+    # check_station_rinex_headers("RHOF", start=start, end=end, loglevel=logging.WARNING)
 
     # print(module_logger.getEffectiveLevel())
 

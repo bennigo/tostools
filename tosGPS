@@ -86,11 +86,11 @@ def main():
     for sta in stations:
         station_info = gpsqc.gps_metadata(sta, url, loglevel=log_level.value)
         if pformat == "table":
-            gpsf.printStationHistory(
+            gpsf.print_station_history(
                 station_info, raw_format=raw, loglevel=log_level.value
             )
         elif pformat == "gamit":
-            stationInfo_list += gpsf.printStationInfo(station_info)
+            stationInfo_list += gpsf.print_station_history(station_info)
 
     stationInfo_list.sort()
     for infoline in stationInfo_list:

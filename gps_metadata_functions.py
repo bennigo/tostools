@@ -9,52 +9,23 @@
 
 import json
 import logging
-from datetime import datetime
 from datetime import datetime as dt
-from datetime import timedelta
 from operator import itemgetter
+from pathlib import Path
 
-import pandas as pd
 from tabulate import tabulate
 
 import gps_metadata_qc as gpsqc
 
 
-def get_logger(name=__name__, level=logging.WARNING):
-    """
-    logger to use within the modules
-    """
-
-    # Create log handler
-    logHandler = logging.StreamHandler()
-    # logHandler.setLevel(level)
-
-    # Set handler format
-    logFormat = logging.Formatter("[%(levelname)s] %(funcName)s: %(message)s")
-    logHandler.setFormatter(logFormat)
-
-    # Create logger
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-
-    if logger.hasHandlers():
-        logger.handlers.clear()
-    # Add handler to logger
-    logger.addHandler(logHandler)
-
-    # Stop propagating the log messages to root logger
-    logger.propagate = False
-
-    return logger
-
-
-def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
+def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
     """
     print station history
     """
 
     # logging settings
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     station_headers = [key for key in station.keys() if key != "device_history"]
     station_attributes = tuple(
@@ -73,9 +44,13 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
     device_list = ["gnss_receiver", "antenna", "monument", "radome"]
     print(
         " " * 42
-        + "| {0}                                       | {1}                                     | {2}                         | {3}".format(
-            *device_list
-        )
+        + f"| {device_list[0]}"
+        + " " * 39
+        + f"| {device_list[1]}"
+        + " " * 38
+        + f"| {device_list[2]}"
+        + " " * 18
+        + f"| {device_list[3]}"
     )
 
     headers_list = []
@@ -105,19 +80,20 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
 
         for device in device_list:
             if device in item.keys():
-                device_headers = [key for key in item[device].keys()]
-                device_attributes = [value for key, value in item[device].items()]
+                device_headers = list(key for key in item[device].keys())
+                device_attributes = [value for _, value in item[device].items()]
                 # make the labels nicer
                 if device == "monument":
+                    module_logger.debug("device_headers: %s", device_headers)
                     dev_index = device_headers.index("serial_number")
                     device_headers.remove("serial_number")
                     del device_attributes[dev_index]
 
-                    dev_index = device_headers.index("model")
-                    device_headers.remove("model")
-                    del device_attributes[dev_index]
+                    # dev_index = device_headers.index("model")
+                    # device_headers.remove("model")
+                    # del device_attributes[dev_index]
 
-                if not raw_format:
+                if raw_format is False:
                     if "antenna_height" in device_headers:
                         device_headers[device_headers.index("antenna_height")] = (
                             "Height"
@@ -151,7 +127,7 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
 
                 try:
                     for i, n in enumerate(device_attributes):
-                        if n == None:
+                        if n is None:
                             device_attributes[i] = "None"
                 except:
                     pass
@@ -185,14 +161,14 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
     # print( print_header_string.format(*header_list) )
     # print( print_attributes_string.format(*attributes_list) )
     if raw_format:
+        print("+" * 200)
         for devices, headers, values in zip(
             device_types_list, headers_list, devices_list
         ):
-            print("+" * 240)
             print(tabulate([devices], tablefmt="plain"))
-            print(tabulate([headers]))
-            print(tabulate([values], tablefmt="plain"))
-        print("+" * 240)
+            # print(tabulate([headers]))
+            print(tabulate([values], tablefmt="fancy"))
+        print("+" * 200)
     else:
         # print(print_header_string)
         # print(headers_list)
@@ -200,15 +176,15 @@ def printStationHistory(station, raw_format=False, loglevel=logging.WARNING):
         print("-" * 200)
         # print(attributes_string_list)
         for string, value in zip(attributes_string_list, devices_list):
-            print(string)
-            # print(string.format(*value))
+            # print(string)
+            print(string.format(*value))
 
 
 def getSession(station, session_nr, loglevel=logging.WARNING):
     """ """
 
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     session = {key: value for key, value in station.items() if key != "device_history"}
     module_logger.info("Station information: {}".format(session))
@@ -222,7 +198,7 @@ def printStationInfo(station, loglevel=logging.WARNING):
     """ """
 
     # logging
-    module_logger = get_logger(name=__name__, level=loglevel)
+    module_logger = get_logger(name=__name__)
 
     header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
     # print(header)
@@ -230,7 +206,7 @@ def printStationInfo(station, loglevel=logging.WARNING):
     stationInfo_list = []
     for item in station["device_history"]:
         module_logger.debug(
-            "item: %s", json.dumps(item, default=gpsqc.datetime_serializer, indent=2)
+            "item: %s", json.dumps(item, cls=CustomeJSONEncoder, indent=2)
         )
         try:
             time_from = item["time_from"].strftime("%Y %j %H %M %S")
@@ -392,13 +368,13 @@ def getStationList(subsets={}):
                 sta_dict[attribute["code"]] = attribute["value"]
                 if attribute["code"] == "marker":
                     try:
-                        sta_dict["date_from"] = datetime.strptime(
+                        sta_dict["date_from"] = dt.strptime(
                             attribute["date_from"], "%Y-%m-%dT%H:%M:%S"
                         )
                     except:
                         sta_dict["date_from"] = None
                     try:
-                        sta_dict["date_to"] = datetime.strptime(
+                        sta_dict["date_to"] = dt.strptime(
                             attribute["date_to"], "%Y-%m-%dT%H:%M:%S"
                         )
                     except:
@@ -482,14 +458,59 @@ def count_GPS_stations(station_list):
     print(tabulate(station_count, headers=keylist))
 
 
+# NOTE: extra functions
+def get_logger(name=__name__):
+    """
+    logger to use within the modules
+    """
+
+    # Create log handler
+    logHandler = logging.StreamHandler()
+    # logHandler.setLevel(level)
+
+    # Set handler format
+    logFormat = logging.Formatter("[%(levelname)s] %(funcName)s: %(message)s")
+    logHandler.setFormatter(logFormat)
+
+    # Create logger
+    logger = logging.getLogger(name)
+    # logger.setLevel(level)
+
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    # Add handler to logger
+    logger.addHandler(logHandler)
+
+    # Stop propagating the log messages to root logger
+    logger.propagate = False
+
+    return logger
+
+
 def grep_line_aslist(listf, text):
-    """"""
+    """
+    grep a line from list
+    """
     with open(listf, "r") as f:
         for line in f:
             if text in line:
                 return line.split()
         else:
             return [text, ""]
+
+
+class CustomeJSONEncoder(json.JSONEncoder):
+    """
+    encoder for dealing with posixpath in json.dumps
+    """
+
+    def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, dt):
+            return obj.isoformat()
+        # Let the base class default method raise the TypeError
+        return super().default(obj)
 
 
 def main():
