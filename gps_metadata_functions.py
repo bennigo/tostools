@@ -194,11 +194,14 @@ def getSession(station, session_nr, loglevel=logging.WARNING):
     return session
 
 
-def printStationInfo(station, loglevel=logging.WARNING):
-    """ """
+def print_station_info(station, loglevel=logging.WARNING):
+    """ 
+    print station metadata information
+    """
 
     # logging
     module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
     # print(header)
@@ -206,7 +209,7 @@ def printStationInfo(station, loglevel=logging.WARNING):
     stationInfo_list = []
     for item in station["device_history"]:
         module_logger.debug(
-            "item: %s", json.dumps(item, cls=CustomeJSONEncoder, indent=2)
+            "item: %s", json_print(item)
         )
         try:
             time_from = item["time_from"].strftime("%Y %j %H %M %S")
@@ -238,11 +241,10 @@ def printStationInfo(station, loglevel=logging.WARNING):
                 antenna_SN = item["antenna"]["serial_number"]
 
             # Antenna height and offsets
-            antenna_height = (
-                item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
-            )
-            antenna_N = item["monument"]["monument_offset_north"]
-            antenna_E = item["monument"]["monument_offset_east"]
+            antenna_height = item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
+
+            antenna_N = item["antenna"]["antenna_offset_north"] + item["monument"]["monument_offset_north"]
+            antenna_E = item["antenna"]["antenna_offset_east"] + item["monument"]["monument_offset_east"]
 
             if item["antenna"]["antenna_reference_point"] is None:
                 antenna_reference_point = "-----"
@@ -497,6 +499,13 @@ def grep_line_aslist(listf, text):
                 return line.split()
         else:
             return [text, ""]
+
+
+def json_print(json_struct):
+    """
+    print json nicely
+    """
+    return json.dumps(json_struct, cls=CustomeJSONEncoder, indent=2)
 
 
 class CustomeJSONEncoder(json.JSONEncoder):
