@@ -2372,10 +2372,10 @@ def main(level=logging.WARNING):
     # logging settings
     logger = gpsf.get_logger(name=__name__)
     logger.setLevel(level)
-    sta_list = ["ISAK"] # , "HAUD", "HRIC", "HVEL"]
+    sta_list = ["DYNC"] # , "HAUD", "HRIC", "HVEL"]
     # test_device_attribute_history("RHOF", loglevel=logging.WARNING)
-    test_gps_metadata(sta_list, loglevel=logging.WARNING)
-    # gpsf.site_log("GFUM", loglevel=logging.WARNING)
+    # test_gps_metadata(sta_list, loglevel=logging.WARNING)
+    gpsf.site_log("DYNC", loglevel=logging.WARNING)
     start = datetime(2021, 10, 15)
     end = datetime(2021, 10, 17)
     # _, rheader_correction_list = check_station_rinex_headers("RHOF", start=start, end=None, loglevel=logging.WARNING)

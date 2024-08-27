@@ -466,6 +466,81 @@ def count_GPS_stations(station_list):
     print(tabulate(station_count, headers=keylist))
 
 
+def get_radome(device_iter, date_from, date_to, loglevel=logging.WARNING):
+    """
+    return monument_heigt for given interval
+    """
+
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+    # NOTE: monument_height defaults to 0.0
+    antenna_radome = "NONE"
+    antenna_radome_serial = ""
+
+    for item in device_iter:
+        module_logger.warning("item: \n%s", json_print(item))
+        device = item["device"]
+        session_start = device["date_from"]
+        session_end = device["date_to"]
+        module_logger.warning("date input: %s - %s", date_from, date_to)
+        module_logger.warning("current session: %s - %s", session_start, session_end)
+
+        if session_start <= date_from:
+            if session_end is not None:
+                module_logger.warning("date_to type: %s", type(date_to))
+                if date_to is None:
+                    module_logger.warning("model: %s", device["model"])
+                    antenna_radome = device["model"]
+                else:
+                    if session_end < date_to:
+                        module_logger.warning("model: %s", device["model"])
+                        antenna_radome = device["model"]
+            else:
+                module_logger.warning("model: %s", device["model"])
+                antenna_radome = device["model"]
+
+    return antenna_radome, antenna_radome_serial
+
+
+def get_monument_height(device_iter, date_from, date_to, loglevel=logging.WARNING):
+    """
+    return monument_heigt for given interval
+    """
+
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+    # NOTE: monument_height defaults to 0.0
+    monument_height = 0.0
+
+    for item in device_iter:
+        module_logger.debug("monument_item: \n%s", json_print(item))
+        device = item["device"]
+        session_start = device["date_from"]
+        session_end = device["date_to"]
+        module_logger.debug("%s - %s", session_start, session_end)
+
+        if date_from <= session_start:
+            if session_end is not None:
+                if date_to is None:
+                    module_logger.debug(
+                        "monument_height: %s", device["monument_height"]
+                    )
+                    monument_height = float(device["monument_height"])
+                else:
+                    if session_end < date_to:
+                        module_logger.debug(
+                            "monument_height: %s", float(device["monument_height"])
+                        )
+                        monument_height = float(device["monument_height"])
+            else:
+                module_logger.debug(
+                    "monument_height: %s", float(device["monument_height"])
+                )
+                monument_height = float(device["monument_height"])
+
+    return monument_height
+
+
 def site_log(station_identifier, loglevel=logging.WARNING):
     """"""
 
@@ -483,23 +558,21 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     )
 
     # devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
-    module_logger.setLevel(logging.CRITICAL)
     module_logger.debug("station: %s", json_print(station))
 
     # sessions_start = iter(sorted(session["device"]["date_from"] for session in device_sessions if session["device"]["code_entity_subtype"] == "gnss_receiver"))
-    sessions = list(
-        session
-        for session in device_sessions
-        if session["device"]["code_entity_subtype"] == "gnss_receiver"
-    )
-    sessions.sort(key=lambda x: x["device"]["date_from"])
-    for session in sessions:
-        module_logger.warning(
-            "session: %s\n%s",
-            session["device"]["code_entity_subtype"],
-            json_print(session),
-        )
-    module_logger.setLevel(loglevel)
+    # sessions = list(
+    #     session
+    #     for session in device_sessions
+    #     if session["device"]["code_entity_subtype"] == "gnss_receiver"
+    # )
+    # sessions.sort(key=lambda x: x["device"]["date_from"])
+    # for session in sessions:
+    #     module_logger.debug(
+    #         "session: %s\n%s",
+    #         session["device"]["code_entity_subtype"],
+    #         json_print(session),
+    #     )
 
     # NOTE: 1.   Site Identification of the GNSS Monument
     site_name = station.get("name", "")
@@ -543,9 +616,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
             else:
                 monument_offset_east_fl = float(monument_offset_east)
 
-            module_logger.warning("monument_height_fl: %s", monument_height_fl)
             monument_height = f"{monument_height_fl} m"
-            module_logger.warning("monument_height: %s", monument_height)
             monument_inscription = device.get("inscription", "")
             monument_description = device.get("description", "STEEL MAST")
             foundation = device.get("foundation", "STEEL RODS")
@@ -555,9 +626,9 @@ def site_log(station_identifier, loglevel=logging.WARNING):
 
     marker_description = station.get("marker_description", "")
     station_start_date = station.get("date_start", "")
-    station_start_date = dt.strptime(
-        station_start_date, "%Y-%m-%d %H:%M"
-    ).strftime("%Y-%m-%dT%H:%MZ")
+    station_start_date = dt.strptime(station_start_date, "%Y-%m-%d %H:%M").strftime(
+        "%Y-%m-%dT%H:%MZ"
+    )
     geological_characteristic = station.get("geological_characteristic", "").upper()
     bedrock_type = station.get("bedrock_type", "").upper()
     bedrock_condition = station.get("bedrock_condition", "").upper()
@@ -608,16 +679,16 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         if date_installed is None:
             date_installed = "CCYY-MM-DDThh:mmZ"
         else:
-            date_installed = dt.strptime(
-                date_installed, "%Y-%m-%dT%H:%M:%S"
-            ).strftime("%Y-%m-%dT%H:%MZ")
+            date_installed = dt.strptime(date_installed, "%Y-%m-%dT%H:%M:%S").strftime(
+                "%Y-%m-%dT%H:%MZ"
+            )
         date_removed = device["date_to"]
         if date_removed is None:
             date_removed = "CCYY-MM-DDThh:mmZ"
         else:
-            date_removed = dt.strptime(
-                date_removed, "%Y-%m-%dT%H:%M:%S"
-            ).strftime("%Y-%m-%dT%H:%MZ")
+            date_removed = dt.strptime(date_removed, "%Y-%m-%dT%H:%M:%S").strftime(
+                "%Y-%m-%dT%H:%MZ"
+            )
         temperature_stab = device.get("temperature_stab", "")
         add_information = device.get("add_information", "")
 
@@ -641,12 +712,13 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         if session["device"]["code_entity_subtype"] == "antenna"
     )
     antenna_list.sort(key=lambda x: x["device"]["date_from"])
+    module_logger.debug("antenna_list: \n%s", json_print(antenna_list))
     antenna_info = "\n4.   GNSS Antenna Information\n"
-    module_logger.warning("antenna_list: \n%s", json_print(antenna_list))
     for session_nr, session in enumerate(antenna_list):
 
-        antenna_height = 0.0
+        # antenna_height = 0.0
         device = session["device"]
+        module_logger.debug("device: \n%s", json_print(device))
 
         device_type = device.get("model", "")
         serial_number = device.get("serial_number", "000000")
@@ -664,8 +736,18 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         else:
             antenna_height = float(antenna_height)
 
+        module_logger.debug("antenna_height: %s", antenna_height)
+        monument_iter = (  # go through monent an pick the right monument_height
+            session
+            for session in device_sessions
+            if session["device"]["code_entity_subtype"] == "monument"
+        )
+        monument_height_fl = get_monument_height(
+            monument_iter, device["date_from"], device["date_to"]
+        )
+        module_logger.debug("monument_height_fl: %s", monument_height_fl)
+
         antenna_height = "{0:.4f}".format(antenna_height + monument_height_fl)
-        module_logger.warning("antenna_height: %s", antenna_height)
 
         antenna_offset_north = device["antenna_offset_north"]
         if antenna_offset_north is None:
@@ -695,44 +777,53 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         if date_installed is None:
             date_installed = "CCYY-MM-DDThh:mmZ"
         else:
-            date_installed = dt.strptime(
-                date_installed, "%Y-%m-%dT%H:%M:%S"
-            ).strftime("%Y-%m-%dT%H:%MZ")
+            date_installed = dt.strptime(date_installed, "%Y-%m-%dT%H:%M:%S").strftime(
+                "%Y-%m-%dT%H:%MZ"
+            )
         date_removed = device["date_to"]
         if date_removed is None:
             date_removed = "CCYY-MM-DDThh:mmZ"
         else:
-            date_removed = dt.strptime(
-                date_removed, "%Y-%m-%dT%H:%M:%S"
-            ).strftime("%Y-%m-%dT%H:%MZ")
+            date_removed = dt.strptime(date_removed, "%Y-%m-%dT%H:%M:%S").strftime(
+                "%Y-%m-%dT%H:%MZ"
+            )
 
         add_information = device.get("add_information", "")
 
         # NOTE: checking RADOME
-        radome_list = list(
+        radome_iter = (
             session
             for session in device_sessions
             if session["device"]["code_entity_subtype"] == "radome"
         )
-        radome_list.sort(key=lambda x: x["device"]["date_from"])
-        for radome in radome_list:
-            antenna_radome = "NONE"
-            antenna_radome_serial = ""
-            if device["date_from"] <= radome["time_from"]:
-                if device["date_to"] is not None:
-                    if radome["time_to"] is not None:
-                        if radome["time_to"] <= device["date_to"]:
-                            antenna_radome = radome.get("device", {}).get(
-                                "model", "NONE"
-                            )
-                            antenna_radome_serial = radome.get("device", {}).get(
-                                "radome_serial_number", ""
-                            )
-                else:
-                    antenna_radome = radome.get("device", {}).get("model", "NONE")
-                    antenna_radome_serial = radome.get("device", {}).get(
-                        "radome_serial_number", ""
-                    )
+        # radome_iter.sort(key=lambda x: x["device"]["date_from"])
+        # module_logger.warning("radome_iter: \n%s", json_print(radome_iter))
+        antenna_radome, antenna_radome_serial = get_radome(
+            radome_iter,
+            device["date_from"],
+            device["date_to"],
+            loglevel=logging.WARNING,
+        )
+        # antenna_radome = "NONE"
+        # antenna_radome_serial = ""
+
+        # for radome in radome_list:
+        #
+        #     if device["date_from"] <= radome["time_from"]:
+        #         if device["date_to"] is not None:
+        #             if radome["time_to"] is not None:
+        #                 if radome["time_to"] <= device["date_to"]:
+        #                     antenna_radome = radome.get("device", {}).get(
+        #                         "model", "NONE"
+        #                     )
+        #                     antenna_radome_serial = radome.get("device", {}).get(
+        #                         "radome_serial_number", ""
+        #                     )
+        #         else:
+        #             antenna_radome = radome.get("device", {}).get("model", "NONE")
+        #             antenna_radome_serial = radome.get("device", {}).get(
+        #                 "radome_serial_number", ""
+        #             )
 
         antenna_info += (
             f"\n4.{session_nr+1}  Antenna Type             : {device_type}    {antenna_radome}\n"
@@ -1002,7 +1093,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         f"     Antenna Graphics with Dimensions"
     )
 
-    module_logger.warning("monument_height: %s", monument_height)
+    module_logger.debug("monument_height: %s", monument_height)
     ascii_site_log = (
         f"{marker}ISL00 Site Information Form (site log)\n"
         f"    International GNSS Service\n"
