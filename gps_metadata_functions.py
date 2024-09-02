@@ -9,10 +9,14 @@
 
 import json
 import logging
+import sys
 from datetime import datetime as dt
+from datetime import timedelta
 from operator import itemgetter
-from pathlib import Path
+from pathlib import Path, PurePath
 
+from gtimes import timefunc as tf
+from gtimes.timefunc import datefRinex
 from tabulate import tabulate
 
 import gps_metadata_qc as gpsqc
@@ -366,7 +370,7 @@ def getStationList(subsets={}):
         "operational_class",
         "date_to",
     ]
-    stations = gpsqc.searchStation(
+    stations = gpsqc.search_station(
         "GPS stöð", code="subtype", domains="geophysical", loglevel=logging.WARNING
     )
     for station in stations:
@@ -473,31 +477,36 @@ def get_radome(device_iter, date_from, date_to, loglevel=logging.WARNING):
 
     module_logger = get_logger(name=__name__)
     module_logger.setLevel(loglevel)
-    # NOTE: monument_height defaults to 0.0
+    # NOTE: default radome is NONE
     antenna_radome = "NONE"
     antenna_radome_serial = ""
 
+    print("\n", file=sys.stderr)
     for item in device_iter:
-        module_logger.warning("item: \n%s", json_print(item))
+        module_logger.debug("item: \n%s", json_print(item))
         device = item["device"]
         session_start = device["date_from"]
         session_end = device["date_to"]
+        module_logger.warning("-" * 50)
         module_logger.warning("date input: %s - %s", date_from, date_to)
         module_logger.warning("current session: %s - %s", session_start, session_end)
 
-        if session_start <= date_from:
-            if session_end is not None:
-                module_logger.warning("date_to type: %s", type(date_to))
-                if date_to is None:
-                    module_logger.warning("model: %s", device["model"])
-                    antenna_radome = device["model"]
+        if date_to:
+            if date_to > session_start:
+                if session_end and date_from > session_end:
+                    pass
                 else:
-                    if session_end < date_to:
-                        module_logger.warning("model: %s", device["model"])
-                        antenna_radome = device["model"]
+                    antenna_radome = device["model"]
+                    module_logger.warning("model: %s", antenna_radome)
+        else:
+            if session_end and session_end < date_from:
+                pass
             else:
-                module_logger.warning("model: %s", device["model"])
-                antenna_radome = device["model"]
+                if date_from >= session_start:
+                    antenna_radome = device["model"]
+                    module_logger.warning("model: %s", antenna_radome)
+
+    module_logger.warning("%s", "+" * 50)
 
     return antenna_radome, antenna_radome_serial
 
@@ -512,31 +521,37 @@ def get_monument_height(device_iter, date_from, date_to, loglevel=logging.WARNIN
     # NOTE: monument_height defaults to 0.0
     monument_height = 0.0
 
+    print("", file=sys.stderr)
     for item in device_iter:
         module_logger.debug("monument_item: \n%s", json_print(item))
         device = item["device"]
         session_start = device["date_from"]
         session_end = device["date_to"]
-        module_logger.debug("%s - %s", session_start, session_end)
+        module_logger.debug("date_to: %s ", date_to)
+        module_logger.warning("-" * 50)
+        module_logger.warning("date input: %s - %s", date_from, date_to)
+        module_logger.warning("current session: %s - %s", session_start, session_end)
 
-        if date_from <= session_start:
-            if session_end is not None:
-                if date_to is None:
-                    module_logger.debug(
+        if date_to:
+            if date_to > session_start:
+                if session_end and date_from > session_end:
+                    pass
+                else:
+                    monument_height = float(device["monument_height"])
+                    module_logger.warning(
                         "monument_height: %s", device["monument_height"]
                     )
-                    monument_height = float(device["monument_height"])
-                else:
-                    if session_end < date_to:
-                        module_logger.debug(
-                            "monument_height: %s", float(device["monument_height"])
-                        )
-                        monument_height = float(device["monument_height"])
+        else:
+            if session_end and session_end < date_from:
+                pass
             else:
-                module_logger.debug(
-                    "monument_height: %s", float(device["monument_height"])
-                )
-                monument_height = float(device["monument_height"])
+                if date_from >= session_start:
+                    monument_height = float(device["monument_height"])
+                    module_logger.warning(
+                        "monument_height: %s", device["monument_height"]
+                    )
+
+    module_logger.warning("%s", "+" * 50)
 
     return monument_height
 
@@ -745,7 +760,7 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         monument_height_fl = get_monument_height(
             monument_iter, device["date_from"], device["date_to"]
         )
-        module_logger.debug("monument_height_fl: %s", monument_height_fl)
+        module_logger.warning("monument_height_fl: %s", monument_height_fl)
 
         antenna_height = "{0:.4f}".format(antenna_height + monument_height_fl)
 
@@ -796,34 +811,15 @@ def site_log(station_identifier, loglevel=logging.WARNING):
             for session in device_sessions
             if session["device"]["code_entity_subtype"] == "radome"
         )
-        # radome_iter.sort(key=lambda x: x["device"]["date_from"])
-        # module_logger.warning("radome_iter: \n%s", json_print(radome_iter))
+
         antenna_radome, antenna_radome_serial = get_radome(
             radome_iter,
             device["date_from"],
             device["date_to"],
             loglevel=logging.WARNING,
         )
-        # antenna_radome = "NONE"
-        # antenna_radome_serial = ""
-
-        # for radome in radome_list:
-        #
-        #     if device["date_from"] <= radome["time_from"]:
-        #         if device["date_to"] is not None:
-        #             if radome["time_to"] is not None:
-        #                 if radome["time_to"] <= device["date_to"]:
-        #                     antenna_radome = radome.get("device", {}).get(
-        #                         "model", "NONE"
-        #                     )
-        #                     antenna_radome_serial = radome.get("device", {}).get(
-        #                         "radome_serial_number", ""
-        #                     )
-        #         else:
-        #             antenna_radome = radome.get("device", {}).get("model", "NONE")
-        #             antenna_radome_serial = radome.get("device", {}).get(
-        #                 "radome_serial_number", ""
-        #             )
+        module_logger.warning("antenna_radome: %s", antenna_radome)
+        module_logger.warning("antenna_radome_serial: %s", antenna_radome_serial)
 
         antenna_info += (
             f"\n4.{session_nr+1}  Antenna Type             : {device_type}    {antenna_radome}\n"
@@ -1147,6 +1143,131 @@ def site_log(station_identifier, loglevel=logging.WARNING):
     )
 
     print(ascii_site_log)
+
+
+def file_list(
+    station,
+    pdir,
+    start=None,
+    end=None,
+    freqd="15s_24hr",
+    rawdir="rinex",
+    fform="#Rin2",
+    DZend="D.Z",
+    loglevel=logging.WARNING,
+):
+    """
+    Returns a list of potential station RINEX files from a given station dictionary as returned by gps_metadata()
+    grouped according to station sessions.
+    input:
+        station:
+    """
+
+    # logging settings
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    filesList = []
+    stat = station["marker"].upper()
+    formatString = (
+        pdir
+        + "/%Y/#b/"
+        + stat
+        + "/"
+        + freqd
+        + "/"
+        + rawdir
+        + "/"
+        + stat
+        + fform
+        + DZend
+    )
+
+    module_logger.info("Initial period: {}\t{}\n".format(start, end) + "*" * 50)
+
+    for item in station["device_history"]:
+        module_logger.info(
+            "Session period: {}\t{}".format(item["time_from"], item["time_to"])
+        )
+
+        flist = []
+        session_flag = True
+        if item["time_to"] is None:
+            time_to = tf.currDatetime(days=-1)
+        else:
+            time_to = item["time_to"]
+
+        if item["time_from"] is not None:
+            time_from = item["time_from"]
+
+        if start is not None:
+            if time_to < start:
+                session_flag = False
+
+            if time_from <= start:
+                time_from = start
+
+        if end is not None:
+            if end < time_from:
+                session_flag = False
+
+            if end < time_to:
+                time_to = end
+
+        module_logger.info("Current period: {}\t{}".format(time_from, time_to))
+        session_nr = station["device_history"].index(item)
+        module_logger.info("Index number: {}".format(session_nr))
+
+        if session_flag:
+            flist = tf.datepathlist(
+                formatString, "1D", time_from, time_to, closed="left"
+            )
+            # Add one day to compensate for edge effect of open 'right' boundaries used in datepathlist
+            # But not if last day is to day i.e end is
+            endfile = PurePath(flist[-1]).name
+            endfile_date = datefRinex([endfile])[0]
+            if (
+                time_to - endfile_date == timedelta(1)
+                and time_to != item["time_to"]
+                and end is not None
+            ):
+                module_logger.debug("{}".format(time_to - endfile_date))
+                flist.append(
+                    tf.datepathlist(formatString, "1D", end, end, closed="left")[0]
+                )
+
+            filesList.append(
+                {
+                    "marker": stat,
+                    "session_number": session_nr,
+                    "time_from": item["time_from"],
+                    "time_to": item["time_to"],
+                    "filelist": flist,
+                }
+            )
+
+    if module_logger.getEffectiveLevel() <= 10 and filesList:
+        for flist in filesList:
+            module_logger.debug(
+                "Station: {}, Session number: {}".format(
+                    flist["marker"], flist["session_number"]
+                )
+            )
+            module_logger.debug("{}\t{}".format(flist["time_from"], flist["time_to"]))
+
+            if flist["filelist"]:
+                module_logger.debug(flist["filelist"][0])
+                module_logger.debug(flist["filelist"][-1])
+            else:
+                module_logger.debug(flist["filelist"])
+    else:
+        module_logger.debug(
+            "filesList empty, logging level: {}\tfilesList: {}".format(
+                module_logger.getEffectiveLevel(), filesList
+            )
+        )
+
+    return filesList
 
 
 # NOTE: extra functions
