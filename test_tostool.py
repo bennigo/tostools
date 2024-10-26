@@ -153,7 +153,7 @@ def test_gps_metadata(station_identifier: list, loglevel=logging.WARNING):
     rheader = []
     for sta in station_identifier:  # , "AUST", "VMEY"]:
         station = gpsqc.gps_metadata(sta, gpsqc.URL_REST_TOS, loglevel=loglevel)
-        module_logger.warning("station: %s", gpsf.json_print(station))
+        module_logger.info("station: %s", gpsf.json_print(station))
         module_logger.debug(
             "station_history: %s",
             gpsf.json_print(station["device_history"]),
@@ -294,23 +294,24 @@ def main(level=logging.WARNING):
     logger = gpsf.get_logger(name=__name__)
     logger.setLevel(level)
 
-    sta_list = ["RHOF"]  # , "HAUD", "HRIC", "HVEL"]
-    # test_device_attribute_history("RHOF", loglevel=logging.WARNING)
-    # test_gps_metadata(sta_list, loglevel=logging.WARNING)
-    # gpsf.site_log("RHOF", loglevel=logging.WARNING)
+    # sta_list = ["AKUR", "ISAF", "ALHV", "BJTV", "BLON", "FIHO", "GJFV", "GUSK", "HEID", "LAVI", "SKHA", "RHOL", "VOFJ", "MYVA"]  # , "HAUD", "HRIC", "HVEL"]
+    sta_list = ["LISF"]
+    # test_device_attri(bute_history("RHOF", loglevel=logging.WARNING)
+    test_gps_metadata(sta_list, loglevel=logging.WARNING)
+    # gpsf.site_log("AKUR", loglevel=logging.WARNING)
     start = datetime(2023, 6, 9)
     end = datetime(2023, 6, 10)
-    _, rheader_correction_list = gpsr.check_station_rinex_headers(
-        "RHOF", save_file=False, start=start, end=end, loglevel=logging.WARNING
-    )
+    # _, rheader_correction_list = gpsr.check_station_rinex_headers(
+    #     "RHOF", save_file=False, start=start, end=end, loglevel=logging.WARNING
+    # )
     # print(gpsf.json_print(rinex_correction_list))
-    gpsr.change_rinex_files(
-        rheader_correction_list,
-        dir_structure="test",
-        local_file_path=Path.cwd(),
-        loglevel=logging.WARNING,
-    )
-
+    # gpsr.change_rinex_files(
+    #     rheader_correction_list,
+    #     dir_structure="test",
+    #     local_file_path=Path.cwd(),
+    #     loglevel=logging.WARNING,
+    # )
+    #
     # test_change_rfile_header()
 
 

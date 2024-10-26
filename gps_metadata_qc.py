@@ -118,8 +118,10 @@ def search_station(
 
             # Query TOS api
             try:
+                url = url_rest + "/entity/search/" + entity_type + "/" + domain + "/"
+                module_logger.warning("sending the post request: %s", url)
                 response = requests.post(
-                    url_rest + "/entity/search/" + entity_type + "/" + domain + "/",
+                    url,
                     data=json.dumps(body),
                     headers={"Content-Type": "application/json"},
                     timeout=REQUEST_TIMEOUT,
@@ -373,8 +375,11 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     return connections
 
 
-def additional_contact_fields(contact_name):
-    """"""
+def additional_contact_fields(contact_name, loglevel=logging.WARNING):
+
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
     contact_add = {}
 
     if contact_name == "Veðurstofa Íslands":
@@ -386,6 +391,24 @@ def additional_contact_fields(contact_name):
         contact_add["address_en"] = "Bústaðarvegur 7-9, 105 Reykjavík, Iceland"
         contact_add["main_url"] = "https://vedur.is"
         contact_add["main_url_en"] = "https://en.vedur.is"
+    # elif contact_name == "Landmælingar Íslands":
+    #     contact_add["abbreviation"] = ""
+    #     contact_add["name_en"] = ""
+    #     contact_add["email"] = ""
+    #     contact_add["primary_contact"] = ""
+    #     contact_add["department"] = ""
+    #     contact_add["address_en"] = ""
+    #     contact_add["main_url"] = ""
+    #     contact_add["main_url_en"] = ""
+    else:
+        contact_add["abbreviation"] = ""
+        contact_add["name_en"] = ""
+        contact_add["email"] = ""
+        contact_add["primary_contact"] = ""
+        contact_add["department"] = ""
+        contact_add["address_en"] = ""
+        contact_add["main_url"] = ""
+        contact_add["main_url_en"] = ""
 
     return contact_add
 
@@ -409,8 +432,9 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     owners = owner_response.json()
     module_logger.debug("Owners %s", gpsf.json_print(owners))
     for owner in owners:
-        if owner["name"] == "Veðurstofa Íslands":
-            owner_addition = additional_contact_fields(owner["name"])
+        # if owner["name"] == "Veðurstofa Íslands":
+        owner_addition = additional_contact_fields(owner["name"])
+        module_logger.debug("Owner_addtion %s", gpsf.json_print(owner_addition))
 
         contact[owner["role"]] = {
             "id_entity": owner["id_contact"],
@@ -910,7 +934,7 @@ def read_zzipped_file(rfile, loglevel=logging.WARNING):
 
 
 def read_text_file(rfile, loglevel=logging.WARNING):
-    """ 
+    """
     read file and return the contend
     """
 
