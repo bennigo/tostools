@@ -119,7 +119,7 @@ def search_station(
             # Query TOS api
             try:
                 url = url_rest + "/entity/search/" + entity_type + "/" + domain + "/"
-                module_logger.warning("sending the post request: %s", url)
+                module_logger.info("sending the post request: %s", url)
                 response = requests.post(
                     url,
                     data=json.dumps(body),
