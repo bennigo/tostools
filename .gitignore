@@ -1,11 +1,45 @@
+# Project specific
 config.cfg
-*~
-*.tmp
-__pycache__
-*.Z
 master_inventory.xml
 owner.zip
+get_children_parent_4235.txt
+
+# Temporary data and logs  
+tmp/
+*.log
+*.json
+*.D
+*.D.Z
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# General
+*~
+*.tmp
 *.bak
 *.gz
-tmp.*
-get_children_parent_4235.txt
+*.Z
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS  
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
