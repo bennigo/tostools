@@ -16,39 +16,43 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Dict, List, Optional, Any, Tuple, Union
 
 import fortranformat as ff
 import numpy as np
 from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 
-# Import legacy modules (transitioning)
 from . import gps_metadata_functions as gpsf
 from . import gps_metadata_qc as gpsqc
 
-# Import new modular RINEX components
-from .utils.logging import get_logger
-from .rinex.reader import (
-    get_rinex_labels, 
-    read_rinex_file as modular_read_rinex_file,
-    read_rinex_header as modular_read_rinex_header,
-    extract_header_info
-)
-from .rinex.editor import (
-    fix_rinex_header as modular_fix_rinex_header,
-    fix_rinex_line as modular_fix_rinex_line,
-    update_rinex_files
-)
-from .rinex.validator import (
-    compare_rinex_to_tos as modular_compare_rinex_to_tos,
-    validate_rinex_time_range
-)
-
 
 def rinex_labels():
-    """Legacy wrapper for modular RINEX label function."""
-    return get_rinex_labels()
+    """ """
+
+    searchlist = [
+        "MARKER NAME",
+        "MARKER NUMBER",
+        "OBSERVER / AGENCY",
+        "REC # / TYPE / VERS",
+        "ANT # / TYPE",
+        "APPROX POSITION XYZ",
+        "ANTENNA: DELTA H/E/N",
+        "INTERVAL",
+        "TIME OF FIRST OBS",
+    ]
+    fortran_format_list = [
+        "A60,A20",
+        "A20,A40,A20",
+        "A20,A40,A20",
+        "A20,A20,A20,A20",
+        "A20,A20,A20,A20",
+        "3F14.4,A18,A20",
+        "3F14.4,A18,A20",
+        "F10.3,A50,A20",
+        "5I6,F13.7,5X,A3,A9,A20",
+    ]
+
+    return searchlist, fortran_format_list
 
 
 def extract_from_rheader(rheader, loglevel=logging.WARNING):
@@ -1092,16 +1096,72 @@ def check_station_rinex_headers(
 
 
 def read_rinex_file(rfile, loglevel=logging.WARNING):
-    """Legacy wrapper for modular RINEX file reader."""
-    content_bytes = modular_read_rinex_file(rfile, loglevel)
-    if content_bytes:
-        return content_bytes.decode('utf-8')
-    return None
+    """ """
+
+    # logging settings
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    if rfile.suffix == ".Z":
+        rfile_content = gpsqc.read_zzipped_file(rfile, loglevel=logging.WARNING)
+    elif rfile.suffix == ".gz":
+        rfile_content = gpsqc.read_gzip_file(rfile, loglevel=logging.WARNING)
+    else:
+        module_logger.warning(
+            "Unknown compression format %s on file %s", rfile.suffix, rfile
+        )
+        rfile_content = gpsqc.read_text_file(rfile, loglevel=logging.WARNING)
+
+    return rfile_content
 
 
 def read_rinex_header(rfile, loglevel=logging.WARNING):
-    """Legacy wrapper for modular RINEX header reader."""
-    return modular_read_rinex_header(rfile, loglevel)
+    """
+    reads a RINEX file from path rfile and returns the base file name, path  and the header of the rinex file.
+
+    input:
+        rfile: a filename of a rinex file
+        loglevel: loglevel to use within the module
+    output:
+        dictionary containing the file name and string containing the header section of the rinex file
+    """
+
+    # logging settings
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    # rheader = None
+    match = None
+    rfile = Path(rfile)
+    rheader = ""
+    module_logger.info("Path to rinex file: %s", rfile.parent)
+    module_logger.info("Rinex file: %s", rfile.name)
+
+    try:
+        rfile_content = read_rinex_file(rfile, loglevel=loglevel)
+    except RuntimeError as e:
+        rfile_content = None
+        module_logger.error(e)
+        traceback.print_exc()
+
+    if rfile_content:
+        # rheader = re.search(r"^.+(?:\n.+)+END OF HEADER", rfile_content).group()
+        pattern = re.compile(
+            r"(?m)^.*?(?=END OF HEADER)", flags=re.DOTALL | re.MULTILINE
+        )
+        match = pattern.search(rfile_content)
+
+    if match is None:
+        module_logger.warning(
+            "Search for END OF HEADER did not return any result from the header of %s",
+            rfile,
+        )
+        return {"rinex file": [rfile.parent, rfile.name], "header": ""}
+
+    rheader = match.group()
+    module_logger.debug("Rinex header:\n%s", rheader)
+
+    return {"rinex file": [rfile.parent, rfile.name], "header": rheader}
 
 
 def main(level=logging.INFO):

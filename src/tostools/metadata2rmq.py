@@ -10,7 +10,7 @@
 import logging
 import json
 
-import gps_metadata_functions as gpsf
+from . import gps_metadata_functions as gpsf
 
 url_rest_tos = "https://vi-api.vedur.is:11223/tos/v1"
 

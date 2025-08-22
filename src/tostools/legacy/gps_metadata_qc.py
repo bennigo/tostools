@@ -16,21 +16,13 @@ import sys
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path, PurePath
-from typing import Dict, List, Optional, Any
 
 import fortranformat as ff
 import requests
 from pyproj import CRS, Transformer
 from unlzw3 import unlzw
 
-# Import legacy functions (transitioning)
 from . import gps_metadata_functions as gpsf
-
-# Import new modular components
-from .api.tos_client import TOSClient, search_station as tos_search_station
-from .io.file_utils import read_gzip_file as new_read_gzip_file, read_zzipped_file as new_read_zzipped_file, read_text_file as new_read_text_file
-from .utils.logging import get_logger
-from .core.device import process_device_sessions, get_device_attribute_history
 
 # TODO: Move formatstring from file_list to a config file
 # FREQD="15s_24hr"
@@ -57,9 +49,6 @@ REMOTE_FILE_PATH = "/mnt_data/rawgpsdata"
 LOCAL_FILE_PATH = "/tmp/gpsdata"
 REQUEST_TIMEOUT = 10
 
-# Initialize modular TOS client
-tos_client = TOSClient(base_url=URL_REST_TOS, timeout=REQUEST_TIMEOUT)
-
 # defining coordinate systems
 itrf2008 = CRS("EPSG:5332")
 wgs84 = CRS("EPSG:4326")
@@ -80,7 +69,8 @@ def search_station(
     """
 
     # logging settings
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     if domains is None:
         domains = [
@@ -208,7 +198,7 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     sort out history within device
     """
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
     tmp_connections = []
     connections = []
 
@@ -391,7 +381,8 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
 
 
 def additional_contact_fields(contact_name, loglevel=logging.WARNING):
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     contact_add = {}
 
@@ -431,7 +422,8 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
     get station contacts
     """
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     contact = {}
     imo_id = 1256
@@ -528,7 +520,8 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     """
 
     # logging settings
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     station, devices_history = get_station_metadata(
         station_identifier, url_rest, loglevel=loglevel
@@ -568,7 +561,8 @@ def gps_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
 def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     domain = "geophysical"
     try:
@@ -645,7 +639,8 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
     """"""
 
     # logging settings
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     sessions_start = iter(
         sorted({session["device"]["date_from"] for session in device_sessions})
@@ -726,7 +721,7 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
 def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
 
     domain = "geophysical"
     device_sessions = []
@@ -812,7 +807,8 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
 def device_structure(device, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     module_logger.debug("device_session: %s", device["code_entity_subtype"])
 
@@ -895,18 +891,27 @@ def device_structure(device, loglevel=logging.WARNING):
 
 
 def read_gzip_file(rfile, loglevel=logging.WARNING):
-    """Legacy wrapper for the new modular file reader."""
-    # Use the new modular file reader  
-    content_bytes = new_read_gzip_file(rfile, loglevel)
-    if content_bytes:
-        return content_bytes.decode('utf-8')
-    return None
+    """ """
+    # logging
+    module_logger = gpsf.get_logger(name=__name__)
+
+    try:
+        with gzip.open(rfile, "rb") as f:
+            file_content = f.read()
+            module_logger.info("Opened: {}".format(rfile))
+    except FileNotFoundError:
+        module_logger.warning("File {} not found".format(rfile))
+        return None
+    except gzip.BadGzipFile:
+        module_logger.error("File {} not a proper qzip file".format(rfile))
+        return None
+
+    return file_content.decode.decode("utf-8")
 
 
 def read_zzipped_file(rfile, loglevel=logging.WARNING):
     """
-    Legacy wrapper for the new modular Z file reader.
-    reads a RINEX file from path rfile and returns the unzipped content.
+    reads a RINEX file from path rfile and returns the base file name, path  and the header of the rinex file.
 
     input:
         rfile: a filename of a rinex file
@@ -914,20 +919,44 @@ def read_zzipped_file(rfile, loglevel=logging.WARNING):
     output:
         unzipped file contend
     """
-    # Use the new modular file reader
-    content_bytes = new_read_zzipped_file(rfile, loglevel)
-    if content_bytes:
-        return content_bytes.decode('utf-8')
-    return None
+
+    # logging
+    module_logger = gpsf.get_logger(name=__name__)
+
+    try:
+        with open(rfile, "rb") as f:
+            zipped_file_content = f.read()
+            module_logger.info("Opened: {}".format(rfile))
+    except FileNotFoundError:
+        module_logger.warning("File {} not found".format(rfile))
+        return None
+
+    unzipped_file_content = unlzw(zipped_file_content).decode("utf-8")
+
+    return unzipped_file_content
 
 
 def read_text_file(rfile, loglevel=logging.WARNING):
     """
-    Legacy wrapper for the new modular text file reader.
-    read file and return the content
+    read file and return the contend
     """
-    # Use the new modular file reader
-    return new_read_text_file(rfile, loglevel)
+
+    # logging
+    module_logger = gpsf.get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
+
+    try:
+        with open(rfile, "r", encoding="utf-8") as f:
+            file_content = f.read()
+            module_logger.info("Opened: %s", rfile)
+    except FileNotFoundError:
+        module_logger.warning("File %s not found", rfile)
+        return None
+    except gzip.BadGzipFile:
+        module_logger.error("File %s not a proper qzip file", rfile)
+        return None
+
+    return file_content
 
 
 def main(level=logging.WARNING):
@@ -935,7 +964,8 @@ def main(level=logging.WARNING):
     quering metadata from tos and comparing to relevant rinex files
     """
     # logging settings
-    logger = get_logger(__name__, level)
+    logger = gpsf.get_logger(name=__name__)
+    logger.setLevel(level)
 
     logger.info("quering metadata from tos and comparing to relevant rinex files")
 

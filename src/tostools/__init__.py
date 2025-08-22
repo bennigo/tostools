@@ -22,12 +22,12 @@ from .gps_metadata_functions import print_station_history
 from .gps_metadata_qc import gps_metadata
 from .gps_rinex import *
 
-# Legacy TOS functions (from Tryggvi's TOSTools)
-from .tos import searchStation, searchDevice
+# Legacy TOS functions (from Tryggvi's TOSTools) - temporarily disabled
+# from .tos import searchStation, searchDevice
 
 __all__ = [
     "print_station_history",
     "gps_metadata", 
-    "searchStation",
-    "searchDevice",
+    # "searchStation",
+    # "searchDevice",
 ]

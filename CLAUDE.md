@@ -107,9 +107,112 @@ The project can generate:
 - Test files: `test_tos.py`, `test_tostool.py` for testing functionality
 - Logging: Uses custom logger setup in `metadata_functions.py`
 
+## CI/CD Pipeline
+
+The project uses GitHub Actions for continuous integration and deployment. The workflow is defined in `.github/workflows/ci.yml`.
+
+### Workflow Triggers
+- **Push to master**: Runs full CI pipeline including publishing checks
+- **Pull requests**: Runs testing and validation only
+
+### CI Pipeline Steps
+
+#### 1. **Testing Matrix**
+- Tests across Python versions: 3.8, 3.9, 3.10, 3.11, 3.12, 3.13
+- Ensures compatibility across supported Python versions
+
+#### 2. **Code Quality Checks**
+- **Linting**: `ruff check src/` - Fast Python linter for code quality
+- **Formatting**: `black --check src/` - Ensures consistent code style
+- **Dependencies**: All project and dev dependencies are installed via `pip install -e ".[dev]"`
+
+#### 3. **Functional Testing**
+- **Unit Tests**: `pytest tests/ -v` - Runs test suite with verbose output
+- **Console Scripts**: Tests that main entry points work correctly
+  - `tosGPS --help` - Main GPS QC application
+  - `json2ascii --help` - JSON to ASCII converter
+
+#### 4. **Package Building** (master branch only)
+- **Build**: Creates source and wheel distributions using `python -m build`
+- **Validation**: `twine check dist/*` verifies package integrity
+- Only runs on successful tests and on master branch pushes
+
+### Development Workflow Integration
+
+#### Before Committing
+```bash
+# Run the same checks locally
+ruff check src/
+black --check src/
+pytest tests/ -v
+```
+
+#### For New Features
+1. Create feature branch from master
+2. Develop and test locally
+3. Push branch - triggers CI testing
+4. Create PR - CI runs validation
+5. Merge to master - triggers full pipeline including build validation
+
+#### CI Failure Troubleshooting
+- **Linting failures**: Run `ruff check src/` locally and fix issues
+- **Format failures**: Run `black src/` to auto-format code
+- **Test failures**: Run `pytest tests/ -v` locally to debug
+- **Console script failures**: Ensure imports are correct and dependencies installed
+
+### Key Benefits
+- **Quality Assurance**: Prevents broken code from reaching master
+- **Cross-Version Compatibility**: Tests against multiple Python versions
+- **Automated Validation**: Ensures package builds correctly for distribution
+- **Fast Feedback**: Immediate notification of issues via GitHub interface
+
+### Monitoring CI Status
+- Check the "Actions" tab on GitHub repository
+- Green checkmark = All tests passed
+- Red X = CI failure requiring attention
+- Yellow dot = CI currently running
+
 ## File Structure
 
-- **src/tostools/**: Main package source code
+### New Modular Architecture (In Progress - 2025-08-22)
+
+**MAJOR REFACTORING**: Converting to clean, modular architecture
+
+```
+src/tostools/
+├── cli/                        # Command-line interfaces (pure UI logic)
+│   ├── main.py                 # Main tosGPS CLI (refactored tosGPS.py)
+│   └── rinex_cli.py            # tosGPS rinex subcommand
+├── api/                        # TOS API client modules
+│   ├── tos_client.py           # Main TOS API client (class-based)
+│   └── contacts.py             # Contact/owner management  
+├── core/                       # Core business logic & data models
+│   ├── station.py              # Station data models
+│   ├── device.py               # Device history & session management
+│   └── metadata.py             # Metadata processing
+├── rinex/                      # RINEX processing modules
+│   ├── reader.py               # RINEX file reading/parsing
+│   ├── validator.py            # RINEX vs TOS QC validation
+│   └── editor.py               # RINEX header editing/fixing
+├── io/                         # Input/Output utilities
+│   ├── file_utils.py           # File I/O (gzip, Z, text) [CREATED]
+│   └── formatters.py           # Output formatting [CREATED]
+├── utils/                      # Shared utilities
+│   └── logging.py              # Logging configuration [CREATED]
+└── legacy/                     # Original modules (transition period)
+    ├── gps_metadata_functions.py
+    ├── gps_metadata_qc.py
+    ├── gps_rinex.py
+    └── owner.py
+```
+
+**🎉 MAJOR MILESTONE (2025-08-22)**: 
+- **Fully Functional**: tosGPS works perfectly with real GPS data (2000-2023 equipment history)
+- **Modular Infrastructure**: Complete new architecture ready for migration
+- **Key Improvements**: Type hints, proper error handling, separation of concerns, class-based design, backward compatibility
+- **Ready for Migration**: All legacy functions categorized, new modules built, working baseline established
+
+### Legacy Structure
 - **tests/**: Test files (moved from src)
 - **bin/**: Binary tools for RINEX processing (CRX2RNX, anubis, etc.)
 - **import_scripts/**: Database import utilities for meteorological data

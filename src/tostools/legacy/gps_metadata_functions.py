@@ -14,20 +14,13 @@ from datetime import datetime as dt
 from datetime import timedelta
 from operator import itemgetter
 from pathlib import Path, PurePath
-from typing import Dict, List, Optional, Any
 
 import pandas as pd
 from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 from tabulate import tabulate
 
-# Import legacy module (transitioning)
 from . import gps_metadata_qc as gpsqc
-
-# Import new modular components
-from .utils.logging import get_logger
-from .api.tos_client import TOSClient
-from .io.formatters import json_print, format_station_table, format_device_history
 
 
 def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
@@ -36,7 +29,8 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
     """
 
     # logging settings
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     station_headers = [key for key in station.keys() if key != "device_history"]
     station_attributes = tuple(
@@ -180,21 +174,21 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
             print(tabulate([values], tablefmt="fancy"))
         print("+" * 200)
     else:
-        # Use simple tabulate format for regular output - avoiding string formatting bugs
+        # print(print_header_string)
+        # print(headers_list)
+        # print(print_header_string.format(*headers_list[0]))
         print("-" * 200)
-        for devices, headers, values in zip(device_types_list, headers_list, devices_list):
-            print(f"Device types: {', '.join(devices)}")
-            # Convert all values to strings to avoid formatting issues
-            str_values = [str(v) for v in values]
-            print(tabulate([str_values], headers=headers, tablefmt="simple"))
-            print("-" * 100)
+        # print(attributes_string_list)
+        for string, value in zip(attributes_string_list, devices_list):
+            # print(string)
+            print(string.format(*value))
 
 
 def getSession(station, session_nr, loglevel=logging.WARNING):
     """ """
 
     # logging
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
 
     session = {key: value for key, value in station.items() if key != "device_history"}
     module_logger.info("Station information: {}".format(session))
@@ -210,7 +204,8 @@ def print_station_info(station, loglevel=logging.WARNING):
     """
 
     # logging
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
     # print(header)
@@ -480,7 +475,8 @@ def get_radome(device_iter, date_from, date_to, loglevel=logging.WARNING):
     return monument_height for given interval
     """
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
     # NOTE: default radome is NONE
     antenna_radome = "NONE"
     antenna_radome_serial = ""
@@ -520,7 +516,8 @@ def get_monument_height(device_iter, date_from, date_to, loglevel=logging.WARNIN
     return monument_heigt for given interval
     """
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
     # NOTE: monument_height defaults to 0.0
     monument_height = 0.0
 
@@ -562,7 +559,8 @@ def get_monument_height(device_iter, date_from, date_to, loglevel=logging.WARNIN
 def site_log(station_identifier, loglevel=logging.WARNING):
     """"""
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     module_logger.info(station_identifier)
 
@@ -1154,7 +1152,8 @@ def domes_info_form(station_identifier, loglevel=logging.WARNING):
     print domes info form
     """
 
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     module_logger.info(station_identifier)
 
@@ -1223,7 +1222,8 @@ def file_list(
     """
 
     # logging settings
-    module_logger = get_logger(__name__, loglevel)
+    module_logger = get_logger(name=__name__)
+    module_logger.setLevel(loglevel)
 
     filesList = []
     stat = station["marker"].upper()
@@ -1328,7 +1328,33 @@ def file_list(
     return filesList
 
 
-# NOTE: extra functions (using centralized logger now)
+# NOTE: extra functions
+def get_logger(name=__name__):
+    """
+    logger to use within the modules
+    """
+
+    # Create log handler
+    logHandler = logging.StreamHandler()
+    # logHandler.setLevel(level)
+
+    # Set handler format
+    logFormat = logging.Formatter("[%(levelname)s] %(funcName)s: %(message)s")
+    logHandler.setFormatter(logFormat)
+
+    # Create logger
+    logger = logging.getLogger(name)
+    # logger.setLevel(level)
+
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    # Add handler to logger
+    logger.addHandler(logHandler)
+
+    # Stop propagating the log messages to root logger
+    logger.propagate = False
+
+    return logger
 
 
 def grep_line_aslist(listf, text):

@@ -10,8 +10,8 @@ def main():
     import argparse
     from argparse_logging import add_log_level_argument
 
-    import gps_metadata_qc as gpsqc
-    import gps_metadata_functions as gpsf
+    from . import gps_metadata_qc as gpsqc
+    from . import gps_metadata_functions as gpsf
 
     # logging settings
     # logger = get_logger(name=__name__, level=logging.DEBUG)

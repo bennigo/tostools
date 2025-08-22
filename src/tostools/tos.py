@@ -42,7 +42,7 @@ import xml.etree.ElementTree as ET
 from tabulate import tabulate
 import copy
 
-from xmltools import compareSC3
+from .xmltools import compareSC3
 
 
 url_rest_tos='https://vi-api.vedur.is:11223/tos/v1'

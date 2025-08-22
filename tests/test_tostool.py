@@ -15,9 +15,9 @@ import requests
 from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 
-import gps_metadata_functions as gpsf
-import gps_metadata_qc as gpsqc
-import gps_rinex as gpsr
+import tostools.gps_metadata_functions as gpsf
+import tostools.gps_metadata_qc as gpsqc
+import tostools.gps_rinex as gpsr
 
 
 def test_device_attribute_history(station_identifier: str, loglevel=logging.WARNING):
