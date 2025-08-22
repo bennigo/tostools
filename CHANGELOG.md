@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2025-08-22
+## [0.1.0] - 2025-08-22
 
 ### Added
 - **Major Project Restructure**: Converted to proper Python package structure
@@ -49,10 +49,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented package structure and console scripts
 - Clear distinction between GPS tools (primary) vs TOS tools (legacy)
 
+### Infrastructure
+- **Git Setup**: Added dual remote configuration
+  - `origin`: `git@git.vedur.is:bgo/tostools.git` (institutional, preserved)  
+  - `github`: `git@github.com:bennigo/tostools.git` (personal, active)
+- **GitHub CLI**: Installed `gh` via conda-forge for repository management
+- **Repository Created**: https://github.com/bennigo/tostools (public)
+- **First Release**: Commit `bfe132e` pushed successfully to GitHub
+
 ## Git Repository Info
-- Origin: `git@git.vedur.is:bgo/tostools.git`  
-- Branches: master, feature/poetry, hildur
-- Working on: master branch
+- **Active Remote**: `github` → https://github.com/bennigo/tostools
+- **Institutional**: `origin` → git.vedur.is (preserved, untouched)
+- **Branches**: master (currently tracking github/master)
+- **Status**: All restructuring work committed and pushed
+
+## [Unreleased]
+### Next Steps
+- Test package installation: `pip install -e .`
+- Validate console scripts work correctly  
+- Run tests to ensure functionality preserved
+- Consider CI/CD setup for automated testing
 
 ## Notes for Future Sessions
 - **Primary Application**: `tosGPS <stations>` - GPS metadata QC tool
