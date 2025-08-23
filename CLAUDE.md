@@ -83,6 +83,14 @@ src/tostools/
 ├── gps_metadata_functions.py  # GPS station metadata processing (Benedikt)
 ├── gps_metadata_qc.py         # GPS quality control functions (Benedikt)
 ├── gps_rinex.py               # RINEX file processing utilities (Benedikt)
+
+**⚠️ CRITICAL: RINEX Format Requirements**
+- RINEX files use **strict FORTRAN77 column formatting**
+- **Spaces vs tabs matter** - must use exact spacing, not tabs
+- **Column alignment is critical** - each field has specific character positions
+- **Extra spaces can break parsing** - FORTRAN77 readers are very strict
+- When editing RINEX headers, preserve exact column positions and spacing
+
 ├── metadata_functions.py      # Generic metadata utilities (Benedikt)  
 ├── metadata2rmq.py            # Metadata to RMQ processor (Benedikt)
 ├── json2ascii.py              # JSON to ASCII converter
@@ -225,12 +233,15 @@ src/tostools/
 - **Key Improvements**: Type hints, proper error handling, separation of concerns, class-based design, backward compatibility
 - **Ready for Migration**: All legacy functions categorized, new modules built, working baseline established
 
-**2025-08-23**: Production-Ready Logging System
+**2025-08-23**: Production-Ready Logging System & Manual QC Optimization
 - **🚀 CLEAN OUTPUT BY DEFAULT**: All commands (PrintTOS, rinex, sitelog) produce completely clean output
 - **Enterprise Logging**: Comprehensive file logging with level separation and structured JSON output  
 - **Manual QC Optimized**: Silent operation by default, verbose output available on demand
 - **Unix Standards Compliant**: stdout for data, stderr for status messages, proper exit codes
-- **✅ FINAL**: Eliminated ALL legacy logger bypasses - production ready for GPS metadata validation
+- **✅ FINAL LOGGING**: Eliminated ALL legacy logger bypasses - no more verbose debug pollution
+- **🌐 ENGLISH CONTACT ROLES**: PrintTOS now displays "Owner"/"Operator" instead of Icelandic text
+- **📊 COMPREHENSIVE TESTING**: All three main commands fully tested with real GPS station data
+- **🔧 RINEX COMPLIANCE**: FORTRAN77 formatting requirements documented and enforced
 
 ### Legacy Structure
 - **tests/**: Test files (moved from src)

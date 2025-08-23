@@ -54,6 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - sitelog, PrintTOS, and rinex commands are production-ready
   - Fixed `get_logger()` function to respect centralized configuration
 
+- **Contact Role Enhancement**
+  - Fixed PrintTOS to display English contact roles ("Owner", "Operator") instead of Icelandic
+  - Enhanced contact building logic to include both `role` (English) and `role_is` (Icelandic)
+  - Improved fallback contact handling with complete IMO information
+  - API naming convention clarified: `role` = English, `role_is` = Icelandic
+
+- **RINEX Format Compliance**
+  - Added critical FORTRAN77 formatting documentation to prevent parsing issues
+  - Strict column positioning requirements documented for RINEX headers
+  - Space vs tab handling properly documented for GPS metadata validation
+
 - **Manual QC Workflow Optimization**
   - Default ERROR-level console logging for clean manual operations
   - Eliminated thousands of debug messages cluttering output
@@ -72,6 +83,27 @@ tosGPS rinex RHOF data/*.rnx 2>/dev/null
 tosGPS --log-level INFO PrintTOS RHOF
 tosGPS --debug-all --log-dir logs sitelog RHOF
 ```
+
+#### ✅ **Manual QC Testing Completed**
+
+**All three main commands comprehensively tested with real GPS station data:**
+
+- **PrintTOS**: English contact roles, clean tabular output, proper station metadata display
+- **RINEX**: Validation, correction, backup functionality with FORTRAN77 format compliance  
+- **Sitelog**: Pipeline-friendly stdout output, IGS-standard site log generation
+
+**Real-world validation with RHOF station (Iceland GPS site):**
+- 20+ year equipment history correctly displayed (2001-2023)
+- TOS API integration working perfectly with vi-api.vedur.is
+- RINEX file processing with compression support (.D.gz files)
+- Complete contact management with English/Icelandic dual language support
+
+**Production readiness achieved:**
+- ✅ Clean output by default for automation
+- ✅ Comprehensive verbose mode available when needed  
+- ✅ File logging with structured JSON support
+- ✅ Unix standards compliance (stdout/stderr separation)
+- ✅ FORTRAN77 formatting compliance for RINEX files
 
 ### Breaking Changes
 
