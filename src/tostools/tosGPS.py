@@ -33,9 +33,17 @@ def _configure_logging(args):
     # Determine console log level
     console_level = args.log_level.value if hasattr(args.log_level, 'value') else args.log_level
     
-    # Override for debug-all
-    if args.debug_all:
+    # Smart console level: debug-all enables DEBUG for files but keeps console cleaner
+    if args.debug_all and args.log_dir:
+        # When file logging is available, keep console at INFO level for readability
+        # but enable DEBUG for files
+        file_level = logging.DEBUG
+    elif args.debug_all:
+        # No file logging, so show DEBUG on console
         console_level = logging.DEBUG
+        file_level = logging.DEBUG
+    else:
+        file_level = logging.DEBUG if not args.production_logging else logging.INFO
     
     if args.log_dir:
         # File logging enabled
@@ -50,10 +58,10 @@ def _configure_logging(args):
                 separate_levels=True,
             ), force_reconfigure=True)
         else:
-            # Development logging
+            # Development logging - keep console clean but files comprehensive
             configure_logging(LoggingConfig(
-                console_level=console_level,
-                file_level=logging.DEBUG,
+                console_level=console_level,  # Respect user's level choice
+                file_level=file_level,        # Use DEBUG for files when --debug-all
                 log_dir=args.log_dir,
                 console_format=args.log_format,
                 file_format="human",

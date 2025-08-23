@@ -192,6 +192,15 @@ def configure_logging(config: Optional[LoggingConfig] = None, force_reconfigure:
                     "level": logging.DEBUG,
                     "propagate": True,
                 },
+                # Suppress verbose third-party library logging on console
+                "urllib3.connectionpool": {
+                    "level": logging.WARNING,
+                    "propagate": True,
+                },
+                "requests.packages.urllib3": {
+                    "level": logging.WARNING,
+                    "propagate": True,
+                },
             },
         }
         
@@ -260,7 +269,7 @@ def configure_logging(config: Optional[LoggingConfig] = None, force_reconfigure:
                     ("debug", logging.DEBUG),
                 ]:
                     log_config["filters"][f"level_filter_{level_name}"] = {
-                        "()": "tostools.utils.logging.LevelFilter",
+                        "()": LevelFilter,
                         "level": level_num,
                     }
             
@@ -270,10 +279,6 @@ def configure_logging(config: Optional[LoggingConfig] = None, force_reconfigure:
         # Apply configuration
         logging.config.dictConfig(log_config)
         _logging_initialized = True
-        
-        # Set the flag to allow reconfiguration on subsequent calls
-        if force_reconfigure:
-            _logging_initialized = False
 
 
 class LevelFilter:

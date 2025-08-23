@@ -42,7 +42,12 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
         for key, value in station.items()
         if key not in ["contact", "device_history"]
     )
-    module_logger.info("Station: {}".format(station))
+    # Log concise station summary instead of full dictionary
+    station_name = station.get('name', station.get('marker', 'unknown'))
+    coords = f"({station.get('lat', 'N/A')}, {station.get('lon', 'N/A')})"
+    device_count = len(station.get('device_history', []))
+    module_logger.debug(f"Processing station: {station_name} at {coords} with {device_count} device sessions")
+    module_logger.debug("Full station data: {}".format(station))
     print(tabulate([station_attributes], headers=station_headers))
     contact_info = [
         (station["contact"][item]["role_is"], station["contact"][item]["name"])
