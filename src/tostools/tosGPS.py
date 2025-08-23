@@ -33,11 +33,20 @@ def _configure_logging(args):
     # Determine console log level
     console_level = args.log_level.value if hasattr(args.log_level, 'value') else args.log_level
     
+    # For manual QC workflow: default to minimal console logging
+    # unless explicitly requested by user
+    if hasattr(args, 'subcommand') and args.subcommand in ['PrintTOS', 'rinex', 'sitelog']:
+        # Manual QC commands: Keep console clean by default
+        if console_level == logging.INFO and not args.debug_all:
+            console_level = logging.WARNING  # Only show warnings/errors for clean output
+    
     # Smart console level: debug-all enables DEBUG for files but keeps console cleaner
     if args.debug_all and args.log_dir:
         # When file logging is available, keep console at INFO level for readability
         # but enable DEBUG for files
         file_level = logging.DEBUG
+        if console_level == logging.WARNING:  # From manual QC logic above
+            console_level = logging.INFO  # Show some progress info when debug-all is requested
     elif args.debug_all:
         # No file logging, so show DEBUG on console
         console_level = logging.DEBUG
@@ -232,7 +241,7 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
     """Handle RINEX validation and correction subcommand."""
     from pathlib import Path
 
-    print(f"RINEX QC for stations: {', '.join(stations)}")
+    print(f"RINEX QC for stations: {', '.join(stations)}", file=sys.stderr)
 
     # Initialize TOS client
     tos_client = TOSClient(base_url=url, loglevel=log_level.value)
@@ -240,41 +249,41 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
     all_comparisons = []
 
     for station in stations:
-        print(f"\n=== Processing station {station} ===")
+        print(f"\n=== Processing station {station} ===", file=sys.stderr)
 
         # Get station metadata using legacy system (more reliable for validation)
         try:
             station_data = gpsqc.gps_metadata(station, url, loglevel=log_level.value)
             if not station_data:
-                print(f"Error: Could not retrieve metadata for station {station}")
+                print(f"Error: Could not retrieve metadata for station {station}", file=sys.stderr)
                 continue
 
             # Extract device sessions for validation (use most recent)
             device_sessions = station_data.get('device_history', [])
             if not device_sessions:
-                print(f"Warning: No device history found for station {station}")
+                print(f"Warning: No device history found for station {station}", file=sys.stderr)
                 continue
 
             # Use the most recent session for validation
             current_session = device_sessions[-1]
 
         except Exception as e:
-            print(f"Error retrieving station data: {e}")
+            print(f"Error retrieving station data: {e}", file=sys.stderr)
             continue
 
         # Validate each RINEX file
         for rinex_file in args.rinex_files:
             rinex_path = Path(rinex_file)
             if not rinex_path.exists():
-                print(f"Warning: RINEX file {rinex_file} not found")
+                print(f"Warning: RINEX file {rinex_file} not found", file=sys.stderr)
                 continue
 
-            print(f"\nValidating RINEX file: {rinex_file}")
+            print(f"\nValidating RINEX file: {rinex_file}", file=sys.stderr)
 
             # Read RINEX header
             header_data = read_rinex_header(rinex_path, log_level.value)
             if not header_data:
-                print(f"Error reading RINEX header from {rinex_file}")
+                print(f"Error reading RINEX header from {rinex_file}", file=sys.stderr)
                 continue
 
             # Extract header information
@@ -290,15 +299,15 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
 
             # Report discrepancies
             if comparison.get("discrepancies"):
-                print(f"Found {len(comparison['discrepancies'])} discrepancies:")
+                print(f"Found {len(comparison['discrepancies'])} discrepancies:", file=sys.stderr)
                 for field, diff in comparison['discrepancies'].items():
-                    print(f"  {field}: RINEX='{diff.get('rinex', '')}' vs TOS='{diff.get('tos', '')}'")
+                    print(f"  {field}: RINEX='{diff.get('rinex', '')}' vs TOS='{diff.get('tos', '')}'", file=sys.stderr)
             else:
                 print("✓ No discrepancies found")
 
             # Apply fixes if requested
             if args.fix and comparison.get("corrections"):
-                print(f"Applying {len(comparison['corrections'])} corrections...")
+                print(f"Applying {len(comparison['corrections'])} corrections...", file=sys.stderr)
                 success = update_rinex_files(
                     [rinex_path],
                     [comparison['corrections']],
@@ -306,9 +315,9 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
                     loglevel=log_level.value
                 )
                 if success.get(str(rinex_path)):
-                    print("✓ Corrections applied successfully")
+                    print("✓ Corrections applied successfully", file=sys.stderr)
                 else:
-                    print("✗ Failed to apply corrections")
+                    print("✗ Failed to apply corrections", file=sys.stderr)
 
     # Generate report if requested
     if args.report and all_comparisons:
@@ -323,9 +332,9 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
         try:
             with open(args.report, 'w') as f:
                 f.write(report_content)
-            print(f"\n✓ QC report saved to {args.report}")
+            print(f"\n✓ QC report saved to {args.report}", file=sys.stderr)
         except Exception as e:
-            print(f"Error writing report: {e}")
+            print(f"Error writing report: {e}", file=sys.stderr)
 
 
 def _handle_sitelog_subcommand(args, stations, url, log_level):
@@ -334,13 +343,14 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
     tos_client = TOSClient(base_url=url, loglevel=log_level.value)
 
     for station in stations:
-        print(f"Generating site log for station {station}")
+        # Send status messages to stderr to keep stdout clean for data
+        print(f"Generating site log for station {station}", file=sys.stderr)
 
         try:
             # Get complete station metadata with proper device sessions (like legacy system)
             complete_station_data = tos_client.get_complete_station_metadata(station)
             if not complete_station_data:
-                print(f"Error: Could not retrieve metadata for station {station}")
+                print(f"Error: Could not retrieve metadata for station {station}", file=sys.stderr)
                 continue
 
             # Extract device sessions from complete metadata
@@ -362,12 +372,13 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
             try:
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(site_log_content)
-                print(f"✓ Site log saved to {output_file}")
+                # Send success message to stderr to keep stdout clean
+                print(f"✓ Site log saved to {output_file}", file=sys.stderr)
             except Exception as e:
-                print(f"Error writing site log: {e}")
+                print(f"Error writing site log: {e}", file=sys.stderr)
 
         except Exception as e:
-            print(f"Error generating site log for {station}: {e}")
+            print(f"Error generating site log for {station}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
