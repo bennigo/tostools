@@ -1,6 +1,9 @@
 #!python
 
 import argparse
+import logging
+import sys
+from pathlib import Path
 
 from argparse_logging import add_log_level_argument
 
@@ -14,14 +17,58 @@ from .rinex.editor import update_rinex_files
 from .rinex.reader import extract_header_info, read_rinex_header
 from .rinex.validator import compare_rinex_to_tos
 
+# Import new logging system
+from .utils.logging import (
+    setup_development_logging, 
+    setup_production_logging, 
+    setup_console_logging,
+    get_logger,
+    LoggingConfig,
+    configure_logging
+)
+
+
+def _configure_logging(args):
+    """Configure the logging system based on command line arguments."""
+    # Determine console log level
+    console_level = args.log_level.value if hasattr(args.log_level, 'value') else args.log_level
+    
+    # Override for debug-all
+    if args.debug_all:
+        console_level = logging.DEBUG
+    
+    if args.log_dir:
+        # File logging enabled
+        if args.production_logging:
+            configure_logging(LoggingConfig(
+                console_level=console_level,
+                file_level=logging.INFO,
+                log_dir=args.log_dir,
+                console_format=args.log_format,
+                file_format="json",
+                structured_file=True,
+                separate_levels=True,
+            ), force_reconfigure=True)
+        else:
+            # Development logging
+            configure_logging(LoggingConfig(
+                console_level=console_level,
+                file_level=logging.DEBUG,
+                log_dir=args.log_dir,
+                console_format=args.log_format,
+                file_format="human",
+                structured_file=True,
+                separate_levels=True,
+            ), force_reconfigure=True)
+    else:
+        # Console only logging
+        setup_console_logging(console_level)
+
 
 def main():
     """
     quering metadata from tos and comparing to relevant rinex files
     """
-
-    # logging settings
-    # logger = get_logger(name=__name__, level=logging.DEBUG)
 
     url_rest_tos = "vi-api.vedur.is/tos/v1"
     stationInfo_list = []
@@ -37,6 +84,24 @@ def main():
     )
 
     add_log_level_argument(parser)
+
+    # Logging options
+    logging_options = parser.add_argument_group(title="Logging options")
+    logging_options.add_argument(
+        "--log-dir", type=str, help="Directory for log files (enables file logging)"
+    )
+    logging_options.add_argument(
+        "--log-format", choices=["human", "json"], default="human",
+        help="Log format (human-readable or structured JSON)"
+    )
+    logging_options.add_argument(
+        "--production-logging", action="store_true",
+        help="Use production logging configuration (less verbose)"
+    )
+    logging_options.add_argument(
+        "--debug-all", action="store_true",
+        help="Enable debug logging for all modules"
+    )
 
     # server options
     server_options = parser.add_argument_group(title="Server options")
@@ -102,9 +167,23 @@ def main():
 
     args = parser.parse_args()
     stations = getattr(args, 'stations', [])
+    
+    # Configure logging system
+    _configure_logging(args)
+    
+    # Get main logger
+    logger = get_logger(__name__)
+    
     # Constructing the URL:
     url = "{}://{}:{}{}".format(args.protocol, args.server, args.port, args.rest)
     log_level = args.log_level
+    
+    logger.info("tosGPS started", extra={
+        "subcommand": args.subcommand,
+        "stations": stations,
+        "server_url": url,
+        "log_level": log_level.name if hasattr(log_level, 'name') else str(log_level)
+    })
 
     # Handle different subcommands
     if args.subcommand == "rinex":
