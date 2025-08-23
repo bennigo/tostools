@@ -16,7 +16,6 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Dict, List, Optional, Any, Tuple, Union
 
 import fortranformat as ff
 import numpy as np
@@ -26,24 +25,11 @@ from gtimes.timefunc import datefRinex
 # Import legacy modules (transitioning)
 from . import gps_metadata_functions as gpsf
 from . import gps_metadata_qc as gpsqc
+from .rinex.reader import get_rinex_labels
+from .rinex.reader import read_rinex_file as modular_read_rinex_file
+from .rinex.reader import read_rinex_header as modular_read_rinex_header
 
 # Import new modular RINEX components
-from .utils.logging import get_logger
-from .rinex.reader import (
-    get_rinex_labels, 
-    read_rinex_file as modular_read_rinex_file,
-    read_rinex_header as modular_read_rinex_header,
-    extract_header_info
-)
-from .rinex.editor import (
-    fix_rinex_header as modular_fix_rinex_header,
-    fix_rinex_line as modular_fix_rinex_line,
-    update_rinex_files
-)
-from .rinex.validator import (
-    compare_rinex_to_tos as modular_compare_rinex_to_tos,
-    validate_rinex_time_range
-)
 
 
 def rinex_labels():
@@ -163,535 +149,511 @@ def compare_tos_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
         module_logger.info('Checking "{}"'.format(label))
         searchlist.remove(label)
 
-        match label:
-            case "rinex file":
-                # This should always match
-                # Any mismach here will return a string with the rinex  file name This reprecents reprecents
-                # some serious issues which might be due to code bug or serious issue with file structure
-                rinex_file_fullpath = Path(*rinex_dict[label])
+        if label == "rinex file":
+            # This should always match
+            # Any mismach here will return a string with the rinex  file name This reprecents reprecents
+            # some serious issues which might be due to code bug or serious issue with file structure
+            rinex_file_fullpath = Path(*rinex_dict[label])
 
-                module_logger.info("Rinex path: {}".format(rinex_file_fullpath))
-                if rinex_file_fullpath.is_file():
-                    module_logger.info(
-                        "Rinex file: {} exists".format(rinex_file_fullpath)
+            module_logger.info("Rinex path: {}".format(rinex_file_fullpath))
+            if rinex_file_fullpath.is_file():
+                module_logger.info("Rinex file: {} exists".format(rinex_file_fullpath))
+                rinex_correction_dict[label] = rinex_dict[label]
+            else:
+                module_logger.error(
+                    "Rinex file {} does not appear to exist. This should not happen".format(
+                        rinex_file_fullpath
                     )
-                    rinex_correction_dict[label] = rinex_dict[label]
-                else:
-                    module_logger.error(
-                        "Rinex file {} does not appear to exist. This should not happen".format(
-                            rinex_file_fullpath
-                        )
-                    )
-                    rinex_correction_dict[label] = [
-                        rinex_file_fullpath.as_posix(),
-                        None,
-                    ]
-
-                    return rinex_correction_dict
-
-                rinex_file = rinex_dict[label][1]
-                module_logger.info("Rinex file: {}".format(rinex_file))
-                tos_marker = session["marker"].upper()
-                TOS_session_period = [
-                    session["device_history"]["time_from"],
-                    session["device_history"]["time_to"],
+                )
+                rinex_correction_dict[label] = [
+                    rinex_file_fullpath.as_posix(),
+                    None,
                 ]
-                module_logger.info(
-                    "session period: {} - {}".format(*TOS_session_period)
-                )
 
-                marker = rinex_file[:4]
-                date_from_rinex_fname = datefRinex([rinex_file])[0]
+                return rinex_correction_dict
 
-                # date_from_rinex_file =
-                try:
-                    time_of_first_obs = rinex_dict["TIME OF FIRST OBS"][0]
-                except KeyError as e:
-                    module_logger.error(
-                        'key "{}" not in dictionary "rinex_dict"'.format(e)
-                    )
-                    rinex_correction_dict["TIME OF FIRST OBS"] = [None]
+            rinex_file = rinex_dict[label][1]
+            module_logger.info("Rinex file: {}".format(rinex_file))
+            tos_marker = session["marker"].upper()
+            TOS_session_period = [
+                session["device_history"]["time_from"],
+                session["device_history"]["time_to"],
+            ]
+            module_logger.info("session period: {} - {}".format(*TOS_session_period))
 
-                    return rinex_correction_dict
+            marker = rinex_file[:4]
+            date_from_rinex_fname = datefRinex([rinex_file])[0]
 
-                module_logger.debug('{0} "{1}"'.format(label, rinex_file))
-                if (
-                    marker == tos_marker
-                    and date_from_rinex_fname.date() == time_of_first_obs.date()
-                ):
-                    module_logger.debug(
-                        '{0} "{1}" has matching name prefix with database marker "{2}" and the doy-year in {1} matches the date of first observation {3}'.format(
-                            label, rinex_file, tos_marker, time_of_first_obs
-                        )
-                    )
+            # date_from_rinex_file =
+            try:
+                time_of_first_obs = rinex_dict["TIME OF FIRST OBS"][0]
+            except KeyError as e:
+                module_logger.error('key "{}" not in dictionary "rinex_dict"'.format(e))
+                rinex_correction_dict["TIME OF FIRST OBS"] = [None]
 
-                    if TOS_session_period[1] is not None:
-                        if (
-                            TOS_session_period[0]
-                            <= date_from_rinex_fname
-                            <= TOS_session_period[1]
-                        ):
-                            module_logger.debug(
-                                'Time of file "{0}" falls within period "{2} <= {1} < {3}'.format(
-                                    rinex_file,
-                                    date_from_rinex_fname,
-                                    *TOS_session_period,
-                                )
-                            )
-                        else:
-                            module_logger.error(
-                                'Time of file "{0}": {1}. DOES NOT fall within period "{2} - {3}". This should not happen'.format(
-                                    rinex_file,
-                                    date_from_rinex_fname,
-                                    *TOS_session_period,
-                                )
-                            )
+                return rinex_correction_dict
 
-                            rinex_correction_dict["session period"] = TOS_session_period
-
-                            return rinex_correction_dict
-
-                    else:
-                        TOS_session_period[1] = tf.currDatetime(days=-1)
-                        if (
-                            TOS_session_period[0]
-                            <= date_from_rinex_fname
-                            <= TOS_session_period[1]
-                        ):
-                            module_logger.debug(
-                                'Time of file "{0}" falls within period "{2} <= {1} < {3}'.format(
-                                    rinex_file,
-                                    date_from_rinex_fname,
-                                    *TOS_session_period,
-                                )
-                            )
-                        else:
-                            module_logger.error(
-                                'Time of file "{0}": {1}. DOES NOT fall within period "{2} - {3}". This should not happen'.format(
-                                    rinex_file,
-                                    date_from_rinex_fname,
-                                    *TOS_session_period,
-                                )
-                            )
-
-                            rinex_correction_dict["session period"] = TOS_session_period
-
-                            return rinex_correction_dict
-
-                else:
-                    if marker != tos_marker:
-                        module_logger.error(
-                            'Mismach with {0} "{1}" and matching name prefix in database marker "{2}" '.format(
-                                label, rinex_file, tos_marker
-                            )
-                        )
-                        rinex_correction_dict["TOS marker"] = [tos_marker]
-
-                    if date_from_rinex_fname.date() != time_of_first_obs.date():
-                        module_logger.error(
-                            "Mismach with the doy-year in {0} and the date of first observation {1}".format(
-                                rinex_file, time_of_first_obs
-                            )
-                        )
-                        rinex_correction_dict["TIME OF FIRST OBS"] = [time_of_first_obs]
-
-                    module_logger.debug(
-                        "Returning dictionary {}".format(rinex_correction_dict)
-                    )
-                    return rinex_correction_dict
-
-            case "MARKER NAME":
-                rinex_marker = rinex_dict[label][0]
-                module_logger.info(
-                    '"Marker name" in Rinex file: {}'.format(rinex_marker)
-                )
-                tos_marker = session["marker"].upper()
-                if rinex_marker == tos_marker:
-                    module_logger.debug(
-                        'Label "{0}" is "{1}" in file "{2}", matches database marker "{3}"'.format(
-                            label, rinex_marker, rinex_dict["rinex file"], tos_marker
-                        )
-                    )
-                else:
-                    module_logger.info(
-                        'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label, rinex_marker, rinex_dict["rinex file"], tos_marker
-                        )
-                    )
-                    rinex_correction_dict[label] = [tos_marker]
-
-            case "MARKER NUMBER":
-                rinex_number = rinex_dict[label][0]
-                module_logger.info(
-                    '"Marker number" in Rinex file: {}'.format(rinex_number)
-                )
-                if "iers_domes_number" in session.keys():
-                    TOS_number = session["iers_domes_number"]
-                else:
-                    TOS_number = session["marker"].upper()
-
-                if rinex_number == TOS_number:
-                    module_logger.debug(
-                        'Label "{0}" is "{1}" in file "{2}", matches database marker "{3}"'.format(
-                            label, rinex_number, rinex_dict["rinex file"], TOS_number
-                        )
-                    )
-                else:
-                    module_logger.info(
-                        'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label, rinex_number, rinex_dict["rinex file"], TOS_number
-                        )
-                    )
-                    rinex_correction_dict[label] = [TOS_number, ""]
-
-            case "OBSERVER / AGENCY":
-                rinex_observer_agency = rinex_dict[label]
-                module_logger.info(
-                    '"OBSERVER / AGENCY" in Rinex file:\t{}\t{}'.format(
-                        *rinex_observer_agency
-                    )
-                )
-                contact_correction_list = [None, None]
-
-                TOS_operator = session["contact"]["operator"]["name"]
-                module_logger.info('"operator "agency":\t{}'.format(TOS_operator))
-
-                # HACK: This part needs to be moved to tos
-                if TOS_operator == "Veðurstofa Íslands":
-                    TOS_observer_agency = ["BGO/HMF", "Vedurstofa Islands"]
-                if TOS_operator == "Landmælingar Íslands":
-                    TOS_observer_agency = ["LMI", "Landmaelingar Islands"]
-
-                if rinex_observer_agency[0] != TOS_observer_agency[0]:
-                    module_logger.info(
-                        'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_observer_agency[0],
-                            rinex_dict["rinex file"],
-                            TOS_observer_agency[0],
-                        )
-                    )
-                    contact_correction_list[0] = TOS_observer_agency[0]
-                    rinex_correction_dict[label] = contact_correction_list
-
-                if rinex_observer_agency[1] != TOS_observer_agency[1]:
-                    module_logger.info(
-                        'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_observer_agency[1],
-                            rinex_dict["rinex file"],
-                            TOS_observer_agency[1],
-                        )
-                    )
-                    contact_correction_list[1] = TOS_observer_agency[1]
-                    rinex_correction_dict[label] = contact_correction_list
-
-            case "REC # / TYPE / VERS":
-                rinex_receiver = rinex_dict[label]
-                receiver_correction_list = [None, None, None]
-                module_logger.info(
-                    '"REC # / TYPE / VERS" in Rinex file: {} / {} / {} '.format(
-                        *rinex_receiver
-                    )
-                )
-                TOS_receiver_attributes = session["device_history"]["gnss_receiver"]
-                module_logger.debug("{}".format(TOS_receiver_attributes))
-                TOS_receiver_serial = TOS_receiver_attributes["serial_number"]
-                TOS_receiver_model = TOS_receiver_attributes["model"]
-                TOS_receiver_sversion = TOS_receiver_attributes["software_version"]
-
-                if rinex_receiver[0] != TOS_receiver_serial:
-                    module_logger.info(
-                        'Label REC # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_receiver[0],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_serial,
-                        )
-                    )
-                    receiver_correction_list[0] = TOS_receiver_serial
-                    rinex_correction_dict[label] = receiver_correction_list
-                else:
-                    module_logger.info(
-                        'Label REC # in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
-                            label,
-                            rinex_receiver[0],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_serial,
-                        )
-                    )
-
-                if rinex_receiver[1] != TOS_receiver_model:
-                    module_logger.info(
-                        'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_receiver[1],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_model,
-                        )
-                    )
-                    receiver_correction_list[1] = TOS_receiver_model
-                    rinex_correction_dict[label] = receiver_correction_list
-                else:
-                    module_logger.info(
-                        'Label TYPE in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
-                            label,
-                            rinex_receiver[1],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_model,
-                        )
-                    )
-
-                if rinex_receiver[2] != TOS_receiver_sversion:
-                    module_logger.info(
-                        'Label VERS  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_receiver[2],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_sversion,
-                        )
-                    )
-                    receiver_correction_list[2] = TOS_receiver_sversion
-                    rinex_correction_dict[label] = receiver_correction_list
-                else:
-                    module_logger.info(
-                        'Label VERS in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
-                            label,
-                            rinex_receiver[2],
-                            rinex_dict["rinex file"],
-                            TOS_receiver_sversion,
-                        )
-                    )
-
-            case "ANT # / TYPE":
-                rinex_antenna = rinex_dict[label]
-                antenna_correction_list = [
-                    None,
-                    None,
-                    "",
-                ]  # extra empty string for plank space in rinex file
-                module_logger.info(
-                    '"ANT # / TYPE" in Rinex file: {} / {} '.format(*rinex_antenna)
-                )
-                TOS_antenna_attributes = session["device_history"]["antenna"]
-                module_logger.debug("{}".format(TOS_antenna_attributes))
-                TOS_antenna_serial = TOS_antenna_attributes["serial_number"]
-                TOS_antenna_model = TOS_antenna_attributes["model"]
-
-                if "radome" in session["device_history"]:
-                    TOS_radome_model = session["device_history"]["radome"]["model"]
-                    module_logger.info("radome: {}".format(TOS_radome_model))
-                    TOS_antenna_model = "{0:<16.16}{1:>4.4}".format(
-                        TOS_antenna_model, TOS_radome_model
-                    )
-                    module_logger.info(
-                        'Antenna type with radome "{}"'.format(TOS_antenna_model)
-                    )
-
-                if rinex_antenna[0] != TOS_antenna_serial:
-                    module_logger.info(
-                        'Label ANT # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_antenna[0],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_serial,
-                        )
-                    )
-                    antenna_correction_list[0] = TOS_antenna_serial
-                    rinex_correction_dict[label] = antenna_correction_list
-                else:
-                    module_logger.debug(
-                        'Label ANT # in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
-                            label,
-                            rinex_antenna[0],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_serial,
-                        )
-                    )
-
-                if rinex_antenna[1] != TOS_antenna_model:
-                    module_logger.info(
-                        'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_antenna[1],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_model,
-                        )
-                    )
-                    antenna_correction_list[1] = TOS_antenna_model
-                    rinex_correction_dict[label] = antenna_correction_list
-                else:
-                    module_logger.info(
-                        'Label TYPE in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
-                            label,
-                            rinex_antenna[1],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_model,
-                        )
-                    )
-
-            case "ANTENNA: DELTA H/E/N":
-                rinex_antenna_offset_HEN = rinex_dict[label]
-                antenna_offset_correction_list = [
-                    None,
-                    None,
-                    None,
-                    "",
-                ]  # extra empty string for blank space in rinex file
-                module_logger.info(
-                    '"ANTENNA: DELTA H/E/N" in Rinex file:\t{}\t{}\t{}'.format(
-                        *rinex_antenna_offset_HEN
-                    )
-                )
-
-                TOS_antenna_attributes = session["device_history"]["antenna"]
-                module_logger.debug("{}".format(TOS_antenna_attributes))
-                TOS_antenna_height = TOS_antenna_attributes["antenna_height"]
-                module_logger.debug("Antenna height: {}".format(TOS_antenna_height))
-
-                TOS_monument_attributes = session["device_history"]["monument"]
-                module_logger.info("{}".format(TOS_monument_attributes))
-                TOS_monument_height = TOS_monument_attributes["monument_height"]
-                module_logger.debug("Monument height: {}".format(TOS_monument_height))
-
-                TOS_antenna_offset_HEN = [
-                    TOS_antenna_height + TOS_monument_height,
-                    0.0,
-                    0.0,
-                ]
+            module_logger.debug('{0} "{1}"'.format(label, rinex_file))
+            if (
+                marker == tos_marker
+                and date_from_rinex_fname.date() == time_of_first_obs.date()
+            ):
                 module_logger.debug(
-                    "Antenna height + Monument height: {}".format(
-                        TOS_antenna_offset_HEN[0]
+                    '{0} "{1}" has matching name prefix with database marker "{2}" and the doy-year in {1} matches the date of first observation {3}'.format(
+                        label, rinex_file, tos_marker, time_of_first_obs
                     )
                 )
 
-                if (
-                    abs(rinex_antenna_offset_HEN[0] - TOS_antenna_offset_HEN[0])
-                    > 0.0001
-                ):
-                    module_logger.info(
-                        'Label H  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[0],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[0],
+                if TOS_session_period[1] is not None:
+                    if (
+                        TOS_session_period[0]
+                        <= date_from_rinex_fname
+                        <= TOS_session_period[1]
+                    ):
+                        module_logger.debug(
+                            'Time of file "{0}" falls within period "{2} <= {1} < {3}'.format(
+                                rinex_file,
+                                date_from_rinex_fname,
+                                *TOS_session_period,
+                            )
                         )
-                    )
-                    antenna_offset_correction_list[0] = TOS_antenna_offset_HEN[0]
-                    rinex_correction_dict[label] = antenna_offset_correction_list
+                    else:
+                        module_logger.error(
+                            'Time of file "{0}": {1}. DOES NOT fall within period "{2} - {3}". This should not happen'.format(
+                                rinex_file,
+                                date_from_rinex_fname,
+                                *TOS_session_period,
+                            )
+                        )
+
+                        rinex_correction_dict["session period"] = TOS_session_period
+
+                        return rinex_correction_dict
+
                 else:
-                    module_logger.debug(
-                        'Label H  in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[0],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[0],
+                    TOS_session_period[1] = tf.currDatetime(days=-1)
+                    if (
+                        TOS_session_period[0]
+                        <= date_from_rinex_fname
+                        <= TOS_session_period[1]
+                    ):
+                        module_logger.debug(
+                            'Time of file "{0}" falls within period "{2} <= {1} < {3}'.format(
+                                rinex_file,
+                                date_from_rinex_fname,
+                                *TOS_session_period,
+                            )
                         )
-                    )
-
-                if (
-                    abs(rinex_antenna_offset_HEN[1] - TOS_antenna_offset_HEN[1])
-                    > 0.0001
-                ):
-                    module_logger.info(
-                        'Label E  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[1],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[1],
+                    else:
+                        module_logger.error(
+                            'Time of file "{0}": {1}. DOES NOT fall within period "{2} - {3}". This should not happen'.format(
+                                rinex_file,
+                                date_from_rinex_fname,
+                                *TOS_session_period,
+                            )
                         )
-                    )
-                    antenna_offset_correction_list[1] = TOS_antenna_offset_HEN[1]
-                    rinex_correction_dict[label] = antenna_offset_correction_list
-                else:
-                    module_logger.debug(
-                        'Label E in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[1],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[1],
-                        )
-                    )
 
-                if (
-                    abs(rinex_antenna_offset_HEN[2] - TOS_antenna_offset_HEN[2])
-                    > 0.0001
-                ):
-                    module_logger.info(
-                        'Label N  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[2],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[2],
-                        )
-                    )
-                    antenna_offset_correction_list[2] = TOS_antenna_offset_HEN[2]
-                    rinex_correction_dict[label] = antenna_offset_correction_list
-                else:
-                    module_logger.debug(
-                        'Label N in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
-                            label,
-                            rinex_antenna_offset_HEN[2],
-                            rinex_dict["rinex file"],
-                            TOS_antenna_offset_HEN[2],
-                        )
-                    )
+                        rinex_correction_dict["session period"] = TOS_session_period
 
-            case "APPROX POSITION XYZ":
-                rinex_xyz_coord = rinex_dict[label]
-                module_logger.info("rinex_xyz_coord: {}".format(rinex_xyz_coord))
-                module_logger.info(
-                    '"XYZ Position" in Rinex file:\t{}\t{}\t{}'.format(*rinex_xyz_coord)
-                )
+                        return rinex_correction_dict
 
-                TOS_coord_latlonheig = [
-                    session["lat"],
-                    session["lon"],
-                    session["altitude"],
-                ]
-                module_logger.info(
-                    '"lat, lon, height coordinates" in TOS database:\t{}\t{}\t{}'.format(
-                        *TOS_coord_latlonheig
-                    )
-                )
-                TOS_coord_ECEF = list(
-                    gpsqc.wgs84toitrf08.transform(*TOS_coord_latlonheig)
-                )
-                module_logger.info(
-                    "XYZ coordinates in TOS database:\t{0:.4f}\t{1:.4f}\t{2:.4f}".format(
-                        *TOS_coord_ECEF
-                    )
-                )
-
-                Rinex_TOS_coord_difference = np.array(TOS_coord_ECEF) - np.array(
-                    rinex_xyz_coord[:-1]
-                )
-                module_logger.info(
-                    "difference in ECEF coordinates between Rinex file and TOS database in meters:\t{0:>.4f}\t{1:>.4f}\t{2:>.4f}".format(
-                        *Rinex_TOS_coord_difference
-                    )
-                )
-                distance = np.sqrt(
-                    Rinex_TOS_coord_difference.dot(Rinex_TOS_coord_difference)
-                )
-                module_logger.info(
-                    "Distance between coordinates:\t{0:>.4f} m".format(distance)
-                )
-
-                tolerance = 60.0
-                if distance > tolerance:
+            else:
+                if marker != tos_marker:
                     module_logger.error(
-                        "Distance between TOS database and Rinex files coordinates is more then {0:.4f} m < {1:.4f} m".format(
-                            tolerance, distance
+                        'Mismach with {0} "{1}" and matching name prefix in database marker "{2}" '.format(
+                            label, rinex_file, tos_marker
                         )
                     )
-                    rinex_correction_dict[label] = [*TOS_coord_ECEF, ""]
-                else:
-                    module_logger.info(
-                        "Distance between TOS database and Rinex files coordinates is less then {0:.4f} m > {1:.4f} m".format(
-                            tolerance, distance
+                    rinex_correction_dict["TOS marker"] = [tos_marker]
+
+                if date_from_rinex_fname.date() != time_of_first_obs.date():
+                    module_logger.error(
+                        "Mismach with the doy-year in {0} and the date of first observation {1}".format(
+                            rinex_file, time_of_first_obs
                         )
                     )
+                    rinex_correction_dict["TIME OF FIRST OBS"] = [time_of_first_obs]
+
+                module_logger.debug(
+                    "Returning dictionary {}".format(rinex_correction_dict)
+                )
+                return rinex_correction_dict
+
+        elif label == "MARKER NAME":
+            rinex_marker = rinex_dict[label][0]
+            module_logger.info('"Marker name" in Rinex file: {}'.format(rinex_marker))
+            tos_marker = session["marker"].upper()
+            if rinex_marker == tos_marker:
+                module_logger.debug(
+                    'Label "{0}" is "{1}" in file "{2}", matches database marker "{3}"'.format(
+                        label, rinex_marker, rinex_dict["rinex file"], tos_marker
+                    )
+                )
+            else:
+                module_logger.info(
+                    'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label, rinex_marker, rinex_dict["rinex file"], tos_marker
+                    )
+                )
+                rinex_correction_dict[label] = [tos_marker]
+
+        elif label == "MARKER NUMBER":
+            rinex_number = rinex_dict[label][0]
+            module_logger.info('"Marker number" in Rinex file: {}'.format(rinex_number))
+            if "iers_domes_number" in session.keys():
+                TOS_number = session["iers_domes_number"]
+            else:
+                TOS_number = session["marker"].upper()
+
+            if rinex_number == TOS_number:
+                module_logger.debug(
+                    'Label "{0}" is "{1}" in file "{2}", matches database marker "{3}"'.format(
+                        label, rinex_number, rinex_dict["rinex file"], TOS_number
+                    )
+                )
+            else:
+                module_logger.info(
+                    'Label "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label, rinex_number, rinex_dict["rinex file"], TOS_number
+                    )
+                )
+                rinex_correction_dict[label] = [TOS_number, ""]
+
+        elif label == "OBSERVER / AGENCY":
+            rinex_observer_agency = rinex_dict[label]
+            module_logger.info(
+                '"OBSERVER / AGENCY" in Rinex file:\t{}\t{}'.format(
+                    *rinex_observer_agency
+                )
+            )
+            contact_correction_list = [None, None]
+
+            TOS_operator = session["contact"]["operator"]["name"]
+            module_logger.info('"operator "agency":\t{}'.format(TOS_operator))
+
+            # HACK: This part needs to be moved to tos
+            if TOS_operator == "Veðurstofa Íslands":
+                TOS_observer_agency = ["BGO/HMF", "Vedurstofa Islands"]
+            if TOS_operator == "Landmælingar Íslands":
+                TOS_observer_agency = ["LMI", "Landmaelingar Islands"]
+
+            if rinex_observer_agency[0] != TOS_observer_agency[0]:
+                module_logger.info(
+                    'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_observer_agency[0],
+                        rinex_dict["rinex file"],
+                        TOS_observer_agency[0],
+                    )
+                )
+                contact_correction_list[0] = TOS_observer_agency[0]
+                rinex_correction_dict[label] = contact_correction_list
+
+            if rinex_observer_agency[1] != TOS_observer_agency[1]:
+                module_logger.info(
+                    'Label OBSERVER in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_observer_agency[1],
+                        rinex_dict["rinex file"],
+                        TOS_observer_agency[1],
+                    )
+                )
+                contact_correction_list[1] = TOS_observer_agency[1]
+                rinex_correction_dict[label] = contact_correction_list
+
+        elif label == "REC # / TYPE / VERS":
+            rinex_receiver = rinex_dict[label]
+            receiver_correction_list = [None, None, None]
+            module_logger.info(
+                '"REC # / TYPE / VERS" in Rinex file: {} / {} / {} '.format(
+                    *rinex_receiver
+                )
+            )
+            TOS_receiver_attributes = session["device_history"]["gnss_receiver"]
+            module_logger.debug("{}".format(TOS_receiver_attributes))
+            TOS_receiver_serial = TOS_receiver_attributes["serial_number"]
+            TOS_receiver_model = TOS_receiver_attributes["model"]
+            TOS_receiver_sversion = TOS_receiver_attributes["software_version"]
+
+            if rinex_receiver[0] != TOS_receiver_serial:
+                module_logger.info(
+                    'Label REC # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_receiver[0],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_serial,
+                    )
+                )
+                receiver_correction_list[0] = TOS_receiver_serial
+                rinex_correction_dict[label] = receiver_correction_list
+            else:
+                module_logger.info(
+                    'Label REC # in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
+                        label,
+                        rinex_receiver[0],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_serial,
+                    )
+                )
+
+            if rinex_receiver[1] != TOS_receiver_model:
+                module_logger.info(
+                    'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_receiver[1],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_model,
+                    )
+                )
+                receiver_correction_list[1] = TOS_receiver_model
+                rinex_correction_dict[label] = receiver_correction_list
+            else:
+                module_logger.info(
+                    'Label TYPE in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
+                        label,
+                        rinex_receiver[1],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_model,
+                    )
+                )
+
+            if rinex_receiver[2] != TOS_receiver_sversion:
+                module_logger.info(
+                    'Label VERS  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_receiver[2],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_sversion,
+                    )
+                )
+                receiver_correction_list[2] = TOS_receiver_sversion
+                rinex_correction_dict[label] = receiver_correction_list
+            else:
+                module_logger.info(
+                    'Label VERS in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
+                        label,
+                        rinex_receiver[2],
+                        rinex_dict["rinex file"],
+                        TOS_receiver_sversion,
+                    )
+                )
+
+        elif label == "ANT # / TYPE":
+            rinex_antenna = rinex_dict[label]
+            antenna_correction_list = [
+                None,
+                None,
+                "",
+            ]  # extra empty string for plank space in rinex file
+            module_logger.info(
+                '"ANT # / TYPE" in Rinex file: {} / {} '.format(*rinex_antenna)
+            )
+            TOS_antenna_attributes = session["device_history"]["antenna"]
+            module_logger.debug("{}".format(TOS_antenna_attributes))
+            TOS_antenna_serial = TOS_antenna_attributes["serial_number"]
+            TOS_antenna_model = TOS_antenna_attributes["model"]
+
+            if "radome" in session["device_history"]:
+                TOS_radome_model = session["device_history"]["radome"]["model"]
+                module_logger.info("radome: {}".format(TOS_radome_model))
+                TOS_antenna_model = "{0:<16.16}{1:>4.4}".format(
+                    TOS_antenna_model, TOS_radome_model
+                )
+                module_logger.info(
+                    'Antenna type with radome "{}"'.format(TOS_antenna_model)
+                )
+
+            if rinex_antenna[0] != TOS_antenna_serial:
+                module_logger.info(
+                    'Label ANT # in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_antenna[0],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_serial,
+                    )
+                )
+                antenna_correction_list[0] = TOS_antenna_serial
+                rinex_correction_dict[label] = antenna_correction_list
+            else:
+                module_logger.debug(
+                    'Label ANT # in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
+                        label,
+                        rinex_antenna[0],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_serial,
+                    )
+                )
+
+            if rinex_antenna[1] != TOS_antenna_model:
+                module_logger.info(
+                    'Label TYPE  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_antenna[1],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_model,
+                    )
+                )
+                antenna_correction_list[1] = TOS_antenna_model
+                rinex_correction_dict[label] = antenna_correction_list
+            else:
+                module_logger.info(
+                    'Label TYPE in "{0}" is "{1}" in file "{2}", and matches database value "{3}"'.format(
+                        label,
+                        rinex_antenna[1],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_model,
+                    )
+                )
+
+        elif label == "ANTENNA: DELTA H/E/N":
+            rinex_antenna_offset_HEN = rinex_dict[label]
+            antenna_offset_correction_list = [
+                None,
+                None,
+                None,
+                "",
+            ]  # extra empty string for blank space in rinex file
+            module_logger.info(
+                '"ANTENNA: DELTA H/E/N" in Rinex file:\t{}\t{}\t{}'.format(
+                    *rinex_antenna_offset_HEN
+                )
+            )
+
+            TOS_antenna_attributes = session["device_history"]["antenna"]
+            module_logger.debug("{}".format(TOS_antenna_attributes))
+            TOS_antenna_height = TOS_antenna_attributes["antenna_height"]
+            module_logger.debug("Antenna height: {}".format(TOS_antenna_height))
+
+            TOS_monument_attributes = session["device_history"]["monument"]
+            module_logger.info("{}".format(TOS_monument_attributes))
+            TOS_monument_height = TOS_monument_attributes["monument_height"]
+            module_logger.debug("Monument height: {}".format(TOS_monument_height))
+
+            TOS_antenna_offset_HEN = [
+                TOS_antenna_height + TOS_monument_height,
+                0.0,
+                0.0,
+            ]
+            module_logger.debug(
+                "Antenna height + Monument height: {}".format(TOS_antenna_offset_HEN[0])
+            )
+
+            if abs(rinex_antenna_offset_HEN[0] - TOS_antenna_offset_HEN[0]) > 0.0001:
+                module_logger.info(
+                    'Label H  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[0],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[0],
+                    )
+                )
+                antenna_offset_correction_list[0] = TOS_antenna_offset_HEN[0]
+                rinex_correction_dict[label] = antenna_offset_correction_list
+            else:
+                module_logger.debug(
+                    'Label H  in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[0],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[0],
+                    )
+                )
+
+            if abs(rinex_antenna_offset_HEN[1] - TOS_antenna_offset_HEN[1]) > 0.0001:
+                module_logger.info(
+                    'Label E  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[1],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[1],
+                    )
+                )
+                antenna_offset_correction_list[1] = TOS_antenna_offset_HEN[1]
+                rinex_correction_dict[label] = antenna_offset_correction_list
+            else:
+                module_logger.debug(
+                    'Label E in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[1],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[1],
+                    )
+                )
+
+            if abs(rinex_antenna_offset_HEN[2] - TOS_antenna_offset_HEN[2]) > 0.0001:
+                module_logger.info(
+                    'Label N  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[2],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[2],
+                    )
+                )
+                antenna_offset_correction_list[2] = TOS_antenna_offset_HEN[2]
+                rinex_correction_dict[label] = antenna_offset_correction_list
+            else:
+                module_logger.debug(
+                    'Label N in "{0}" is "{1}" in file "{2}", matches database value "{3}"'.format(
+                        label,
+                        rinex_antenna_offset_HEN[2],
+                        rinex_dict["rinex file"],
+                        TOS_antenna_offset_HEN[2],
+                    )
+                )
+
+        elif label == "APPROX POSITION XYZ":
+            rinex_xyz_coord = rinex_dict[label]
+            module_logger.info("rinex_xyz_coord: {}".format(rinex_xyz_coord))
+            module_logger.info(
+                '"XYZ Position" in Rinex file:\t{}\t{}\t{}'.format(*rinex_xyz_coord)
+            )
+
+            TOS_coord_latlonheig = [
+                session["lat"],
+                session["lon"],
+                session["altitude"],
+            ]
+            module_logger.info(
+                '"lat, lon, height coordinates" in TOS database:\t{}\t{}\t{}'.format(
+                    *TOS_coord_latlonheig
+                )
+            )
+            TOS_coord_ECEF = list(gpsqc.wgs84toitrf08.transform(*TOS_coord_latlonheig))
+            module_logger.info(
+                "XYZ coordinates in TOS database:\t{0:.4f}\t{1:.4f}\t{2:.4f}".format(
+                    *TOS_coord_ECEF
+                )
+            )
+
+            Rinex_TOS_coord_difference = np.array(TOS_coord_ECEF) - np.array(
+                rinex_xyz_coord[:-1]
+            )
+            module_logger.info(
+                "difference in ECEF coordinates between Rinex file and TOS database in meters:\t{0:>.4f}\t{1:>.4f}\t{2:>.4f}".format(
+                    *Rinex_TOS_coord_difference
+                )
+            )
+            distance = np.sqrt(
+                Rinex_TOS_coord_difference.dot(Rinex_TOS_coord_difference)
+            )
+            module_logger.info(
+                "Distance between coordinates:\t{0:>.4f} m".format(distance)
+            )
+
+            tolerance = 60.0
+            if distance > tolerance:
+                module_logger.error(
+                    "Distance between TOS database and Rinex files coordinates is more then {0:.4f} m < {1:.4f} m".format(
+                        tolerance, distance
+                    )
+                )
+                rinex_correction_dict[label] = [*TOS_coord_ECEF, ""]
+            else:
+                module_logger.info(
+                    "Distance between TOS database and Rinex files coordinates is less then {0:.4f} m > {1:.4f} m".format(
+                        tolerance, distance
+                    )
+                )
 
     else:
         module_logger.info(
@@ -1095,7 +1057,7 @@ def read_rinex_file(rfile, loglevel=logging.WARNING):
     """Legacy wrapper for modular RINEX file reader."""
     content_bytes = modular_read_rinex_file(rfile, loglevel)
     if content_bytes:
-        return content_bytes.decode('utf-8')
+        return content_bytes.decode("utf-8")
     return None
 
 

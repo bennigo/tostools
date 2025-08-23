@@ -7,8 +7,8 @@
 #
 #
 
-import logging
 import json
+import logging
 
 from . import gps_metadata_functions as gpsf
 
@@ -100,6 +100,7 @@ def check_for_conflict(rinex_correction_dict, rinex_dict):
     """
 
     from pathlib import Path
+
     import gtimes.timefunc as gt
 
     rinex_file = rinex_correction_dict.pop("rinex file")
@@ -145,9 +146,10 @@ def main(level=logging.WARNING):
     sending metatata issues to rabbitMQ
     """
 
-    import pika
     import configparser
     import json
+
+    import pika
 
     station_checks = {}
     for sta in ["kvis", "tanc", "vonc", "rhof"]:  # , "RHOF"]:
@@ -183,8 +185,7 @@ def main(level=logging.WARNING):
             # print(json.dumps(station,cls=JSONCustomEncoder))
             channel.basic_publish(
                 exchange="monitoring",
-                routing_key="quality.gps." + station["station_identifier"] +
-                            ".caught",
+                routing_key="quality.gps." + station["station_identifier"] + ".caught",
                 body=json.dumps(station, cls=JSONCustomEncoder),
                 properties=pika.BasicProperties(
                     delivery_mode=2,
@@ -194,8 +195,7 @@ def main(level=logging.WARNING):
             # print(json.dumps(station,cls=JSONCustomEncoder))
             channel.basic_publish(
                 exchange="monitoring",
-                routing_key="quality.gps." + station["station_identifier"] +
-                            ".passed",
+                routing_key="quality.gps." + station["station_identifier"] + ".passed",
                 body=json.dumps(station, cls=JSONCustomEncoder),
                 properties=pika.BasicProperties(
                     delivery_mode=2,

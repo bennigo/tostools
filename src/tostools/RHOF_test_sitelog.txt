@@ -1,0 +1,56 @@
+     RHOFISL00 Site Information Form (site log)
+     International GNSS Service
+     See Instructions at:
+       ftp://igs.ign.fr/pub/igscb/igscb_mail/general/sitelog_instr.txt
+
+
+0.   Form
+
+     Prepared by (full name)  : GNSS Operator
+     Date Prepared            : 2025-08-23
+     Report Type              : UPDATE
+     Previous Site Log       : 
+     Modified/Added Sections  : (n.n,n.n,...)
+
+
+1.   Site Identification of the GNSS Monument
+
+     Site Name                : Raufarhöfn
+     Four Character ID        : RHOF
+     Monument Inscription     : 
+     IERS DOMES Number        : 10216M001
+     CDP Number               : 
+     Monument Description     : STEEL MAST
+       Height of the Monument : (m)
+       Monument Foundation    : STEEL RODS
+       Foundation Depth       : (m)
+     Marker Description       : 
+     Date Installed           : 2001-07-19 00:00
+     Geologic Characteristic  : BEDROCK
+       Bedrock Type           : IGNEOUS
+       Bedrock Condition      : WEATHERED
+       Fracture Spacing       : 
+       Fault zones nearby     : NEI
+         Distance/activity    : 
+     Additional Information   : (multiple lines)
+
+2.   Site Location Information
+
+     City or Town             : 
+     State or Province        : 
+     Country                  : Iceland
+     Tectonic Plate           : 
+     Approximate Position (ITRF)
+       X coordinate (m)       :  2456169.7828
+       Y coordinate (m)       :  -701823.6345  
+       Z coordinate (m)       :  5824743.2408
+       Latitude (N is +)      : +66.46112200
+       Longitude (E is +)     : -015.94670800
+       Elevation (m,ellips.)  :    76.9
+     Additional Information   : (multiple lines)
+
+
+
+
+
+More Information           : (multiple lines)

@@ -236,11 +236,13 @@ def json_to_ascii(json_file, ascii_file):
 def main():
     """Main function for command line usage"""
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Convert JSON station data to ASCII format')
-    parser.add_argument('json_file', help='Input JSON file path')
-    parser.add_argument('ascii_file', help='Output ASCII file path')
-    
+
+    parser = argparse.ArgumentParser(
+        description="Convert JSON station data to ASCII format"
+    )
+    parser.add_argument("json_file", help="Input JSON file path")
+    parser.add_argument("ascii_file", help="Output ASCII file path")
+
     args = parser.parse_args()
     json_to_ascii(args.json_file, args.ascii_file)
 

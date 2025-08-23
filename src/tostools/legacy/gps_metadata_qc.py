@@ -10,14 +10,9 @@
 import gzip
 import json
 import logging
-import os
-import re
 import sys
-import traceback
-from datetime import datetime, timedelta
-from pathlib import Path, PurePath
+from datetime import datetime
 
-import fortranformat as ff
 import requests
 from pyproj import CRS, Transformer
 from unlzw3 import unlzw
@@ -576,7 +571,9 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
     except IndexError as error:
         module_logger.error(
             "{} station {} not found in TOS database. \
-            Error {}".format(domain, station_identifier, error)
+            Error {}".format(
+                domain, station_identifier, error
+            )
         )
         return [], []
 

@@ -7,30 +7,23 @@
 #
 #
 
-import gzip
 import json
 import logging
-import os
-import re
 import sys
-import traceback
-from datetime import datetime, timedelta
-from pathlib import Path, PurePath
-from typing import Dict, List, Optional, Any
+from datetime import datetime
 
-import fortranformat as ff
 import requests
 from pyproj import CRS, Transformer
-from unlzw3 import unlzw
 
 # Import legacy functions (transitioning)
 from . import gps_metadata_functions as gpsf
 
 # Import new modular components
-from .api.tos_client import TOSClient, search_station as tos_search_station
-from .io.file_utils import read_gzip_file as new_read_gzip_file, read_zzipped_file as new_read_zzipped_file, read_text_file as new_read_text_file
+from .api.tos_client import TOSClient
+from .io.file_utils import read_gzip_file as new_read_gzip_file
+from .io.file_utils import read_text_file as new_read_text_file
+from .io.file_utils import read_zzipped_file as new_read_zzipped_file
 from .utils.logging import get_logger
-from .core.device import process_device_sessions, get_device_attribute_history
 
 # TODO: Move formatstring from file_list to a config file
 # FREQD="15s_24hr"
@@ -582,7 +575,9 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
     except IndexError as error:
         module_logger.error(
             "{} station {} not found in TOS database. \
-            Error {}".format(domain, station_identifier, error)
+            Error {}".format(
+                domain, station_identifier, error
+            )
         )
         return [], []
 
@@ -896,10 +891,10 @@ def device_structure(device, loglevel=logging.WARNING):
 
 def read_gzip_file(rfile, loglevel=logging.WARNING):
     """Legacy wrapper for the new modular file reader."""
-    # Use the new modular file reader  
+    # Use the new modular file reader
     content_bytes = new_read_gzip_file(rfile, loglevel)
     if content_bytes:
-        return content_bytes.decode('utf-8')
+        return content_bytes.decode("utf-8")
     return None
 
 
@@ -917,7 +912,7 @@ def read_zzipped_file(rfile, loglevel=logging.WARNING):
     # Use the new modular file reader
     content_bytes = new_read_zzipped_file(rfile, loglevel)
     if content_bytes:
-        return content_bytes.decode('utf-8')
+        return content_bytes.decode("utf-8")
     return None
 
 
