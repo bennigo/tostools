@@ -184,7 +184,7 @@ def configure_logging(config: Optional[LoggingConfig] = None, force_reconfigure:
                 },
             },
             "root": {
-                "level": logging.DEBUG,
+                "level": config.console_level if not config.log_dir else logging.DEBUG,  # Console-only: match console level; File logging: use DEBUG
                 "handlers": ["console"],
             },
             "loggers": {
@@ -316,8 +316,9 @@ def get_logger(
     # Get logger
     logger = logging.getLogger(name)
     
-    # Set specific level if provided
-    if level is not None:
+    # Set specific level if provided, but only if no centralized logging is configured
+    # This prevents individual functions from overriding centralized log level control
+    if level is not None and not _logging_initialized:
         logger.setLevel(level)
     
     # Add extra context if provided
@@ -344,7 +345,7 @@ class LoggerAdapter(logging.LoggerAdapter):
 # Convenience functions for different logging scenarios
 def setup_console_logging(level: int = logging.INFO) -> None:
     """Quick setup for console-only logging."""
-    configure_logging(LoggingConfig(console_level=level, log_dir=None))
+    configure_logging(LoggingConfig(console_level=level, log_dir=None), force_reconfigure=True)
 
 
 def setup_file_logging(

@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-08-23
+
+### 🚀 MAJOR: Production-Ready Logging System & Clean Output
+
+#### Added
+
+- **Enterprise-Grade Logging System** (`src/tostools/utils/logging.py`)
+  - Centralized configuration with file and console handlers
+  - Level-specific file separation (DEBUG, INFO, WARNING, ERROR)
+  - Structured JSON logging for programmatic analysis
+  - Thread-safe configuration with global state management
+  - Production and development optimized configurations
+
+- **Comprehensive Help System**
+  - Enhanced `--help` with quick start guides and real-world examples
+  - Command-specific help with pipeline usage examples
+  - Clear documentation of output streams (stdout vs stderr)
+  - Logging control explanations and best practices
+
+#### Changed
+
+- **🎯 CLEAN OUTPUT BY DEFAULT**: All manual QC commands now silent by default
+  - `tosGPS PrintTOS`, `tosGPS rinex`, `tosGPS sitelog` produce clean output
+  - Only errors appear on console unless explicitly requested
+  - Perfect for automation, scripting, and pipeline integration
+  
+- **Smart Output Stream Separation**
+  - **stdout**: Program data (tables, site logs, validation results)
+  - **stderr**: Status messages, progress info, errors
+  - **Files**: Comprehensive logging when `--log-dir` specified
+
+- **Enhanced CLI Interface**
+  - Sitelog supports both stdout and file output modes
+  - `tosGPS sitelog RHOF` outputs to stdout (pipe-friendly)
+  - `tosGPS sitelog RHOF --output file.log` saves to file
+  - Intelligent status message control (only when appropriate)
+
+#### Fixed
+
+- **Verbose Debug Output Eliminated**
+  - Fixed TOS API logging overrides that bypassed centralized control
+  - Resolved device_attribute_history verbose message flooding
+  - Corrected logging initialization order for consistent behavior
+  - Fixed `get_logger()` function to respect centralized configuration
+
+- **Manual QC Workflow Optimization**
+  - Default ERROR-level console logging for clean manual operations
+  - Eliminated thousands of debug messages cluttering output
+  - Fixed stdout/stderr separation for proper Unix compliance
+  - Maintained comprehensive file logging capability
+
+#### Examples of New Clean Interface
+
+```bash
+# Clean automation-ready output
+tosGPS PrintTOS RHOF --format table > data.csv
+tosGPS sitelog RHOF | process_metadata.py  
+tosGPS rinex RHOF data/*.rnx 2>/dev/null
+
+# Verbose output when needed
+tosGPS --log-level INFO PrintTOS RHOF
+tosGPS --debug-all --log-dir logs sitelog RHOF
+```
+
+### Breaking Changes
+
+- Console logging now defaults to ERROR level for manual QC commands
+- Use `--log-level INFO` or `--debug-all` to restore previous verbose behavior
+- Sitelog no longer auto-names files; use `--output` for file mode
+
 ## [0.1.0] - 2025-08-22
 
 ### Added

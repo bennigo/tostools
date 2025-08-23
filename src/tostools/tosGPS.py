@@ -38,7 +38,7 @@ def _configure_logging(args):
     if hasattr(args, 'subcommand') and args.subcommand in ['PrintTOS', 'rinex', 'sitelog']:
         # Manual QC commands: Keep console clean by default
         if console_level == logging.INFO and not args.debug_all:
-            console_level = logging.WARNING  # Only show warnings/errors for clean output
+            console_level = logging.ERROR  # Only show errors for clean output (warnings/errors can be enabled explicitly)
     
     # Smart console level: debug-all enables DEBUG for files but keeps console cleaner
     if args.debug_all and args.log_dir:
@@ -93,11 +93,32 @@ def main():
     # print(module_logger.getEffectiveLevel())
 
     parser = argparse.ArgumentParser(
-        description="QC tool to manage GPS medata through TOS",
-        epilog="For any issues regarding this program or the GPS"
-        + "system contact, Benni,  email: bgo@vedur.is,"
-        + "or Hildur email: hildur@vedur.is",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="GPS metadata quality control and RINEX processing toolkit",
+        epilog="""
+QUICK START:
+  # View station metadata  
+  tosGPS PrintTOS RHOF --format table
+  
+  # Validate RINEX files
+  tosGPS rinex RHOF data/RHOF*.rnx
+  
+  # Generate site log
+  tosGPS sitelog RHOF --output RHOF.log
+  
+LOGGING CONTROL:
+  --log-level ERROR    # Clean output (recommended for scripting)
+  --log-dir logs/      # Enable comprehensive file logging  
+  --debug-all          # Detailed debug info (to files when --log-dir used)
+
+OUTPUT STREAMS:
+  stdout: Program data (tables, validation results, site logs)
+  stderr: Status messages, progress, errors (use 2>/dev/null to hide)
+
+For detailed examples, use: tosGPS COMMAND --help
+
+Contact: Benni (bgo@vedur.is) or Hildur (hildur@vedur.is)
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     add_log_level_argument(parser)
@@ -143,7 +164,26 @@ def main():
 
     # For TOS print options
     print_options = subparsers.add_parser(
-        "PrintTOS", help="Choose beteween printing options of TOS metadata"
+        "PrintTOS", 
+        help="Display GPS station metadata from TOS in various formats",
+        epilog="""
+Examples:
+  # Clean table output (perfect for analysis)
+  tosGPS --log-level ERROR PrintTOS RHOF --format table > station_data.csv
+  
+  # Multiple stations with status info
+  tosGPS PrintTOS REYK HOFN RHOF --format table
+  
+  # GAMIT processing format
+  tosGPS PrintTOS RHOF --format gamit > gamit_stations.dat
+  
+  # Raw detailed metadata
+  tosGPS PrintTOS RHOF --raw --format table
+  
+  # Silent operation (errors only)
+  tosGPS --log-level ERROR PrintTOS RHOF 2>/dev/null
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     print_options.add_argument("stations", nargs="+", help="List of stations")
     print_options.add_argument(
@@ -151,35 +191,81 @@ def main():
         "--format",
         choices=["table", "gamit"],
         default="table",
-        help="Print raw format as",
+        help="Output format: table (human-readable) or gamit (processing)",
     )
-    print_options.add_argument("--raw", action="store_true", help="Print raw format")
+    print_options.add_argument("--raw", action="store_true", help="Include detailed raw metadata")
 
     # RINEX validation subcommand
     rinex_parser = subparsers.add_parser(
-        "rinex", help="RINEX file validation and correction"
+        "rinex", 
+        help="Validate RINEX files against TOS metadata and apply corrections",
+        epilog="""
+Examples:
+  # Basic validation (results to stdout)
+  tosGPS --log-level ERROR rinex RHOF data/RHOF*.rnx
+  
+  # Validate with detailed progress
+  tosGPS rinex RHOF data/RHOF0790.02D
+  
+  # Apply corrections with backup
+  tosGPS rinex RHOF data/RHOF0790.02D --fix --backup
+  
+  # Generate QC report
+  tosGPS rinex RHOF data/*.rnx --report qc_report.txt
+  
+  # Silent validation for scripting
+  tosGPS --log-level ERROR rinex RHOF file.rnx 2>/dev/null
+  echo $?  # Check exit code: 0=success, 1=discrepancies
+  
+  # Batch processing
+  for file in data/*.rnx; do
+      tosGPS --log-level ERROR rinex RHOF "$file" || echo "Issue in $file"
+  done
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    rinex_parser.add_argument("stations", nargs="+", help="List of stations")
+    rinex_parser.add_argument("stations", nargs="+", help="GPS stations to validate against")
     rinex_parser.add_argument(
         "rinex_files", nargs="+", help="RINEX files to validate"
     )
     rinex_parser.add_argument(
-        "--fix", action="store_true", help="Apply corrections to RINEX files"
+        "--fix", action="store_true", help="Apply corrections to RINEX headers"
     )
     rinex_parser.add_argument(
-        "--backup", action="store_true", help="Create backup files when fixing"
+        "--backup", action="store_true", help="Create backup files before fixing"
     )
     rinex_parser.add_argument(
-        "--report", type=str, help="Generate QC report to specified file"
+        "--report", type=str, help="Generate detailed QC report to file"
     )
 
-    # Site log generation subcommand
+    # Site log generation subcommand  
     sitelog_parser = subparsers.add_parser(
-        "sitelog", help="Generate IGS site log"
+        "sitelog", 
+        help="Generate IGS site log",
+        epilog="""
+Examples:
+  # Output to stdout (pipe-friendly)
+  tosGPS sitelog RHOF                          
+  tosGPS sitelog RHOF | grep "Antenna"
+  
+  # Save to specific file
+  tosGPS sitelog RHOF --output RHOF_site.log
+  tosGPS sitelog RHOF -o logs/stations/RHOF.txt
+  
+  # Process multiple stations 
+  for station in REYK HOFN RHOF; do
+      tosGPS sitelog $station | process_sitelog.py $station
+  done
+  
+  # Send to remote system
+  tosGPS sitelog RHOF | ssh server "cat > /data/RHOF.log"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sitelog_parser.add_argument("stations", nargs="+", help="List of stations")
     sitelog_parser.add_argument(
-        "--output", "-o", type=str, help="Output file for site log"
+        "--output", "-o", type=str, 
+        help="Output file (default: stdout for piping)"
     )
 
     args = parser.parse_args()
@@ -244,7 +330,7 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
     print(f"RINEX QC for stations: {', '.join(stations)}", file=sys.stderr)
 
     # Initialize TOS client
-    tos_client = TOSClient(base_url=url, loglevel=log_level.value)
+    tos_client = TOSClient(base_url=url)  # Use default, respect centralized logging
 
     all_comparisons = []
 
@@ -340,11 +426,12 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
 def _handle_sitelog_subcommand(args, stations, url, log_level):
     """Handle site log generation subcommand."""
     # Initialize TOS client
-    tos_client = TOSClient(base_url=url, loglevel=log_level.value)
+    tos_client = TOSClient(base_url=url)  # Use default, respect centralized logging
 
     for station in stations:
-        # Send status messages to stderr to keep stdout clean for data
-        print(f"Generating site log for station {station}", file=sys.stderr)
+        # Send status messages to stderr (but only when saving to file or multiple stations)
+        if args.output or len(stations) > 1:
+            print(f"Generating site log for station {station}", file=sys.stderr)
 
         try:
             # Get complete station metadata with proper device sessions (like legacy system)
@@ -361,21 +448,22 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                 complete_station_data, device_sessions, log_level.value
             )
 
-            # Output handling
+            # Output handling - file vs stdout
             if args.output:
-                output_file = args.output
+                # Write to specified file
+                try:
+                    with open(args.output, 'w', encoding='utf-8') as f:
+                        f.write(site_log_content)
+                    # Send success message to stderr to keep stdout clean
+                    print(f"✓ Site log saved to {args.output}", file=sys.stderr)
+                except Exception as e:
+                    print(f"Error writing site log: {e}", file=sys.stderr)
             else:
-                marker = complete_station_data.get('marker', station).upper()
-                output_file = f"{marker}_sitelog.txt"
-
-            # Write to file
-            try:
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(site_log_content)
-                # Send success message to stderr to keep stdout clean
-                print(f"✓ Site log saved to {output_file}", file=sys.stderr)
-            except Exception as e:
-                print(f"Error writing site log: {e}", file=sys.stderr)
+                # Output to stdout (pipe-friendly)
+                print(site_log_content)  # Clean output to stdout
+                # Optional: Send completion notice to stderr (only for multiple stations)
+                if len(stations) > 1:
+                    print(f"✓ Site log for {station} completed", file=sys.stderr)
 
         except Exception as e:
             print(f"Error generating site log for {station}: {e}", file=sys.stderr)

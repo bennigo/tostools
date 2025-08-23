@@ -37,9 +37,20 @@ pip install -e .
 - Run tests: `pytest tests/`
 
 ### tosGPS Examples
+
+#### Clean Output (Default - Perfect for Automation)
+- Station metadata: `tosGPS PrintTOS RHOF --format table > data.csv`
+- Site log generation: `tosGPS sitelog RHOF | process_data.py`
+- RINEX validation: `tosGPS rinex RHOF data/*.rnx`
+
+#### Manual QC with Status Info
+- With progress info: `tosGPS --log-level INFO PrintTOS RHOF --format table`
+- Full debug output: `tosGPS --debug-all sitelog RHOF --output station.log`
+- File logging: `tosGPS --log-dir logs PrintTOS RHOF`
+
+#### Legacy Examples  
 - Basic QC: `tosGPS REYK HOFN`
 - With server options: `tosGPS REYK --server vi-api.vedur.is --port 443`
-- Print as table: `tosGPS REYK PrintTOS --format table`
 - Print raw format: `tosGPS REYK PrintTOS --raw`
 
 ### Development Dependencies
@@ -206,11 +217,19 @@ src/tostools/
     └── owner.py
 ```
 
-**🎉 MAJOR MILESTONE (2025-08-22)**: 
+**🎉 MAJOR MILESTONES**: 
+
+**2025-08-22**: Modular Architecture Foundation
 - **Fully Functional**: tosGPS works perfectly with real GPS data (2000-2023 equipment history)
 - **Modular Infrastructure**: Complete new architecture ready for migration
 - **Key Improvements**: Type hints, proper error handling, separation of concerns, class-based design, backward compatibility
 - **Ready for Migration**: All legacy functions categorized, new modules built, working baseline established
+
+**2025-08-23**: Production-Ready Logging System
+- **🚀 CLEAN OUTPUT BY DEFAULT**: All commands (PrintTOS, rinex, sitelog) produce clean output perfect for automation
+- **Enterprise Logging**: Comprehensive file logging with level separation and structured JSON output
+- **Manual QC Optimized**: Silent operation by default, verbose output available on demand
+- **Unix Standards Compliant**: stdout for data, stderr for status messages, proper exit codes
 
 ### Legacy Structure
 - **tests/**: Test files (moved from src)
@@ -221,3 +240,38 @@ src/tostools/
   - RINEX data: `*.D`, `*.gz` files  
   - Log files: `*.log` files from station processing
   - JSON configs: `*.json` files with station information
+
+## Manual QC Workflow Optimization (2025-08-23)
+
+### Clean Output by Default
+All tosGPS commands now produce clean output perfect for automation and scripting:
+
+```bash
+# Clean data extraction - no logging noise
+tosGPS PrintTOS RHOF --format table > station_data.csv
+
+# Pipeline-friendly site log generation  
+tosGPS sitelog RHOF | grep "Antenna" | process_metadata.py
+
+# Silent RINEX validation for batch processing
+tosGPS rinex RHOF data/*.rnx 2>/dev/null
+```
+
+### Verbose Output When Needed
+Full logging control available for debugging and manual inspection:
+
+```bash
+# Progress information for manual QC
+tosGPS --log-level INFO PrintTOS RHOF --format table
+
+# Complete debug output for troubleshooting
+tosGPS --debug-all --log-dir logs sitelog RHOF
+
+# File logging for comprehensive analysis
+tosGPS --log-dir logs --log-format json PrintTOS RHOF
+```
+
+### Output Stream Architecture
+- **stdout**: Program data (tables, site logs, validation results) - perfect for piping
+- **stderr**: Status messages, progress info, errors - can be silenced with `2>/dev/null`
+- **Files**: Comprehensive logging with level separation when `--log-dir` used
