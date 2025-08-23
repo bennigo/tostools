@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed TOS API logging overrides that bypassed centralized control
   - Resolved device_attribute_history verbose message flooding
   - Corrected logging initialization order for consistent behavior
+  - **FINAL FIX**: Eliminated legacy logger bypass in `device_attribute_history()`
+    - Legacy `[INFO] device_attribute_history: Session: ...` messages eliminated
+    - All GPS QC commands now produce completely clean output
+    - sitelog, PrintTOS, and rinex commands are production-ready
   - Fixed `get_logger()` function to respect centralized configuration
 
 - **Manual QC Workflow Optimization**

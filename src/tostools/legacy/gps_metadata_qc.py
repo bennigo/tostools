@@ -193,7 +193,9 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
     sort out history within device
     """
 
-    module_logger = gpsf.get_logger(name=__name__)
+    # Use new centralized logging system instead of legacy one
+    from ..utils.logging import get_logger
+    module_logger = get_logger(__name__, loglevel)
     tmp_connections = []
     connections = []
 
