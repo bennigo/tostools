@@ -250,26 +250,25 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
         print(f"Generating site log for station {station}")
 
         try:
-            # Get station metadata
-            station_data, device_history = tos_client.get_station_metadata(station)
-            if not station_data:
+            # Get complete station metadata with proper device sessions (like legacy system)
+            complete_station_data = tos_client.get_complete_station_metadata(station)
+            if not complete_station_data:
                 print(f"Error: Could not retrieve metadata for station {station}")
                 continue
 
-            # Get device sessions (this would need to be implemented in TOS client)
-            # For now, using placeholder
-            device_sessions = device_history if device_history else []
+            # Extract device sessions from complete metadata
+            device_sessions = complete_station_data.get('device_history', [])
 
             # Generate site log
             site_log_content = generate_igs_site_log(
-                station_data, device_sessions, log_level.value
+                complete_station_data, device_sessions, log_level.value
             )
 
             # Output handling
             if args.output:
                 output_file = args.output
             else:
-                marker = station_data.get('marker', station).upper()
+                marker = complete_station_data.get('marker', station).upper()
                 output_file = f"{marker}_sitelog.txt"
 
             # Write to file
