@@ -287,3 +287,41 @@ tosGPS --log-dir logs --log-format json PrintTOS RHOF
 - **stdout**: Program data (tables, site logs, validation results) - perfect for piping
 - **stderr**: Status messages, progress info, errors - can be silenced with `2>/dev/null`
 - **Files**: Comprehensive logging with level separation when `--log-dir` used
+
+## ⚠️ Future Review Items
+
+### Contact Management System Review Needed
+**Location**: `src/tostools/gps_metadata_qc.py` (and legacy version)  
+**Issue**: Contact handling is "complex and hairy" and needs architectural review
+
+**Current Implementation**:
+- Hardcoded IMO fallback when no owners found in TOS API
+- TODO comment: "implement IMO as default contact if no contact" 
+- Commented-out API calls for fetching IMO contact info
+- Manual fallback contact structure with hardcoded values
+
+**Code Section**:
+```python
+# Line ~600 in gps_metadata_qc.py
+if not owners:
+    # TODO: implement IMO as default contact if no contact
+    module_logger.warning("No owners found at: %s. Setting default", url_rest)
+    # Get complete IMO contact information for fallback
+    imo_addition = additional_contact_fields("Veðurstofa Íslands")
+    
+    contact["owner"] = {
+        "role": "owner",
+        "role_is": "Eigandi stöðvar", 
+        "name": "Veðurstofa Íslands",
+        # ... hardcoded IMO contact details
+    }
+```
+
+**Review Priorities**:
+1. **Architectural**: Should fallback contacts come from API or be hardcoded?
+2. **API Integration**: Investigate commented-out IMO contact API calls
+3. **Data Consistency**: Ensure English/Icelandic role mapping is complete
+4. **Error Handling**: Improve handling when contact API endpoints fail
+5. **Configuration**: Consider making default contacts configurable
+
+**Impact**: Contact information appears in site logs and metadata exports, so accuracy is critical for GPS station operations.
