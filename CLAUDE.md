@@ -215,7 +215,8 @@ src/tostools/
 │   └── editor.py               # RINEX header editing/fixing
 ├── io/                         # Input/Output utilities
 │   ├── file_utils.py           # File I/O (gzip, Z, text) [CREATED]
-│   └── formatters.py           # Output formatting [CREATED]
+│   ├── formatters.py           # Output formatting [CREATED]
+│   └── rich_formatters.py      # Rich table formatting for GPS station data [CREATED]
 ├── utils/                      # Shared utilities
 │   └── logging.py              # Logging configuration [CREATED]
 └── legacy/                     # Original modules (transition period)
@@ -242,6 +243,16 @@ src/tostools/
 - **🌐 ENGLISH CONTACT ROLES**: PrintTOS now displays "Owner"/"Operator" instead of Icelandic text
 - **📊 COMPREHENSIVE TESTING**: All three main commands fully tested with real GPS station data
 - **🔧 RINEX COMPLIANCE**: FORTRAN77 formatting requirements documented and enforced
+
+**2025-08-24**: Rich Table Formatting & TODO Comment System
+- **🎨 PRODUCTION-READY RICH FORMATTING**: Complete rich.table implementation with professional visual design
+- **🎯 PERFECT GPS DATA DISPLAY**: Color-coded equipment groups (Receiver: green, Antenna: red, Monument: yellow)
+- **📏 OPTIMAL SPACING**: Compact vertical layout with proper group header alignment for manual QC workflows
+- **✅ COMPLETE DATA VISIBILITY**: No truncation, all equipment details visible with consistent "N/A" handling
+- **🔢 DECIMAL ALIGNMENT**: Proper numeric formatting for coordinates and measurements
+- **🏷️ TODO COMMENT SYSTEM**: Comprehensive comment tracking system (FIXME, TODO, HACK, REVIEW, WARNING, etc.)
+- **📋 TECHNICAL DEBT VISIBILITY**: Strategic TODO comments added to critical codebase sections
+- **📚 DEVELOPMENT DOCUMENTATION**: TODO-COMMENTS.md with integration guidelines for VS Code/Neovim
 
 ### Legacy Structure
 - **tests/**: Test files (moved from src)
@@ -325,3 +336,32 @@ if not owners:
 5. **Configuration**: Consider making default contacts configurable
 
 **Impact**: Contact information appears in site logs and metadata exports, so accuracy is critical for GPS station operations.
+
+**STATUS**: This section is now marked with TODO comments in the code:
+- `HACK`: Hardcoded IMO fallback flagged at `src/tostools/gps_metadata_qc.py:465`
+- `TODO`: Proper IMO contact API integration needed 
+- `REVIEW`: Architecture review flagged with reference to this documentation
+
+## TODO Comment System
+
+The codebase now uses a structured TODO comment system for tracking technical debt, bugs, and improvements. See `TODO-COMMENTS.md` for complete documentation.
+
+### Comment Types Used
+- **FIXME**: Critical bugs needing immediate attention
+- **TODO**: Features and improvements to implement
+- **HACK**: Temporary solutions needing proper implementation  
+- **REVIEW**: Code sections needing architectural review
+- **WARNING**: Important constraints and gotchas
+- **NOTE**: Important information and context
+
+### Integration
+- Compatible with VS Code Todo Tree extension
+- Compatible with Neovim todo-comments.nvim plugin
+- Can be integrated with Git hooks and CI pipelines
+- Provides clear visibility into technical debt and priorities
+
+### Current Critical Items
+- Contact management system architecture review
+- Rich table group header alignment fine-tuning
+- RINEX processing migration to modular architecture
+- CLI feature gap implementation (--no-static, --contact flags)

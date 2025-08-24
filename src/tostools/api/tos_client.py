@@ -1,7 +1,7 @@
 """
 TOS (Technical Operations System) API client.
 
-This module provides functions to interact with the TOS REST API for GPS station
+This module provides functions to interact with the TOS REST API for GPS stations
 metadata retrieval and management.
 """
 
@@ -65,12 +65,13 @@ class TOSClient:
             if method.upper() == "POST":
                 # Use the same format as legacy system
                 import json
+
                 response = requests.post(
                     url,
                     data=json.dumps(data),
                     headers={"Content-Type": "application/json"},
                     params=params,
-                    timeout=self.timeout
+                    timeout=self.timeout,
                 )
             else:
                 response = requests.get(url, params=params, timeout=self.timeout)
@@ -96,7 +97,7 @@ class TOSClient:
 
         Args:
             station_identifier: Station identifier to search for
-            code: Search code type (marker, name, etc.) 
+            code: Search code type (marker, name, etc.)
             domains: Domain filter (e.g., "geophysical")
 
         Returns:
@@ -122,7 +123,9 @@ class TOSClient:
                 body = {"code": code, "value": station_id}
 
                 # Entity type based on domain
-                entity_type = "platform" if domain == "remote_sensing_platform" else "station"
+                entity_type = (
+                    "platform" if domain == "remote_sensing_platform" else "station"
+                )
 
                 # Endpoint like legacy system
                 endpoint = f"/entity/search/{entity_type}/{domain}/"
@@ -140,13 +143,15 @@ class TOSClient:
                         found_stations = []
 
                     stations.extend(found_stations)
-                    self.logger.info(f"Found {len(found_stations)} stations for '{station_id}' in {domain}")
+                    self.logger.info(
+                        f"Found {len(found_stations)} stations for '{station_id}' in {domain}"
+                    )
 
         # Remove duplicates based on id_entity
         unique_stations = []
         seen_ids = set()
         for station in stations:
-            station_id = station.get('id_entity')
+            station_id = station.get("id_entity")
             if station_id and station_id not in seen_ids:
                 unique_stations.append(station)
                 seen_ids.add(station_id)
@@ -190,61 +195,67 @@ class TOSClient:
     ) -> Optional[Dict]:
         """
         Get complete station metadata processed exactly like legacy gps_metadata() function.
-        
+
         This replicates the complete legacy workflow:
-        1. Search for station 
+        1. Search for station
         2. Get device history connections
         3. Get detailed device information for each connection
         4. Process into structured device sessions
         5. Organize into time-based device history
-        
+
         Args:
             station_identifier: Station identifier
             domains: Domain filter
-            
+
         Returns:
             Complete station dictionary with device_history, or None if not found
         """
         # Step 1: Get basic station info and device history
-        station_data, device_history = self.get_station_metadata(station_identifier, domains)
-        
+        station_data, device_history = self.get_station_metadata(
+            station_identifier, domains
+        )
+
         if not station_data or not device_history:
             self.logger.warning(f"No station data found for {station_identifier}")
             return None
-            
+
         # Step 2: Process device sessions (makes additional API calls)
         device_sessions = self.get_device_sessions(device_history)
-        
+
         # Step 3: Sort by date (legacy behavior)
         device_sessions.sort(key=lambda d: d["device"]["date_from"])
-        
-        self.logger.info(f"Found {len(device_sessions)} device sessions for {station_identifier}")
-        
+
+        self.logger.info(
+            f"Found {len(device_sessions)} device sessions for {station_identifier}"
+        )
+
         # Step 4: Process into legacy format device history
         processed_history = self._process_device_history(device_sessions)
-        
+
         # Step 5: Create final station structure (matching legacy format)
-        final_station = self._create_legacy_station_structure(station_data, device_history, processed_history)
-        
+        final_station = self._create_legacy_station_structure(
+            station_data, device_history, processed_history
+        )
+
         return final_station
-        
+
     def _process_device_history(self, device_sessions: List[Dict]) -> List[Dict]:
         """
         Process device sessions into legacy-compatible device history format.
         Replicates get_device_history() logic.
         """
         from ..legacy.gps_metadata_qc import get_device_history
-        
+
         # Use legacy function to maintain exact compatibility
         return get_device_history(device_sessions)
-        
+
     def _create_legacy_station_structure(
         self, station_data: Dict, device_history: Dict, processed_history: List[Dict]
     ) -> Dict:
         """Create station structure matching legacy format."""
         # Extract key station attributes from device_history (legacy pattern)
         station = {}
-        
+
         # Basic station info with proper type conversion
         if "attributes" in device_history:
             for attr in device_history["attributes"]:
@@ -259,7 +270,11 @@ class TOSClient:
                             station[code] = float(value) if value else 0.0
                         except (ValueError, TypeError):
                             station[code] = 0.0
-                    elif code in ["geological_characteristic", "bedrock_type", "bedrock_condition"]:
+                    elif code in [
+                        "geological_characteristic",
+                        "bedrock_type",
+                        "bedrock_condition",
+                    ]:
                         station[code] = value
                     elif code == "is_near_fault_zones":
                         station[code] = value
@@ -269,32 +284,32 @@ class TOSClient:
                         station[code] = value
                     elif code == "in_network_epos":
                         station[code] = value
-        
+
         # Add processed device history
         station["device_history"] = processed_history
-        
+
         # Add contact information (always include, even if empty)
         station["contact"] = {}
         if "id_entity" in station_data:
             contacts = self.get_contacts(station_data["id_entity"])
             if contacts:
                 station["contact"] = self._process_contacts(contacts)
-        
+
         return station
-        
+
     def _process_contacts(self, contacts: List[Dict]) -> Dict:
         """Process contact information into legacy format."""
         contact_info = {}
-        
+
         for contact in contacts:
             role = contact.get("role_is", "").lower()
             if "eigandi" in role:  # Owner
                 contact_info["owner"] = contact
-            elif "rekstraraðili" in role:  # Operator  
+            elif "rekstraraðili" in role:  # Operator
                 contact_info["operator"] = contact
             else:
                 contact_info["contact"] = contact
-                
+
         return contact_info
 
     def get_contacts(self, entity_id: int) -> List[Dict[str, Any]]:
@@ -315,7 +330,7 @@ class TOSClient:
     ) -> List[Dict[str, Any]]:
         """
         Process device history into organized sessions.
-        
+
         This replicates the legacy TOS API interaction pattern:
         1. For each connection in children_connections
         2. Make additional API call to get device details
@@ -342,18 +357,20 @@ class TOSClient:
             # Make additional API call for device details (legacy pattern)
             id_entity_child = connection["id_entity_child"]
             device = self._make_request(f"history/entity/{id_entity_child}/")
-            
+
             if not device:
-                self.logger.error(f"Failed to get device details for entity {id_entity_child}")
+                self.logger.error(
+                    f"Failed to get device details for entity {id_entity_child}"
+                )
                 continue
-                
+
             # Only process devices we care about
             if device["code_entity_subtype"] not in devices_used:
                 self.logger.debug(
                     f"Device type {device['code_entity_subtype']} not in devices_used: {devices_used}"
                 )
                 continue
-                
+
             self.logger.debug(
                 f"Processing device {device['code_entity_subtype']} for connection {connection['time_from']} - {connection['time_to']}"
             )
@@ -362,7 +379,7 @@ class TOSClient:
             attribute_history = self._get_device_attribute_history(
                 device, connection["time_from"], connection["time_to"]
             )
-            
+
             # Create sessions for each attribute period
             for attribute in attribute_history:
                 session = connection.copy()
@@ -376,20 +393,22 @@ class TOSClient:
     ) -> List[Dict[str, Any]]:
         """
         Extract device attribute history for a specific time period.
-        
+
         This should use the legacy device_attribute_history function for exact compatibility.
         For now, return the device as-is with time stamps added.
         """
         from ..legacy.gps_metadata_qc import device_attribute_history
-        
+
         # Use legacy function to process the device properly
         try:
-            return device_attribute_history(device, session_start, session_end, logging.CRITICAL)
+            return device_attribute_history(
+                device, session_start, session_end, logging.CRITICAL
+            )
         except Exception as e:
             self.logger.warning(f"Legacy device_attribute_history failed: {e}")
             # Fallback: return device as-is with date stamps
             device_copy = device.copy()
-            device_copy["date_from"] = session_start  
+            device_copy["date_from"] = session_start
             device_copy["date_to"] = session_end
             return [device_copy]
 

@@ -50,10 +50,11 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
     module_logger.debug("Full station data: {}".format(station))
     print(tabulate([station_attributes], headers=station_headers))
     contact_info = [
-        (station["contact"][item]["role_is"], station["contact"][item]["name"])
+        (station["contact"][item].get("role", station["contact"][item]["role_is"]).title(), 
+         station["contact"][item]["name"])
         for item in station["contact"].keys()
     ]
-    print(tabulate(contact_info, headers=["Hlutverk", "Nafn"]))
+    print(tabulate(contact_info, headers=["Role", "Name"]))
     print("-" * 100)
     device_list = ["gnss_receiver", "antenna", "monument", "radome"]
     print(
@@ -130,7 +131,7 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
                         )
 
                     if "serial_number" in device_headers:
-                        device_headers[device_headers.index("serial_number")] = "SN"
+                        device_headers[device_headers.index("serial_number")] = "Serial Number"
                     if "model" in device_headers:
                         device_headers[device_headers.index("model")] = "Model"
                     if "time_from" in device_headers:

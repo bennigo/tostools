@@ -443,6 +443,7 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
 
         contact[owner["role"]] = {
             "id_entity": owner["id_contact"],
+            "role": owner["role"],
             "role_is": owner["role_is"],
             "name": owner["name"],
             "address": owner["address"],
@@ -461,8 +462,9 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
         module_logger.info("%s: %s", owner["role_is"], owner["name"])
 
     if not owners:
-        # get IMO info as default contact
-        # TODO: implement IMO as default contact if no contact
+        # HACK: Hardcoded IMO fallback when no owners found in TOS API
+        # TODO: implement proper IMO contact API integration instead of hardcoded values
+        # REVIEW: Contact management system architecture needs review - see CLAUDE.md
         # response = requests.get(
         #     url_rest + "/contact/" + str(imo_id) + "/",
         #     timeout=request_timeout,
@@ -470,13 +472,40 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
         # owner = response.json()
 
         module_logger.warning("No owners found at: %s. Setting default", url_rest)
+        # Get complete IMO contact information for fallback
+        imo_addition = additional_contact_fields("Veðurstofa Íslands")
+        
         contact["owner"] = {
+            "role": "owner",
             "role_is": "Eigandi stöðvar",
             "name": "Veðurstofa Íslands",
+            "address": "Bústaðarvegur 7-9, 105 Reykjavík, Ísland",
+            "comment": "",
+            "phone_primary": "5226000",
+            "abbreviation": imo_addition["abbreviation"],
+            "name_en": imo_addition["name_en"],
+            "email": imo_addition["email"],
+            "primary_contact": imo_addition["primary_contact"],
+            "department": imo_addition["department"],
+            "address_en": imo_addition["address_en"],
+            "main_url": imo_addition["main_url"],
+            "main_url_en": imo_addition["main_url_en"],
         }
         contact["operator"] = {
+            "role": "operator", 
             "role_is": "Rekstraraðili stöðvar",
             "name": "Veðurstofa Íslands",
+            "address": "Bústaðarvegur 7-9, 105 Reykjavík, Ísland",
+            "comment": "",
+            "phone_primary": "5226000",
+            "abbreviation": imo_addition["abbreviation"],
+            "name_en": imo_addition["name_en"],
+            "email": imo_addition["email"],
+            "primary_contact": imo_addition["primary_contact"],
+            "department": imo_addition["department"],
+            "address_en": imo_addition["address_en"],
+            "main_url": imo_addition["main_url"],
+            "main_url_en": imo_addition["main_url_en"],
         }
         module_logger.info(
             "Setting default contact and role: %s", contact["operator"]["name"]
@@ -484,7 +513,8 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
 
     if contact["owner"]["name"] == "Landmælingar Íslands":
         contact["operator"] = {
-            "role_is": "Rekstraraðili stöðvar",
+            "role": "operator",
+            "role_is": "Rekstraraðili stöðvar", 
             "name": "Landmælingar Íslands",
         }
         module_logger.info(
