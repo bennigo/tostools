@@ -168,8 +168,20 @@ Contact: Benni (bgo@vedur.is) or Hildur (hildur@vedur.is)
         help="Display GPS station metadata from TOS in various formats",
         epilog="""
 Examples:
-  # Clean table output (perfect for analysis)
+  # Rich visual output (default - best for manual QC)
+  tosGPS PrintTOS RHOF --format rich
+  
+  # Clean table output (perfect for analysis)  
   tosGPS --log-level ERROR PrintTOS RHOF --format table > station_data.csv
+  
+  # Show only device history
+  tosGPS PrintTOS RHOF --show-history
+  
+  # Show only static data and contacts
+  tosGPS PrintTOS RHOF --show-static --show-contacts
+  
+  # Detailed contact information
+  tosGPS PrintTOS RHOF --contact
   
   # Multiple stations with status info
   tosGPS PrintTOS REYK HOFN RHOF --format table
@@ -177,8 +189,8 @@ Examples:
   # GAMIT processing format
   tosGPS PrintTOS RHOF --format gamit > gamit_stations.dat
   
-  # Raw detailed metadata
-  tosGPS PrintTOS RHOF --raw --format table
+  # JSON output for scripting
+  tosGPS PrintTOS RHOF --format json | jq .
   
   # Silent operation (errors only)
   tosGPS --log-level ERROR PrintTOS RHOF 2>/dev/null
@@ -189,11 +201,30 @@ Examples:
     print_options.add_argument(
         "-f",
         "--format",
-        choices=["table", "gamit"],
-        default="table",
-        help="Output format: table (human-readable) or gamit (processing)",
+        choices=["table", "rich", "json", "gamit"],
+        default="rich",
+        help="Output format: rich (enhanced tables), table (simple), json, gamit (processing)",
     )
     print_options.add_argument("--raw", action="store_true", help="Include detailed raw metadata")
+    
+    # Display control options
+    display_group = print_options.add_argument_group("Display options")
+    display_group.add_argument(
+        "--show-static", action="store_true",
+        help="Show only static station data"
+    )
+    display_group.add_argument(
+        "--show-history", action="store_true",
+        help="Show only device history"
+    )
+    display_group.add_argument(
+        "--show-contacts", action="store_true",
+        help="Show only contact summary" 
+    )
+    display_group.add_argument(
+        "--contact", action="store_true",
+        help="Show detailed contact information in English and Icelandic"
+    )
 
     # RINEX validation subcommand
     rinex_parser = subparsers.add_parser(
@@ -306,21 +337,73 @@ def _handle_print_subcommand(args, stations, url, log_level):
 
     # Defining default behaviour
     pformat, raw = (
-        (args.format, args.raw) if args.subcommand == "PrintTOS" else ("table", False)
+        (args.format, args.raw) if args.subcommand == "PrintTOS" else ("rich", False)
     )
+    
+    # Process show options - if any --show-* flag is used, show only those sections
+    # If no --show-* flags are used, show everything (default behavior)
+    show_static_flag = getattr(args, 'show_static', False)
+    show_history_flag = getattr(args, 'show_history', False) 
+    show_contacts_flag = getattr(args, 'show_contacts', False)
+    detailed_contacts = getattr(args, 'contact', False)
+    
+    # If any --show-* flag is specified, only show those sections
+    any_show_flag = show_static_flag or show_history_flag or show_contacts_flag
+    
+    if any_show_flag:
+        # Selective display mode - show only requested sections
+        show_options = {
+            "show_static": show_static_flag,
+            "show_history": show_history_flag,
+            "show_contacts": show_contacts_flag,
+        }
+    else:
+        # Default mode - show everything unless --contact is used (which shows only contacts)
+        if detailed_contacts:
+            show_options = {
+                "show_static": False,
+                "show_history": False, 
+                "show_contacts": False,  # Will be handled by detailed_contacts
+            }
+        else:
+            show_options = {
+                "show_static": True,
+                "show_history": True,
+                "show_contacts": True,
+            }
 
     for sta in stations:
         station_info = gpsqc.gps_metadata(sta, url, loglevel=log_level.value)
+        
+        if not station_info:
+            continue
+            
         if pformat == "table":
             gpsf.print_station_history(
                 station_info, raw_format=raw, loglevel=log_level.value
             )
+        elif pformat == "rich":
+            # Use new rich formatter with full flag support
+            from .io.rich_formatters import print_stations_rich
+            print_stations_rich(
+                [station_info], 
+                show_static=show_options["show_static"],
+                show_contacts=show_options["show_contacts"],
+                show_history=show_options["show_history"], 
+                detailed_contacts=detailed_contacts
+            )
+        elif pformat == "json":
+            # Use JSON formatter
+            from .io.formatters import json_print
+            print(json_print(station_info))
         elif pformat == "gamit":
             stationInfo_list += gpsf.print_station_history(station_info)
 
-    stationInfo_list.sort()
-    for infoline in stationInfo_list:
-        print(infoline)
+    # Handle gamit format output (accumulated at the end)
+    if pformat == "gamit":
+        stationInfo_list.sort()
+        for infoline in stationInfo_list:
+            print(infoline)
 
 
 def _handle_rinex_subcommand(args, stations, url, log_level):

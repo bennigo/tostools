@@ -56,38 +56,23 @@ def setup_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--show-static", action="store_true", default=True, 
-        help="Show static station data (default: True)"
+        "--show-static", action="store_true",
+        help="Show only static station data"
     )
     
     parser.add_argument(
-        "--show-history", action="store_true", default=True,
-        help="Show device history (default: True)"
+        "--show-history", action="store_true",
+        help="Show only device history"
     )
     
     parser.add_argument(
-        "--show-contacts", action="store_true", default=True,
-        help="Show contact summary (default: True)" 
+        "--show-contacts", action="store_true",
+        help="Show only contact summary" 
     )
     
     parser.add_argument(
         "--contact", action="store_true",
         help="Show detailed contact information in English and Icelandic"
-    )
-    
-    parser.add_argument(
-        "--no-static", action="store_true",
-        help="Hide static station data"
-    )
-    
-    parser.add_argument(
-        "--no-history", action="store_true", 
-        help="Hide device history"
-    )
-    
-    parser.add_argument(
-        "--no-contacts", action="store_true",
-        help="Hide contact information"
     )
 
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
@@ -171,9 +156,7 @@ def process_stations(
             if output_format == "json":
                 print(json_print(station_data))
             elif output_format == "rich":
-                # Use new rich formatter
-                # TODO: Add support for --no-static, --no-history, --no-contacts flags
-                # TODO: Implement detailed contact display with --contact flag
+                # Use new rich formatter with full flag support
                 from ..io.rich_formatters import print_stations_rich
                 print_stations_rich(
                     [station_data], 
@@ -220,12 +203,31 @@ def main_cli() -> int:
     # Handle format and display options
     output_format = args.format
     
-    # Process show/hide options
-    show_options = {
-        "show_static": args.show_static and not args.no_static,
-        "show_history": args.show_history and not args.no_history,
-        "show_contacts": args.show_contacts and not args.no_contacts,
-    }
+    # Process show options - if any --show-* flag is used, show only those sections
+    # If no --show-* flags are used, show everything (default behavior)
+    any_show_flag = args.show_static or args.show_history or args.show_contacts
+    
+    if any_show_flag:
+        # Selective display mode - show only requested sections
+        show_options = {
+            "show_static": args.show_static,
+            "show_history": args.show_history,
+            "show_contacts": args.show_contacts,
+        }
+    else:
+        # Default mode - show everything unless --contact is used (which shows only contacts)
+        if args.contact:
+            show_options = {
+                "show_static": False,
+                "show_history": False,
+                "show_contacts": False,  # Will be handled by detailed_contacts
+            }
+        else:
+            show_options = {
+                "show_static": True,
+                "show_history": True,
+                "show_contacts": True,
+            }
     
     detailed_contacts = args.contact
 

@@ -11,6 +11,8 @@ This is tostools, a Python3 command-line toolkit primarily for GPS/GNSS station 
 
 **Main Application**: `tosGPS` - GPS metadata quality control tool that queries TOS API and validates against RINEX files.
 
+**Current Version**: 0.1.0 (development version with modular architecture transition)
+
 ## Environment Setup
 
 This project uses a dedicated mamba/conda environment named `tostools`. 
@@ -43,6 +45,11 @@ pip install -e .
 - Site log generation: `tosGPS sitelog RHOF | process_data.py`
 - RINEX validation: `tosGPS rinex RHOF data/*.rnx`
 
+#### Rich Visual Output for Manual QC
+- Enhanced table display: `tosGPS PrintTOS RHOF --format rich` (default)
+- Color-coded equipment groups: Receiver (green), Antenna (red), Monument (yellow)
+- Compact layout with proper decimal alignment for coordinates
+
 #### Manual QC with Status Info
 - With progress info: `tosGPS --log-level INFO PrintTOS RHOF --format table`
 - Full debug output: `tosGPS --debug-all sitelog RHOF --output station.log`
@@ -63,9 +70,13 @@ pip install -e ".[dev]"
 The project dependencies are managed through pyproject.toml and include:
 - `requests` (for TOS API calls)
 - `pandas` (for data processing) 
-- `tabulate` (for table formatting)
+- `tabulate` (for simple table formatting)
+- `rich` (for enhanced table formatting with colors)
 - `gtimes` (GPS time functions)
 - `python-dateutil` (date utilities)
+- `fortranformat` (for RINEX FORTRAN77 parsing)
+- `pyproj` (coordinate transformations)
+- `argparse-logging` (enhanced CLI logging)
 
 ### Legacy TOS Query Examples (from Tryggvi's TOSTools)
 - Search stations: `tos vadla`, `tos ada`, `tos V89`
@@ -121,10 +132,10 @@ The project can generate:
 ## Development Notes
 
 - Language: The README and station data are in Icelandic, but code is in English
-- Python version: Requires Python 3.6+
-- No formal requirements.txt - dependencies noted in README
+- Python version: Requires Python 3.8+ (supports 3.8 through 3.13)
+- Dependencies managed through pyproject.toml - no requirements.txt needed
 - Test files: `test_tos.py`, `test_tostool.py` for testing functionality
-- Logging: Uses custom logger setup in `metadata_functions.py`
+- Logging: Uses modular logging system in `utils/logging.py` and legacy setup in `metadata_functions.py`
 
 ## CI/CD Pipeline
 
@@ -244,7 +255,7 @@ src/tostools/
 - **📊 COMPREHENSIVE TESTING**: All three main commands fully tested with real GPS station data
 - **🔧 RINEX COMPLIANCE**: FORTRAN77 formatting requirements documented and enforced
 
-**2025-08-24**: Rich Table Formatting & TODO Comment System
+**2025-08-25**: Rich Table Formatting & TODO Comment System
 - **🎨 PRODUCTION-READY RICH FORMATTING**: Complete rich.table implementation with professional visual design
 - **🎯 PERFECT GPS DATA DISPLAY**: Color-coded equipment groups (Receiver: green, Antenna: red, Monument: yellow)
 - **📏 OPTIMAL SPACING**: Compact vertical layout with proper group header alignment for manual QC workflows

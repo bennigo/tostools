@@ -73,7 +73,7 @@ class GPSStationFormatter:
         
         # Add static data rows - marker first as requested
         rows = [
-            ("Marker", station.get("marker", "N/A")),
+            ("Marker", station.get("marker", "N/A").upper() if station.get("marker", "N/A") != "N/A" else "N/A"),
             ("Name", station.get("name", "N/A")),
             ("IERS DOMES Number", station.get("iers_domes_number", "N/A")),
             ("Coordinates", f"{station.get('lat', 'N/A')}, {station.get('lon', 'N/A')}"),
@@ -119,32 +119,54 @@ class GPSStationFormatter:
             self.console.print("[yellow]No contact information available[/yellow]")
             return
             
-        for i, (contact_id, contact_info) in enumerate(station["contact"].items()):
-            # Create panel for each contact
-            contact_table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
-            contact_table.add_column("Field", style="bold")
-            contact_table.add_column("English", style="cyan") 
-            contact_table.add_column("Icelandic", style="yellow")
+        self.console.print("\n[bold white]Contact Information[/bold white]")
+        self.console.print()
             
-            # Add contact fields
+        for i, (contact_id, contact_info) in enumerate(station["contact"].items()):
+            # Create compact table with proper column widths
+            contact_table = Table(
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold white",
+                padding=(0, 1),
+                width=90,  # Limit table width to be more compact
+                expand=False  # Don't expand to fill terminal
+            )
+            contact_table.add_column("Field", style="bold", width=10, no_wrap=True)
+            contact_table.add_column("English", style="cyan", width=35, max_width=35) 
+            contact_table.add_column("Icelandic", style="yellow", width=30, max_width=30)
+            
+            # Get contact info with better field mapping
+            role_en = contact_info.get("role", "N/A")
+            role_is = contact_info.get("role_is", "N/A")
+            name = contact_info.get("name", "N/A")
+            email = contact_info.get("email", "")
+            phone = contact_info.get("phone_primary", contact_info.get("phone", ""))
+            address = contact_info.get("address_en", contact_info.get("address", ""))
+            address_is = contact_info.get("address", "N/A")
+            
+            # Add contact fields with better organization
             fields = [
-                ("Role", contact_info.get("role", "N/A"), contact_info.get("role_is", "N/A")),
-                ("Name", contact_info.get("name", "N/A"), contact_info.get("name", "N/A")),
-                ("Email", contact_info.get("email", "N/A"), contact_info.get("email", "N/A")),
-                ("Phone", contact_info.get("phone", "N/A"), contact_info.get("phone", "N/A")),
-                ("Organization", contact_info.get("organization", "N/A"), contact_info.get("organization_is", "N/A")),
-                ("Address", contact_info.get("address", "N/A"), contact_info.get("address_is", "N/A")),
-                ("City", contact_info.get("city", "N/A"), contact_info.get("city_is", "N/A")),
-                ("Country", contact_info.get("country", "N/A"), contact_info.get("country_is", "N/A")),
+                ("Role", role_en, role_is),
+                ("Name", name, name),  # Name is usually the same
+                ("Email", email or "N/A", email or "N/A"),
+                ("Phone", phone or "N/A", phone or "N/A"),
+                ("Address", address or "N/A", address_is if address_is != address else "N/A"),
             ]
             
             for field, eng_val, ice_val in fields:
-                if eng_val != "N/A" or ice_val != "N/A":
+                # Only show rows with meaningful data
+                if eng_val and eng_val != "N/A":
                     contact_table.add_row(field, eng_val, ice_val)
             
-            title = f"Contact {i+1}: {contact_info.get('role', 'Unknown Role').title()}"
-            panel = Panel(contact_table, title=title, title_align="left")
-            self.console.print(panel)
+            # Print contact with clean title
+            title = f"[bold green]Contact {i+1}: {role_en.title() if role_en != 'N/A' else 'Unknown'}[/bold green]"
+            self.console.print(title)
+            self.console.print(contact_table)
+            
+            # Add spacing between contacts
+            if i < len(station["contact"]) - 1:
+                self.console.print()
 
     def print_device_history(self, station: Dict[str, Any]) -> None:
         """Print device history with grouped headers and color-coded columns."""
