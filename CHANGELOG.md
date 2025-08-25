@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2025-08-25
+
+### 🚀 MAJOR: Production-Ready GAMIT Format & Robust Data Validation
+
+#### Added
+
+- **Robust GAMIT/GLOBK Processing Format** (`src/tostools/gps_metadata_functions.py`)
+  - Complete GAMIT format implementation with proper headers and fixed-width columns
+  - Session-level data validation prevents GPS processing crashes
+  - Smart error handling: invalid sessions skipped while valid sessions preserved
+  - Missing monument data gracefully handled with antenna-only calculations
+  - Production-ready validation for real-world GPS station metadata
+
+- **Enhanced Data Validation System**
+  - Essential vs non-essential data differentiation
+  - Station-level validation (marker, name, device_history)
+  - Session-level validation (time_from, equipment data)
+  - Graceful handling of missing time_to with GAMIT present convention
+  - Comprehensive validation reporting with session skip summaries
+
+- **Improved Logging Architecture**
+  - Critical data issues always visible at ERROR level
+  - Non-essential warnings at appropriate WARNING level  
+  - Clear session-by-session error reporting
+  - Validation summaries: "Station X: 12/15 sessions valid (3 skipped)"
+  
+#### Changed
+
+- **Simplified Display Flag System** (`src/tostools/tosGPS.py`, `src/tostools/cli/main.py`)
+  - Replaced confusing --show/--no dual flags with intuitive --show-only logic
+  - Default behavior: show all sections (static, history, contacts)
+  - Selective display: --show-* flags show ONLY specified sections
+  - Eliminated redundant --no-* flags for cleaner interface
+
+- **Enhanced Contact Table Formatting** (`src/tostools/io/rich_formatters.py`)
+  - Fixed wide panel stretching with proper column width constraints (90 chars)
+  - Balanced Field(10)/English(35)/Icelandic(30) column layout
+  - Professional rounded borders with proper spacing
+  - Marker values now display in uppercase (e.g., "RHOF")
+
+#### Fixed
+
+- **Missing Monument Data Handling**: Fixed KeyError crashes when monument data absent
+- **GAMIT Format Corrections**: Fixed function call to use `print_station_info()` instead of `print_station_history()`
+- **Contact Table Layout**: Eliminated terminal-width panel stretching issues
+- **Session Processing**: Robust exception handling prevents single bad sessions from crashing entire processing
+
 ## [0.2.1] - 2025-08-24
 
 ### 🎨 MAJOR: Rich Table Formatting & TODO Comment System

@@ -50,6 +50,12 @@ pip install -e .
 - Color-coded equipment groups: Receiver (green), Antenna (red), Monument (yellow)
 - Compact layout with proper decimal alignment for coordinates
 
+#### GAMIT/GLOBK Processing Format
+- GPS processing format: `tosGPS PrintTOS RHOF --format gamit > stations.info`
+- Robust data validation prevents processing crashes
+- Session-level error handling with detailed logging
+- Compatible with GAMIT/GLOBK GPS processing workflows
+
 #### Manual QC with Status Info
 - With progress info: `tosGPS --log-level INFO PrintTOS RHOF --format table`
 - Full debug output: `tosGPS --debug-all sitelog RHOF --output station.log`
@@ -264,6 +270,15 @@ src/tostools/
 - **🏷️ TODO COMMENT SYSTEM**: Comprehensive comment tracking system (FIXME, TODO, HACK, REVIEW, WARNING, etc.)
 - **📋 TECHNICAL DEBT VISIBILITY**: Strategic TODO comments added to critical codebase sections
 - **📚 DEVELOPMENT DOCUMENTATION**: TODO-COMMENTS.md with integration guidelines for VS Code/Neovim
+
+**2025-08-25**: Production-Ready GAMIT Format & Robust Data Validation  
+- **🚀 GAMIT/GLOBK INTEGRATION**: Complete GAMIT format implementation with proper headers and fixed-width columns
+- **🛡️ ROBUST DATA VALIDATION**: Session-level validation prevents GPS processing crashes
+- **⚠️ SMART ERROR HANDLING**: Invalid sessions skipped while valid sessions preserved per station
+- **📊 CRITICAL LOGGING**: Essential data issues always visible at ERROR level for production workflows
+- **🔧 MISSING DATA HANDLING**: Graceful handling of missing monument data and equipment fields
+- **📈 VALIDATION REPORTING**: Clear summaries of valid vs skipped sessions with specific error details
+- **🌟 SIMPLIFIED UX**: Redesigned display flags (--show-* only) for intuitive user experience
 
 ### Legacy Structure
 - **tests/**: Test files (moved from src)

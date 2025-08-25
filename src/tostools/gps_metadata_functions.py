@@ -214,7 +214,10 @@ def getSession(station, session_nr, loglevel=logging.WARNING):
 
 def print_station_info(station, loglevel=logging.WARNING):
     """
-    print station metadata information
+    Generate GAMIT format station information with robust validation.
+    
+    Validates essential data and skips invalid sessions while continuing 
+    to process valid sessions from the same station.
     """
 
     # logging
@@ -223,22 +226,47 @@ def print_station_info(station, loglevel=logging.WARNING):
     header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
     # print(header)
 
+    # Validate essential station-level data first
+    if not station.get("marker"):
+        module_logger.error("Station missing essential field 'marker' - skipping entire station")
+        return []
+    
+    if not station.get("name"):
+        module_logger.error("Station %s missing essential field 'name' - skipping entire station", station.get("marker", "UNKNOWN"))
+        return []
+        
+    if not station.get("device_history"):
+        module_logger.error("Station %s has no device history - skipping entire station", station["marker"])
+        return []
+
     stationInfo_list = []
-    for item in station["device_history"]:
-        module_logger.debug("item: %s", json_print(item))
+    valid_sessions = 0
+    total_sessions = len(station["device_history"])
+    
+    for session_idx, item in enumerate(station["device_history"]):
+        module_logger.debug("Processing session %d/%d for station %s", session_idx + 1, total_sessions, station["marker"])
+        
+        # Validate essential session data - skip session if critical fields are missing
+        skip_session = False
+        session_errors = []
+        
+        # Essential: time_from must be valid datetime
         try:
             time_from = item["time_from"].strftime("%Y %j %H %M %S")
-        except:
-            module_logger.warning(
-                "time_from has wrong type should be datetime, format is {0}: exiting program ...".format(
-                    type(item["time_from"])
-                )
-            )
-            quit()
+        except (AttributeError, TypeError, ValueError) as e:
+            session_errors.append(f"time_from invalid or missing (type: {type(item.get('time_from', None))}, value: {item.get('time_from', 'None')})")
+            skip_session = True
 
+        # Handle time_to (can be None for current sessions)
         try:
-            time_to = item["time_to"].strftime("%Y %j %H %M %S")
-        except:
+            if item.get("time_to"):
+                time_to = item["time_to"].strftime("%Y %j %H %M %S")
+            else:
+                time_to = "9999 999 00 00 00"  # GAMIT convention for present
+        except (AttributeError, TypeError, ValueError):
+            # This is non-essential - time_to can be None for current sessions, so WARNING is appropriate
+            module_logger.warning("Station %s session %d: time_to invalid, using 'present' (9999 999 00 00 00)", 
+                                station["marker"], session_idx + 1)
             time_to = "9999 999 00 00 00"
 
         # receiver type
@@ -255,19 +283,29 @@ def print_station_info(station, loglevel=logging.WARNING):
             else:
                 antenna_SN = item["antenna"]["serial_number"]
 
-            # Antenna height and offsets
-            antenna_height = (
-                item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
-            )
+            # Antenna height and offsets (handle missing monument data)
+            if "monument" in item.keys() and item["monument"]["monument_height"] is not None:
+                antenna_height = (
+                    item["antenna"]["antenna_height"] + item["monument"]["monument_height"]
+                )
+            else:
+                antenna_height = item["antenna"]["antenna_height"] if item["antenna"]["antenna_height"] is not None else 0.0000
 
-            antenna_N = (
-                item["antenna"]["antenna_offset_north"]
-                + item["monument"]["monument_offset_north"]
-            )
-            antenna_E = (
-                item["antenna"]["antenna_offset_east"]
-                + item["monument"]["monument_offset_east"]
-            )
+            if "monument" in item.keys() and item["monument"]["monument_offset_north"] is not None:
+                antenna_N = (
+                    item["antenna"]["antenna_offset_north"]
+                    + item["monument"]["monument_offset_north"]
+                )
+            else:
+                antenna_N = item["antenna"]["antenna_offset_north"] if item["antenna"]["antenna_offset_north"] is not None else 0.0000
+                
+            if "monument" in item.keys() and item["monument"]["monument_offset_east"] is not None:
+                antenna_E = (
+                    item["antenna"]["antenna_offset_east"]
+                    + item["monument"]["monument_offset_east"]
+                )
+            else:
+                antenna_E = item["antenna"]["antenna_offset_east"] if item["antenna"]["antenna_offset_east"] is not None else 0.0000
 
             if item["antenna"]["antenna_reference_point"] is None:
                 antenna_reference_point = "-----"
@@ -319,29 +357,55 @@ def print_station_info(station, loglevel=logging.WARNING):
         else:
             dome = "NONE"
 
-        # header='*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN'
-        sessionLine = " {0:4.4}  {1:17.17} {2:17.17}  {3:17.17}  {4: 1.4f}  {5:5.5}  {6: 1.4f}  {7: 1.4f}  {8:20.20}  {9:20.20}  {10:>5.5}  {11:20.20}  {12:15.15}  {13:5.5}  {14:20.20}".format(
-            station["marker"].upper(),
-            station["name"][:18],
-            time_from,
-            time_to,
-            antenna_height,
-            antenna_reference_point,
-            antenna_N,
-            antenna_E,
-            receiver_type[:21],
-            firmware_version[:21],
-            software_version[:6],
-            receiver_SN[:21],
-            antenna_type[:16],
-            dome[:6],
-            antenna_SN,
-        )
-        stationInfo_list.append(sessionLine)
+        # Check for additional essential data that could cause GAMIT/GLOBK crashes
+        if not item.get("antenna") and not item.get("gnss_receiver"):
+            session_errors.append("no antenna or receiver data")
+            skip_session = True
+
+        # Skip this session if critical data is missing
+        if skip_session:
+            module_logger.error("Station %s session %d SKIPPED - Essential data missing: %s", 
+                              station["marker"], session_idx + 1, "; ".join(session_errors))
+            continue
+
+        # Generate GAMIT session line
+        try:
+            # header='*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN'
+            sessionLine = " {0:4.4}  {1:17.17} {2:17.17}  {3:17.17}  {4: 1.4f}  {5:5.5}  {6: 1.4f}  {7: 1.4f}  {8:20.20}  {9:20.20}  {10:>5.5}  {11:20.20}  {12:15.15}  {13:5.5}  {14:20.20}".format(
+                station["marker"].upper(),
+                station["name"][:18],
+                time_from,
+                time_to,
+                antenna_height,
+                antenna_reference_point,
+                antenna_N,
+                antenna_E,
+                receiver_type[:21],
+                firmware_version[:21],
+                software_version[:6],
+                receiver_SN[:21],
+                antenna_type[:16],
+                dome[:6],
+                antenna_SN,
+            )
+            stationInfo_list.append(sessionLine)
+            valid_sessions += 1
+            module_logger.debug("Station %s session %d: Valid GAMIT line generated", station["marker"], session_idx + 1)
+            
+        except (KeyError, ValueError, TypeError) as e:
+            module_logger.error("Station %s session %d SKIPPED - Error formatting GAMIT line: %s", 
+                              station["marker"], session_idx + 1, str(e))
+
+    # Log validation summary
+    skipped_sessions = total_sessions - valid_sessions
+    if skipped_sessions > 0:
+        # Use ERROR level so this critical information always shows, even at ERROR logging level
+        module_logger.error("Station %s: %d/%d sessions valid for GAMIT processing (%d skipped due to missing essential data)", 
+                           station["marker"], valid_sessions, total_sessions, skipped_sessions)
+    else:
+        module_logger.info("Station %s: All %d sessions valid for GAMIT processing", station["marker"], valid_sessions)
 
     return stationInfo_list
-
-    return session
 
 
 def sessionsList(station, date_format="%Y-%m-%d %H:%M:%S"):

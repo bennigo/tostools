@@ -166,11 +166,11 @@ def process_stations(
                     detailed_contacts=detailed_contacts
                 )
             elif output_format == "gamit":
-                # Handle gamit format
-                from .. import gps_metadata_functions
-                # For gamit format, we need to collect data and print at the end
-                # This is handled in the main function
-                pass
+                # Handle gamit format - collect data for batch output
+                from .. import gps_metadata_functions as gpsf
+                if not hasattr(process_stations, 'stationInfo_list'):
+                    process_stations.stationInfo_list = []
+                process_stations.stationInfo_list += gpsf.print_station_info(station_data, loglevel)
             else:
                 # Use existing tabulate formatter for table format
                 from .. import gps_metadata_functions
@@ -252,6 +252,18 @@ def main_cli() -> int:
             process_stations(
                 args.stations, tos_client, output_format, show_options, detailed_contacts, loglevel
             )
+            
+            # Handle GAMIT format output (accumulated data)
+            if output_format == "gamit" and hasattr(process_stations, 'stationInfo_list'):
+                # Print GAMIT header
+                header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
+                print(header)
+                # Sort and print station info lines
+                process_stations.stationInfo_list.sort()
+                for infoline in process_stations.stationInfo_list:
+                    print(infoline)
+                # Clean up for potential future calls
+                del process_stations.stationInfo_list
 
         return 0
 

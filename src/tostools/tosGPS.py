@@ -397,10 +397,13 @@ def _handle_print_subcommand(args, stations, url, log_level):
             from .io.formatters import json_print
             print(json_print(station_info))
         elif pformat == "gamit":
-            stationInfo_list += gpsf.print_station_history(station_info)
+            stationInfo_list += gpsf.print_station_info(station_info, loglevel=log_level.value)
 
     # Handle gamit format output (accumulated at the end)
     if pformat == "gamit":
+        # Print GAMIT header
+        header = "*SITE  Station Name      Session Start      Session Stop       Ant Ht   HtCod  Ant N    Ant E    Receiver Type         Vers                  SwVer  Receiver SN           Antenna Type     Dome   Antenna SN"
+        print(header)
         stationInfo_list.sort()
         for infoline in stationInfo_list:
             print(infoline)
