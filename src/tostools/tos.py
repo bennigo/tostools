@@ -3531,7 +3531,20 @@ def _station_triage_main(args) -> int:
         print(rendered, end="")
         return 0
 
-    out_path = args.out or default_triage_path(args.station)
+    # Land in the gps-tos-corrections repo — the canonical, versioned home for
+    # triage files — NOT the current working directory. `default_triage_path`
+    # falls back to CWD when given no base_dir, which meant running this from a
+    # sibling checkout scattered `data/triage/<stn>/` trees into whatever repo
+    # you happened to be standing in (it left an untracked `data/` in the
+    # receivers working tree). The fleet path already resolved
+    # `tos_corrections_dir()`; this is the single-station path catching up so
+    # both write to the same place.
+    if args.out:
+        out_path = Path(args.out)
+    else:
+        from .archive import tos_corrections_dir
+
+        out_path = default_triage_path(args.station, base_dir=tos_corrections_dir())
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(rendered, encoding="utf-8")
 
