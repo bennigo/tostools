@@ -98,22 +98,45 @@ ANTENNA_IGS: dict[str, str] = {
     "TRM55971.00": "TRM55971.00",
     "TRM57971.00": "TRM57971.00",
     "TRM115000.10": "TRM115000.10",  # deployed at GONH
-    # Leica antenna ------------------------------------------------------------
+    # Leica antennas -----------------------------------------------------------
     "LEIAR25.R4": "LEIAR25.R4",
+    "LEIAR10": "LEIAR10",  # SKFC
+    # navXperience 3G+C — the fleet's largest single antenna population
+    # (ALHV, BJTV, BLON, FIHO, GJFV, INGC, KOTC, KVIC, LAVI, VOFJ).
+    # rcvr_ant.tab: "3G+C one-layer GNSS antenna for all signals".
+    "NAX3G+C": "NAX3G+C",
+    # Topcon PG-A1 — EYVI, KVSK.
+    "TPSPG_A1": "TPSPG_A1",
+    # Tallysman VeraPhase 6000 — HRSC, LAHC.
+    "TWIVP6000": "TWIVP6000",
     # Ashtech / pre-IGS names seen in historical data:
     "ASH700936C_M": "ASH700936C_M",
     "ASH701945C_M": "ASH701945C_M",
+    # AeroAntenna AT2775-42 — ICEB, ICEC, KVIS, SAVI. NGS-calibrated
+    # (ngs20.atx, FIELD/NGS 26-JUL-01) but NOT in IGS rcvr_ant.tab, which
+    # carries only the later AERAT2775_43 (ROBOT/Geo++ 29-JAN-17). The two are
+    # SEPARATE calibrations, not spellings of one antenna — "correcting" a _42
+    # station to _43 would silently swap in the wrong phase-centre model.
+    "AERAT2775_42": "AERAT2775_42",
     # Septentrio choke-ring ----------------------------------------------------
     "SEPCHOKE_B3E6": "SEPCHOKE_B3E6",
+    # Septentrio VeraChoke (VC6150L) — deployed at HOLV (Hólmavík), serial
+    # 2503250020. IGS rcvr_ant.tab canonical name, added there 20 Apr 2020
+    # alongside SEPVP6050_CONE.
+    "SEPVC6150L": "SEPVC6150L",
     # Septentrio PolaNt-x — compact GNSS antennas (multi/single frequency).
     # Deployed across the fleet (e.g. SEY9); IGS rcvr_ant.tab canonical names.
     "SEPPOLANT_X_MF": "SEPPOLANT_X_MF",
     "SEPPOLANT_X_SF": "SEPPOLANT_X_SF",
     # ArduSimple AS-ANT3B, NGS-calibrated ("CAL"). Low-cost survey antenna on
-    # the fleet's mosaic/ASTERX/NetRS low-cost stations (BLAL, TORK, VOTT).
+    # the fleet's mosaic/ASTERX/NetRS low-cost stations (TORK, VOTT).
     # Present in NGS ngs20.atx + GAMIT station.info; NOT in IGS rcvr_ant.tab
     # (and not yet in okada antmod.dat — phase-center gap to fold in separately).
-    "AS-ANT3BCAL": "AS-ANT3BCAL",
+    "AS-ANT3BCAL": "AS-ANT3BCAL",  # ngs20.atx FIELD/NGS 27-OCT-20
+    # ...and its own distinct NGS calibration three weeks later, used at BLAL.
+    # NOT a typo for AS-ANT3BCAL — ngs20.atx carries both as separate entries
+    # (FIELD/NGS 16-NOV-20), so BLAL's stations.cfg value is correct as written.
+    "AS-ANT3BCAL01": "AS-ANT3BCAL01",
 }
 
 # ---------------------------------------------------------------------------
