@@ -9553,7 +9553,7 @@ def _audit_constellations_history_main(args, client) -> int:
                 f"{seen} → re-date"
             )
 
-    triage_lines = format_history_triage(report)
+    triage_lines = format_history_triage(report)  # stdout copy; no path known yet
     if getattr(args, "triage_path", None):
         # Triage files belong in the gps-tos-corrections repo, not wherever the
         # operator happened to be standing. `resolve_triage_path` keeps an
@@ -9564,8 +9564,15 @@ def _audit_constellations_history_main(args, client) -> int:
         from .archive import resolve_triage_path
 
         audit_cmd = "tos audit constellations " + args.name + " --history"
-        content = f"# {audit_cmd}\n" + "\n".join(triage_lines) + "\n"
         triage_path = resolve_triage_path(args.triage_path)
+        # Re-render with the resolved path so the file carries its own literal
+        # `tos audit apply` command — the operator uncomments the ACTIONs they
+        # trust and copy-pastes the next step instead of reconstructing it.
+        content = (
+            f"# {audit_cmd}\n"
+            + "\n".join(format_history_triage(report, apply_path=triage_path))
+            + "\n"
+        )
         triage_path.parent.mkdir(parents=True, exist_ok=True)
         triage_path.write_text(content, encoding="utf-8")
         n_actions = sum(len(p.missing) + len(p.contradicted) for p in report.periods)
@@ -9597,9 +9604,13 @@ def _audit_constellations_history_main(args, client) -> int:
         try:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(
-                f"# {audit_cmd}\n" + "\n".join(triage_lines) + "\n", encoding="utf-8"
+                f"# {audit_cmd}\n"
+                + "\n".join(format_history_triage(report, apply_path=out_path))
+                + "\n",
+                encoding="utf-8",
             )
             print(f"\nalso wrote: {out_path}", file=sys.stderr)
+            print(f"  apply with: tos audit apply {out_path}", file=sys.stderr)
         except OSError as exc:
             # Never fail a read-only audit because the repo is absent/read-only.
             print(f"\n(could not write triage file: {exc})", file=sys.stderr)

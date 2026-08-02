@@ -90,3 +90,77 @@ class TestParentCreation:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("# ACTION ...\n")
         assert target.read_text().startswith("# ACTION")
+
+
+class TestSelfDocumentingApplyCommand:
+    """The file must carry the command that applies it.
+
+    Reconstructing `tos audit apply <path>` by hand after uncommenting is the
+    step that gets fumbled — a `<file>` placeholder does not help, so the
+    resolved path is baked in.
+    """
+
+    def _report(self):
+        from datetime import date
+
+        from tostools.audit_constellations import (
+            ReceiverPeriodConstellations,
+            StationConstellationHistoryReport,
+        )
+
+        return StationConstellationHistoryReport(
+            station_id=4346,
+            station_name="Ísakot",
+            marker="ISAK",
+            periods=[
+                ReceiverPeriodConstellations(
+                    device_id=4972,
+                    serial="3018434",
+                    model="SEPT POLARX5",
+                    date_from=date(2017, 7, 4),
+                    date_to=None,
+                    reliable=True,
+                    missing=[("QZSS", date(2025, 1, 27))],
+                )
+            ],
+        )
+
+    def test_header_carries_the_literal_apply_command(self, tmp_path):
+        from tostools.audit_constellations import format_history_triage
+
+        target = tmp_path / "isak" / "isak_constellations_20260802.txt"
+        out = "\n".join(format_history_triage(self._report(), apply_path=target))
+        assert f"tos audit apply {target}" in out
+
+    def test_shows_both_dry_run_and_commit_forms(self, tmp_path):
+        from tostools.audit_constellations import format_history_triage
+
+        target = tmp_path / "isak.txt"
+        out = "\n".join(format_history_triage(self._report(), apply_path=target))
+        assert f"tos audit apply {target} --apply" in out
+        assert "dry-run" in out
+
+    def test_no_placeholder_token_survives(self, tmp_path):
+        """A <file> placeholder would defeat copy-paste."""
+        from tostools.audit_constellations import format_history_triage
+
+        out = "\n".join(
+            format_history_triage(self._report(), apply_path=tmp_path / "x.txt")
+        )
+        assert "<file>" not in out and "<this_file>" not in out
+
+    def test_omitted_when_no_path_is_known(self):
+        """Stdout rendering has no destination, so it must not invent one."""
+        from tostools.audit_constellations import format_history_triage
+
+        out = "\n".join(format_history_triage(self._report()))
+        assert "tos audit apply" not in out
+
+    def test_the_apply_line_is_commented(self, tmp_path):
+        """It must not be parsed as an ACTION when the file is applied."""
+        from tostools.audit_constellations import format_history_triage
+
+        target = tmp_path / "isak.txt"
+        for line in format_history_triage(self._report(), apply_path=target):
+            if "tos audit apply" in line:
+                assert line.lstrip().startswith("#"), line

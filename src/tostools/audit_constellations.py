@@ -422,8 +422,19 @@ def audit_station_constellations_history(
     return report
 
 
-def format_history_triage(report: StationConstellationHistoryReport) -> List[str]:
-    """Apply-ready (commented) ACTION lines for the per-period gaps."""
+def format_history_triage(
+    report: StationConstellationHistoryReport,
+    *,
+    apply_path: Optional[Union[str, Path]] = None,
+) -> List[str]:
+    """Apply-ready (commented) ACTION lines for the per-period gaps.
+
+    ``apply_path`` is the location this file is being written to; when given,
+    the header carries the literal ``tos audit apply`` command with that path
+    baked in, so the operator can uncomment the ACTIONs they trust and then
+    copy-paste the next step instead of reconstructing it. A ``<file>``
+    placeholder would defeat the point.
+    """
     lines: List[str] = []
     if not report.has_actions:
         return lines
@@ -431,6 +442,13 @@ def format_history_triage(report: StationConstellationHistoryReport) -> List[str
         f"# {report.station_name} constellation history — systems the archive "
         "records that TOS omits, per receiver"
     )
+    if apply_path is not None:
+        lines.append("#")
+        lines.append("# TO APPLY — uncomment the ACTION lines you trust, then:")
+        lines.append(f"#   tos audit apply {apply_path}")
+        lines.append(f"#   tos audit apply {apply_path} --apply")
+        lines.append("# (first form is a dry-run preview; --apply commits)")
+        lines.append("#")
     lines.append(
         "# Periods are LEFT OPEN: the constellation toggle is a DEVICE attribute "
         "and follows the receiver across station moves — it closes only when the "
