@@ -58,6 +58,7 @@ from .audit_attribute_dates import (
     _station_display_name,
     _station_joins_by_device,
 )
+from .data_files import data_path
 
 # Fleet-wide cleanup-artifact date — every join opened on this day is
 # a TOS bulk-load artifact, not a real install. Same constant as the
@@ -81,8 +82,8 @@ _DEFAULT_COVERAGE_WINDOW_DAYS = 7
 CoverageSuppressionKey = Tuple[int, str]
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_COVERAGE_SUPPRESSIONS_PATH = (
-    _REPO_ROOT / "data" / "audit_suppressions" / "visit_coverage.txt"
+DEFAULT_COVERAGE_SUPPRESSIONS_PATH = data_path(
+    "audit_suppressions", "visit_coverage.txt"
 )
 
 # Triage placeholder for the work text — operators ALWAYS need to

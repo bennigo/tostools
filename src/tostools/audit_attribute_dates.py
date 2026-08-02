@@ -79,6 +79,7 @@ from .audit import (
     _resolve_station_entity,
     canonical_subtype,
 )
+from .data_files import data_path
 
 # ---------------------------------------------------------------------------
 # Catalog + suppressions paths
@@ -89,7 +90,7 @@ from .audit import (
 # parent.parent.parent. Override with the env var (e.g. for CI) or the
 # ``--catalog`` CLI flag.
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CATALOG_PATH = _REPO_ROOT / "data" / "attribute_codes.yaml"
+DEFAULT_CATALOG_PATH = data_path("attribute_codes.yaml")
 CATALOG_ENV_VAR = "TOSTOOLS_ATTRIBUTE_CODES_PATH"
 
 # Layer 3 — committed-in-repo suppression file. Operator-edited; one
@@ -97,9 +98,7 @@ CATALOG_ENV_VAR = "TOSTOOLS_ATTRIBUTE_CODES_PATH"
 # ``date_from`` is normalised to ``YYYY-MM-DD`` on parse so a
 # copy-pasted ``2014-10-17 00:00:00`` matches the date-only form the
 # audit uses internally.
-DEFAULT_SUPPRESSIONS_PATH = (
-    _REPO_ROOT / "data" / "audit_suppressions" / "attribute_dates.txt"
-)
+DEFAULT_SUPPRESSIONS_PATH = data_path("audit_suppressions", "attribute_dates.txt")
 
 # (id_entity, code, date_from) — date_from is always 10-char date-only.
 SuppressionKey = Tuple[int, str, str]

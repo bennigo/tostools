@@ -108,3 +108,15 @@ ignore = ["E501"]
 "src/tostools/core/site_log.py" = ["F841"]
 "src/tostools/core/station.py" = ["F841"]
 
+
+# The attribute catalog and audit-suppression files live at the repo root in
+# data/ because operators edit and commit them there. Ship them inside the
+# wheel as tostools/data/ so a non-editable install (rek-d01) can still run the
+# catalog-backed audits — previously `tos audit missing-attributes` resolved
+# them to <venv>/lib/pythonX.Y/data/ and failed. `data_files.data_path()`
+# prefers the repo-root copy, so a source checkout's edits still win.
+# Only the two the audits read — data/ also holds station_config (56 MB),
+# rinex_samples and sitelogs_archive, which have no business in a wheel.
+[tool.hatch.build.targets.wheel.force-include]
+"data/attribute_codes.yaml" = "tostools/data/attribute_codes.yaml"
+"data/audit_suppressions" = "tostools/data/audit_suppressions"

@@ -46,14 +46,15 @@ from .audit_attribute_dates import (
     SuppressionParseError,
     _station_display_name,
 )
+from .data_files import data_path
 
 # id_contact_entity_relationship is globally unique, so the suppression
 # key is a 1-tuple (just the relationship id) — no date anchor needed.
 ContactDateSuppressionKey = int
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CONTACT_DATES_SUPPRESSIONS_PATH = (
-    _REPO_ROOT / "data" / "audit_suppressions" / "contact_dates.txt"
+DEFAULT_CONTACT_DATES_SUPPRESSIONS_PATH = data_path(
+    "audit_suppressions", "contact_dates.txt"
 )
 
 

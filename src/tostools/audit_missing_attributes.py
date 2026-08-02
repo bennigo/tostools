@@ -47,6 +47,7 @@ from .audit_attribute_dates import (
     _station_joins_by_device,
     load_catalog_scoped,
 )
+from .data_files import data_path
 
 # (id_entity, code) — "missing" has no date anchor, so the suppression key
 # is shorter than the attribute-dates audit's 3-tuple.
@@ -55,8 +56,8 @@ MissingSuppressionKey = Tuple[int, str]
 # Layer 3 — committed-in-repo suppression file for missing-attributes.
 # Format: one ``SUPPRESS <id_entity> <code>`` per known-good gap.
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_MISSING_SUPPRESSIONS_PATH = (
-    _REPO_ROOT / "data" / "audit_suppressions" / "missing_attributes.txt"
+DEFAULT_MISSING_SUPPRESSIONS_PATH = data_path(
+    "audit_suppressions", "missing_attributes.txt"
 )
 
 # Placeholders rendered in triage output for codes without catalog defaults
