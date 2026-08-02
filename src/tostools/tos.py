@@ -9555,17 +9555,47 @@ def _audit_constellations_history_main(args, client) -> int:
 
     triage_lines = format_history_triage(report)
     if getattr(args, "triage_path", None):
+        # Triage files belong in the gps-tos-corrections repo, not wherever the
+        # operator happened to be standing. `resolve_triage_path` keeps an
+        # absolute path as-is and sends a bare relative name to the corrections
+        # repo ([paths] tos_corrections_repo / $TOS_TRIAGE_DIR /
+        # ~/git/gps-tos-corrections) — this call site previously wrote the raw
+        # argument, so `--triage-path isak.txt` silently landed in CWD.
+        from .archive import resolve_triage_path
+
         audit_cmd = "tos audit constellations " + args.name + " --history"
         content = f"# {audit_cmd}\n" + "\n".join(triage_lines) + "\n"
-        args.triage_path.write_text(content, encoding="utf-8")
+        triage_path = resolve_triage_path(args.triage_path)
+        triage_path.parent.mkdir(parents=True, exist_ok=True)
+        triage_path.write_text(content, encoding="utf-8")
+        n_actions = sum(len(p.missing) + len(p.contradicted) for p in report.periods)
         print(
-            f"wrote triage file: {args.triage_path} "
-            f"({sum(len(p.missing) for p in report.periods)} action(s), commented)",
+            f"wrote triage file: {triage_path} " f"({n_actions} action(s), commented)",
             file=sys.stderr,
         )
     elif args.triage and report.has_actions:
+        # Bare --triage: print for eyeballing AND persist to the corrections
+        # repo under the standard data/triage/<stn>/ layout, so a reviewed
+        # sweep is committable rather than living only in a terminal scrollback.
         print()
         print("\n".join(triage_lines))
+        from .archive import tos_corrections_dir
+        from .station_triage import default_triage_path
+
+        audit_cmd = "tos audit constellations " + args.name + " --history"
+        out_path = default_triage_path(args.name, base_dir=tos_corrections_dir())
+        out_path = out_path.with_name(
+            out_path.name.replace("_audit_", "_constellations_")
+        )
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                f"# {audit_cmd}\n" + "\n".join(triage_lines) + "\n", encoding="utf-8"
+            )
+            print(f"\nalso wrote: {out_path}", file=sys.stderr)
+        except OSError as exc:
+            # Never fail a read-only audit because the repo is absent/read-only.
+            print(f"\n(could not write triage file: {exc})", file=sys.stderr)
     return 1 if report.has_actions else 0
 
 
