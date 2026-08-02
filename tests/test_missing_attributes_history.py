@@ -93,3 +93,91 @@ class TestCatalogStatusValue:
         entry = cat["devices"]["status"]
         assert entry["default_value"] == "virkt"
         assert entry["default_value"] in entry["sample_values"]
+
+
+class TestRetiredVsMovedOn:
+    """A closed join at THIS station says nothing about the device's condition.
+
+    Early GPS occupations reused portable kit across marks — the monument was
+    permanent, the equipment toured. ISAK antenna 4520 has eight parent joins
+    in 2001 and was installed elsewhere three days after leaving. And 4527 was
+    retired to the B9 warehouse in the 2026 swap, which is also a later join.
+    Neither is "decommissioned", and neither licenses inferring a status.
+    """
+
+    def _client(self, parents):
+        class C:
+            def get_parent_history(self, _id):
+                return parents
+
+        return C()
+
+    def _joins(self):
+        return [
+            {
+                "time_from": "2001-05-30",
+                "time_to": "2001-06-09",
+                "id_entity_parent": 4346,
+            }
+        ]
+
+    def test_later_join_elsewhere_is_not_retired(self):
+        from tostools.audit_missing_attributes import _served_elsewhere_after
+
+        c = self._client(
+            [
+                {
+                    "time_from": "2001-06-12",
+                    "time_to": "2001-06-14",
+                    "id_entity_parent": 4235,
+                }
+            ]
+        )
+        assert _served_elsewhere_after(c, 4520, self._joins()) is True
+
+    def test_no_later_join_is_retired(self):
+        from tostools.audit_missing_attributes import _served_elsewhere_after
+
+        c = self._client(
+            [
+                {
+                    "time_from": "2001-05-30",
+                    "time_to": "2001-06-09",
+                    "id_entity_parent": 4346,
+                }
+            ]
+        )
+        assert _served_elsewhere_after(c, 4560, self._joins()) is False
+
+    def test_warehouse_join_also_counts(self):
+        """4527 went to B9, not to another mark — still 'not retired'."""
+        from tostools.audit_missing_attributes import _served_elsewhere_after
+
+        c = self._client(
+            [{"time_from": "2026-07-30", "time_to": None, "id_entity_parent": 99}]
+        )
+        assert _served_elsewhere_after(c, 4527, self._joins()) is True
+
+    def test_lookup_failure_degrades_to_retired(self):
+        """A read-only audit must not die because a parent history is missing."""
+        from tostools.audit_missing_attributes import _served_elsewhere_after
+
+        class Boom:
+            def get_parent_history(self, _id):
+                raise RuntimeError("TOS down")
+
+        assert _served_elsewhere_after(Boom(), 4520, self._joins()) is False
+
+    def test_last_removal_picks_the_latest(self):
+        from tostools.audit_missing_attributes import _last_removal
+
+        joins = [
+            {"time_from": "2001-05-30", "time_to": "2001-06-09"},
+            {"time_from": "2001-06-18", "time_to": "2001-06-21"},
+        ]
+        assert _last_removal(joins) == "2001-06-21"
+
+    def test_last_removal_none_when_still_installed(self):
+        from tostools.audit_missing_attributes import _last_removal
+
+        assert _last_removal([{"time_from": "2026-07-30", "time_to": None}]) is None

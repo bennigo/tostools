@@ -269,6 +269,61 @@ def _required_codes_in_scope(
     return out
 
 
+def _last_removal(joins: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """Latest ``time_to`` across ``joins`` (date-only), or ``None``."""
+    ends = [
+        _date_only(str(j["time_to"]))
+        for j in joins
+        if j.get("time_to") is not None and j.get("time_to")
+    ]
+    return max(ends) if ends else None
+
+
+def _served_elsewhere_after(
+    client: TOSClient,
+    device_id: int,
+    station_joins: Sequence[Dict[str, Any]],
+) -> bool:
+    """True if the device was installed at a DIFFERENT parent after leaving here.
+
+    Distinguishes portable campaign equipment from a genuinely retired device.
+    Early GPS occupations reused the same antennas across many marks: ISAK
+    antenna 4520 has eight parent joins in 2001 and was installed at another
+    station three days after it left here. The monument stayed put; the kit
+    toured. So a closed join at this station says nothing about the device's
+    condition, and labelling it "decommissioned" — or inferring a status from
+    this tenure — would be wrong.
+
+    Failures are swallowed: an unavailable parent history must degrade to
+    "unknown, treat as retired" rather than break a read-only audit.
+    """
+    last_here = _last_removal(station_joins)
+    if last_here is None:
+        return False
+    try:
+        parents = client.get_parent_history(device_id) or []
+    except Exception:  # noqa: BLE001 - never fail the audit on a lookup
+        return False
+
+    station_parents = {
+        j.get("id_entity_parent") for j in station_joins if j.get("id_entity_parent")
+    }
+    for p in parents:
+        start = p.get("time_from")
+        if not start:
+            continue
+        if _date_only(str(start)) > last_here:
+            return True
+        # A later join to a DIFFERENT parent that started earlier but is still
+        # open also counts as "went on serving".
+        if (
+            p.get("time_to") is None
+            and p.get("id_entity_parent") not in station_parents
+        ):
+            return True
+    return False
+
+
 #: Catalog codes whose ``default_value`` asserts a CURRENT operational state,
 #: and so must not be proposed for a decommissioned device. ``status``
 #: defaults to "virkt" (active) — correct for an installed device, false for a
@@ -451,10 +506,25 @@ def audit_station_missing_attributes(
             continue
 
         device_label = _device_display_label(history)
+        retired = False
         if include_closed and not open_joins:
-            # Mark it, so the operator can see at a glance that this row is a
-            # retired device rather than something wrong with the live station.
-            device_label = f"{device_label} [decommissioned]"
+            if _served_elsewhere_after(client, device_id, joins):
+                # Not retired: it left this station and was joined somewhere
+                # else afterwards — another mark (campaign kit: ISAK antenna
+                # 4520 has 8 parent joins in 2001 and was at another station
+                # three days after leaving here) or a warehouse (4527, retired
+                # to B9 in the 2026 swap). Either way its condition cannot be
+                # inferred from THIS tenure, and "decommissioned" is wrong.
+                # The wording states only what was checked.
+                device_label = f"{device_label} [later joined elsewhere]"
+            else:
+                # No later join anywhere: removed and not seen since, so its
+                # present condition is genuinely unknown.
+                last = _last_removal(joins)
+                device_label = (
+                    f"{device_label} [not installed since {last or 'unknown'}]"
+                )
+                retired = True
         join_dates = [
             _date_only(str(j["time_from"])) for j in audited_joins if j.get("time_from")
         ]
@@ -469,7 +539,10 @@ def audit_station_missing_attributes(
             entity_label=device_label,
             scope_name="devices",
             suggested_date_from=suggested_date,
-            decommissioned=bool(include_closed and not open_joins),
+            # Only a device with no later service anywhere has an unknown
+            # state. Campaign kit that moved on is still fine, so leave its
+            # catalog defaults intact rather than forcing needless hand-entry.
+            decommissioned=retired,
         )
 
     # Apply suppressions — partition violations into kept vs suppressed.
