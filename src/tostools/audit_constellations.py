@@ -233,6 +233,10 @@ class ReceiverPeriodConstellations:
     first_seen: Dict[str, date] = field(default_factory=dict)  # code → first date
     reliable: bool = False  # all reconstructed segments were R3
     missing: List[Tuple[str, date]] = field(default_factory=list)  # (code, from)
+    #: (code, tos_date_from, archive_first_seen) where TOS claims the system
+    #: started AFTER the archive already recorded it — i.e. the stored date is
+    #: contradicted by data. See :func:`_contradicted_dates`.
+    contradicted: List[Tuple[str, date, date]] = field(default_factory=list)
     n_files: int = 0
     note: Optional[str] = None
 
@@ -249,7 +253,7 @@ class StationConstellationHistoryReport:
 
     @property
     def has_actions(self) -> bool:
-        return any(p.missing for p in self.periods)
+        return any(p.missing or p.contradicted for p in self.periods)
 
 
 def _to_date(value: Any) -> Optional[date]:
@@ -282,6 +286,65 @@ def _code_true_in_period(
         if left_ok and right_ok:
             return True
     return False
+
+
+def _recorded_from_in_period(
+    history: Dict[str, Any],
+    code: str,
+    period_from: Optional[date],
+    period_to: Optional[date],
+) -> Optional[date]:
+    """``date_from`` of the ``true`` period for ``code`` overlapping this span.
+
+    The mirror of :func:`_code_true_in_period`, which answers *whether* TOS
+    records the system; this answers *from when*. Earliest match wins when
+    several periods overlap.
+    """
+    candidates: List[date] = []
+    for a in history.get("attributes") or []:
+        if a.get("code") != code:
+            continue
+        if str(a.get("value") or "").lower() != "true":
+            continue
+        a_from = _to_date(a.get("date_from"))
+        a_to = _to_date(a.get("date_to"))
+        left_ok = a_to is None or period_from is None or a_to > period_from
+        right_ok = period_to is None or a_from is None or a_from < period_to
+        if left_ok and right_ok and a_from is not None:
+            candidates.append(a_from)
+    return min(candidates) if candidates else None
+
+
+def _contradicted_dates(
+    history: Dict[str, Any],
+    first_seen: Dict[str, date],
+    period_from: Optional[date],
+    period_to: Optional[date],
+) -> List[Tuple[str, date, date]]:
+    """Codes whose stored TOS start date is *contradicted by the archive*.
+
+    Flags one direction only, deliberately. ``first_seen`` is the first
+    ARCHIVED file recording the system, so the true switch-on is at or BEFORE
+    it — an upper bound, never a lower one. Therefore:
+
+    * ``tos_from > first_seen`` — data exists before TOS says the system began.
+      That cannot be explained by an archive gap; the stored date is wrong.
+      **Flagged.**
+    * ``tos_from < first_seen`` — TOS claims an earlier start. Entirely
+      consistent with a gap in the archive (missing days, a station offline),
+      so it proves nothing. **Not flagged**, or every station with a data gap
+      would produce noise.
+
+    This is the check that catches a plausible-looking date entered by hand:
+    ISAK's GAL was recorded 2026-08-01 while the archive proves 2022-11-09.
+    """
+    out: List[Tuple[str, date, date]] = []
+    for code, seen in first_seen.items():
+        tos_from = _recorded_from_in_period(history, code, period_from, period_to)
+        if tos_from is not None and tos_from > seen:
+            out.append((code, tos_from, seen))
+    out.sort(key=lambda t: (t[2], t[0]))
+    return out
 
 
 def audit_station_constellations_history(
@@ -338,6 +401,7 @@ def audit_station_constellations_history(
                 and not _code_true_in_period(history, code, df, dt)
             ]
             missing.sort(key=lambda cd: (cd[1], cd[0]))
+            contradicted = _contradicted_dates(history, first_seen, df, dt)
             report.periods.append(
                 ReceiverPeriodConstellations(
                     device_id=int(device_id) if device_id is not None else None,
@@ -348,6 +412,7 @@ def audit_station_constellations_history(
                     first_seen=first_seen,
                     reliable=reliable,
                     missing=missing,
+                    contradicted=contradicted,
                     n_files=len(files),
                     note=None if files else "no archived RINEX in period",
                 )
@@ -373,9 +438,16 @@ def format_history_triage(report: StationConstellationHistoryReport) -> List[str
         "station (systems are added monotonically). The [tenure] shown is just the "
         "observation window at THIS station."
     )
+    lines.append(
+        "# CONTRADICTED dates are re-dated to the archive's first sighting, which "
+        "is an UPPER bound (the true switch-on may be earlier, hidden by an "
+        "archive gap) — but it is evidence, whereas a date the data disproves is "
+        "not. Only TOS-later-than-data is flagged; TOS-earlier is consistent with "
+        "a gap and left alone."
+    )
     lines.append("# ACTIONS COMMENTED — verify then uncomment.")
     for p in report.periods:
-        if not p.missing:
+        if not (p.missing or p.contradicted):
             continue
         tenure_end = p.date_to.isoformat() if p.date_to else "open"
         caveat = "" if p.reliable else "   # R2/best-effort — confirm vs raw"
@@ -390,5 +462,14 @@ def format_history_triage(report: StationConstellationHistoryReport) -> List[str
             lines.append(
                 f"# ACTION {p.device_id} add-attribute-period {code} true "
                 f"{cdate.isoformat()} open"
+            )
+        for code, tos_from, seen in p.contradicted:
+            lines.append(
+                f"#     {code}: TOS says {tos_from.isoformat()} but the archive "
+                f"records it from {seen.isoformat()}"
+            )
+            lines.append(
+                f"# ACTION {p.device_id} patch-attribute-date {code} "
+                f"{tos_from.isoformat()} {seen.isoformat()}"
             )
     return lines

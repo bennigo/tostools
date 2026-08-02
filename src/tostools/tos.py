@@ -9547,6 +9547,11 @@ def _audit_constellations_history_main(args, client) -> int:
         )
         for code, cdate in p.missing:
             print(f"    · {code:5s} recorded from {cdate}, TOS omits → add")
+        for code, tos_from, seen in p.contradicted:
+            print(
+                f"    ✗ {code:5s} TOS says {tos_from}, archive records it from "
+                f"{seen} → re-date"
+            )
 
     triage_lines = format_history_triage(report)
     if getattr(args, "triage_path", None):
