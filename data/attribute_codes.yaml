@@ -104,7 +104,12 @@ devices:
     classification: mutable
     tos_required_for: [gnss_receiver, antenna, radome, monument]
     gps_required_for: [gnss_receiver, antenna, radome, monument] # USER FILLS IN — strict superset of tos
-    default_value: "virk" # USER OPTIONAL — what TOS records as the default
+    # "virkt", not "virk" — the trailing t was missing, so the audit suggested a
+    # value TOS's own vocabulary does not contain (description above, and the
+    # harvested sample_values, both say virkt). Live devices hold "virkt" /
+    # "grunsamlegt"; none holds "virk". Applying the old default would have
+    # written an invalid status to every station that took the suggestion.
+    default_value: "virkt"
     applies_to: [gnss_receiver, antenna, radome, monument]
     gps_relevance: "yes"
     subtypes_observed: [antenna, gnss_receiver, monument, radome]

@@ -8149,6 +8149,16 @@ def _audit_main(argv):
         "as the date hint (otherwise <FILL_DATE>).",
     )
     p_missing.add_argument(
+        "--history",
+        action="store_true",
+        help="Also audit DECOMMISSIONED devices (closed joins), not just the "
+        "ones currently installed. A retired antenna still appears in IGS "
+        "site-log section 4 and in the header of every RINEX recorded while it "
+        "was installed, so its missing attributes are published even though "
+        "they are not a live operational gap. Rows are marked "
+        "[decommissioned].",
+    )
+    p_missing.add_argument(
         "--json", action="store_true", help="Emit JSON instead of plain text."
     )
     p_missing.add_argument(
@@ -9012,6 +9022,7 @@ def _audit_main(argv):
                 catalog_path=args.catalog,
                 suppressions_path=args.suppressions,
                 use_suppressions=not args.no_suppressions,
+                include_closed=getattr(args, "history", False),
             )
         except (LookupError, ValueError, FileNotFoundError) as e:
             print(str(e), file=sys.stderr)

@@ -269,6 +269,13 @@ def _required_codes_in_scope(
     return out
 
 
+#: Catalog codes whose ``default_value`` asserts a CURRENT operational state,
+#: and so must not be proposed for a decommissioned device. ``status``
+#: defaults to "virkt" (active) — correct for an installed device, false for a
+#: retired one. Offsets/azimuth are historical facts and stay defaulted.
+_CURRENT_STATE_CODES = frozenset({"status"})
+
+
 def _audit_entity(
     *,
     report: StationMissingAttributesReport,
@@ -279,6 +286,7 @@ def _audit_entity(
     entity_label: Optional[str],
     scope_name: str,
     suggested_date_from: Optional[str] = None,
+    decommissioned: bool = False,
 ) -> None:
     """Walk one entity (station, device, or monument).
 
@@ -286,6 +294,9 @@ def _audit_entity(
     The caller passes the correct catalog scope (``catalog['stations']`` for
     a station entity, ``catalog['devices']`` for a device/monument) so
     cross-scope code collisions stay distinct.
+
+    ``decommissioned`` suppresses catalog defaults that assert a CURRENT
+    operational state — see :data:`_CURRENT_STATE_CODES`.
     """
     report.audited_entities += 1
     for code, entry, severity in _required_codes_in_scope(scope_rules, entity_subtype):
@@ -293,6 +304,12 @@ def _audit_entity(
             continue
         default = entry.get("default_value")
         suggested_value = str(default) if default is not None else None
+        if decommissioned and code in _CURRENT_STATE_CODES:
+            # The catalog default describes a device in service ("virkt" =
+            # active). On a retired device that is not merely unhelpful, it is
+            # false — and it would be applied in bulk from the triage file.
+            # Force a human decision instead of proposing a wrong value.
+            suggested_value = None
         report.violations.append(
             MissingAttributeViolation(
                 id_entity=entity_id,
@@ -321,9 +338,18 @@ def audit_station_missing_attributes(
     catalog_path: Optional[Path] = None,
     suppressions_path: Optional[Path] = None,
     use_suppressions: bool = True,
+    include_closed: bool = False,
 ) -> StationMissingAttributesReport:
-    """Walk a station + its open child devices and flag missing required
-    attributes.
+    """Walk a station + its child devices and flag missing required attributes.
+
+    By default only devices with an OPEN join are audited. ``include_closed``
+    widens the walk to every device ever joined to the station —
+    decommissioned antennas, receivers and monuments included. Their metadata
+    is not a current *operational* gap, which is why they are skipped by
+    default, but it is still published: a retired antenna appears in IGS
+    site-log section 4 and in the header of every RINEX file recorded while it
+    was installed, so an absent serial or reference point there is as wrong as
+    on the open one.
 
     Parameters
     ----------
@@ -404,13 +430,15 @@ def audit_station_missing_attributes(
         suggested_date_from=None,
     )
 
-    # 2. Each open child device — iterate devices scope. Closed joins
-    #    (time_to set) are skipped: a removed device's missing attributes
-    #    aren't a current operational gap.
+    # 2. Each child device — iterate devices scope. Closed joins (time_to set)
+    #    are skipped by default: a removed device's missing attributes aren't a
+    #    current operational gap. `include_closed` opts into them, because they
+    #    are still published via site logs and historical RINEX headers.
     joins_by_device = _station_joins_by_device(station_history)
     for device_id, joins in joins_by_device.items():
         open_joins = [j for j in joins if j.get("time_to") is None]
-        if not open_joins:
+        audited_joins = joins if include_closed else open_joins
+        if not audited_joins:
             continue
 
         history = client.get_entity_history(device_id)
@@ -423,8 +451,12 @@ def audit_station_missing_attributes(
             continue
 
         device_label = _device_display_label(history)
+        if include_closed and not open_joins:
+            # Mark it, so the operator can see at a glance that this row is a
+            # retired device rather than something wrong with the live station.
+            device_label = f"{device_label} [decommissioned]"
         join_dates = [
-            _date_only(str(j["time_from"])) for j in open_joins if j.get("time_from")
+            _date_only(str(j["time_from"])) for j in audited_joins if j.get("time_from")
         ]
         suggested_date = min(join_dates) if join_dates else None
 
@@ -437,6 +469,7 @@ def audit_station_missing_attributes(
             entity_label=device_label,
             scope_name="devices",
             suggested_date_from=suggested_date,
+            decommissioned=bool(include_closed and not open_joins),
         )
 
     # Apply suppressions — partition violations into kept vs suppressed.
