@@ -8149,6 +8149,17 @@ def _audit_main(argv):
         "as the date hint (otherwise <FILL_DATE>).",
     )
     p_missing.add_argument(
+        "--station-info",
+        dest="station_info",
+        type=Path,
+        default=None,
+        help="Fill suggested values from a GAMIT station.info file instead of "
+        "catalog defaults, matched on antenna serial + install date. It is the "
+        "field record of what was actually installed: it supplies "
+        "antenna_height, the DHARP reference point, and the surveyed "
+        "north/east eccentricities the catalog can only default to 0.0.",
+    )
+    p_missing.add_argument(
         "--history",
         action="store_true",
         help="Also audit DECOMMISSIONED devices (closed joins), not just the "
@@ -9023,6 +9034,7 @@ def _audit_main(argv):
                 suppressions_path=args.suppressions,
                 use_suppressions=not args.no_suppressions,
                 include_closed=getattr(args, "history", False),
+                station_info_path=getattr(args, "station_info", None),
             )
         except (LookupError, ValueError, FileNotFoundError) as e:
             print(str(e), file=sys.stderr)

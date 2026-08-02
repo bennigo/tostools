@@ -77,6 +77,12 @@ class Occupation:
     antenna_sn: str
     antenna_height: str
     htcod: str
+    #: Marker->ARP horizontal eccentricities (metres). Parsed from the ant_n /
+    #: ant_e columns, which were read but previously discarded — they are the
+    #: authoritative source for TOS antenna_offset_north / _east, where the
+    #: catalog can only offer a 0.0 default. Real ISAK values run to 2.7 mm.
+    antenna_north: str = "0.0000"
+    antenna_east: str = "0.0000"
 
     @property
     def is_open(self) -> bool:
@@ -160,6 +166,8 @@ def parse_line(line: str) -> Optional[Occupation]:
         antenna_sn=_normalise_serial(cols["antenna_sn"]),
         antenna_height=cols["ant_height"],
         htcod=cols["htcod"],
+        antenna_north=cols["ant_n"] or "0.0000",
+        antenna_east=cols["ant_e"] or "0.0000",
     )
 
 
@@ -197,7 +205,9 @@ def format_occupation(occ: Occupation) -> str:
 
     Inverse of :func:`parse_line`: ``parse_line(format_occupation(occ)) == occ``.
     Used for round-trip verification of a TOS-derived station.info against its
-    source. Horizontal offsets (Ant N/E) are not modelled and emit ``0.0000``.
+    source. Horizontal offsets round-trip now that Occupation carries them —
+    they were previously emitted as a hardcoded ``0.0000``, which silently
+    discarded a surveyed measurement.
     """
     fields = {
         "marker": occ.marker,
@@ -206,8 +216,8 @@ def format_occupation(occ: Occupation) -> str:
         "session_stop": _fmt_gamit_datetime(occ.time_to),
         "ant_height": occ.antenna_height or "0.0000",
         "htcod": occ.htcod or "DHARP",
-        "ant_n": "0.0000",
-        "ant_e": "0.0000",
+        "ant_n": occ.antenna_north or "0.0000",
+        "ant_e": occ.antenna_east or "0.0000",
         "receiver_type": occ.receiver_type,
         "vers": occ.vers,
         "swver": occ.swver,

@@ -324,6 +324,54 @@ def _served_elsewhere_after(
     return False
 
 
+#: TOS attribute code -> the Occupation field that authoritatively supplies it.
+#: GAMIT station.info is the field record of what was actually installed, so it
+#: beats a catalog default: the catalog can only offer 0.0 for the antenna
+#: eccentricities, while station.info carries the surveyed value (ISAK's run to
+#: 2.7 mm), and it is the origin of the DHARP height code.
+_STATION_INFO_FIELDS = {
+    "antenna_height": "antenna_height",
+    "antenna_reference_point": "htcod",
+    "antenna_offset_north": "antenna_north",
+    "antenna_offset_east": "antenna_east",
+}
+
+
+def load_station_info_occupations(path, marker: str):
+    """Parse ``station.info`` and return this marker's occupations, or []."""
+    from .standards.gamit_station_info import parse_station_info
+
+    try:
+        occs = parse_station_info(str(path))
+    except (OSError, ValueError):
+        return []
+    return [o for o in occs if (o.marker or "").upper() == marker.upper()]
+
+
+def _occupation_for(occupations, serial: Optional[str], date_from: Optional[str]):
+    """Best occupation for a device, matched on serial then install date.
+
+    Serial is the strong key — a campaign antenna appears at many markers, but
+    within one marker its serial identifies it. Date breaks ties when the same
+    unit was installed more than once (ISAK antenna 190269 has two occupations
+    with DIFFERENT heights, 1.0047 then 1.0358, so picking the wrong one would
+    record a real measurement against the wrong period).
+    """
+    if not occupations:
+        return None
+    serial = (serial or "").strip()
+    candidates = [
+        o for o in occupations if serial and (o.antenna_sn or "").strip() == serial
+    ]
+    if not candidates:
+        return None
+    if date_from:
+        exact = [o for o in candidates if str(o.time_from)[:10] == date_from]
+        if exact:
+            return exact[0]
+    return candidates[0]
+
+
 #: Catalog codes whose ``default_value`` asserts a CURRENT operational state,
 #: and so must not be proposed for a decommissioned device. ``status``
 #: defaults to "virkt" (active) — correct for an installed device, false for a
@@ -342,6 +390,7 @@ def _audit_entity(
     scope_name: str,
     suggested_date_from: Optional[str] = None,
     decommissioned: bool = False,
+    occupation=None,
 ) -> None:
     """Walk one entity (station, device, or monument).
 
@@ -359,6 +408,12 @@ def _audit_entity(
             continue
         default = entry.get("default_value")
         suggested_value = str(default) if default is not None else None
+        # GAMIT station.info wins over a catalog default: it is the field
+        # record of what was actually installed, not a fleet-wide guess.
+        if occupation is not None and code in _STATION_INFO_FIELDS:
+            observed = getattr(occupation, _STATION_INFO_FIELDS[code], None)
+            if observed not in (None, ""):
+                suggested_value = str(observed).strip()
         if decommissioned and code in _CURRENT_STATE_CODES:
             # The catalog default describes a device in service ("virkt" =
             # active). On a retired device that is not merely unhelpful, it is
@@ -394,6 +449,7 @@ def audit_station_missing_attributes(
     suppressions_path: Optional[Path] = None,
     use_suppressions: bool = True,
     include_closed: bool = False,
+    station_info_path: Optional[Path] = None,
 ) -> StationMissingAttributesReport:
     """Walk a station + its child devices and flag missing required attributes.
 
@@ -489,6 +545,12 @@ def audit_station_missing_attributes(
     #    are skipped by default: a removed device's missing attributes aren't a
     #    current operational gap. `include_closed` opts into them, because they
     #    are still published via site logs and historical RINEX headers.
+    occupations = (
+        load_station_info_occupations(station_info_path, name or station_name or "")
+        if station_info_path
+        else []
+    )
+
     joins_by_device = _station_joins_by_device(station_history)
     for device_id, joins in joins_by_device.items():
         open_joins = [j for j in joins if j.get("time_to") is None]
@@ -543,6 +605,11 @@ def audit_station_missing_attributes(
             # state. Campaign kit that moved on is still fine, so leave its
             # catalog defaults intact rather than forcing needless hand-entry.
             decommissioned=retired,
+            occupation=_occupation_for(
+                occupations,
+                _open_attribute_value(history, "serial_number"),
+                suggested_date,
+            ),
         )
 
     # Apply suppressions — partition violations into kept vs suppressed.
