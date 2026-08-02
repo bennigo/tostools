@@ -516,6 +516,7 @@ def format_triage_file(
     *,
     audit_command: Optional[str] = None,
     generated_at: Optional[str] = None,
+    apply_path: Optional[Path] = None,
 ) -> str:
     """Render a missing-attributes report as an operator-editable
     action file.
@@ -579,8 +580,12 @@ def format_triage_file(
     )
     lines.append("#      know is correct for the entity.")
     lines.append("#   2. Uncomment the ACTION line(s) you want to fire.")
-    lines.append("#   3. tos audit apply <file>          # dry-run preview")
-    lines.append("#   4. tos audit apply <file> --apply  # commit writes")
+    # Bake in the real destination when it is known: reconstructing the path
+    # by hand is the step that gets fumbled, and a <file> placeholder still has
+    # to be edited before it can be used.
+    _f = str(apply_path) if apply_path is not None else "<file>"
+    lines.append(f"#   3. tos audit apply {_f}          # dry-run preview")
+    lines.append(f"#   4. tos audit apply {_f} --apply  # commit writes")
     lines.append("#")
     lines.append("# Alternative for known-good gaps: copy the SUPPRESS hint into")
     lines.append("# data/audit_suppressions/missing_attributes.txt instead.")

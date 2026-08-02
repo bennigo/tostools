@@ -9036,14 +9036,25 @@ def _audit_main(argv):
             for err in report.suppressions_errors:
                 print(f"  line {err.line_no}: {err.message}", file=sys.stderr)
         if args.triage_path:
+            # Triage files belong in the gps-tos-corrections repo. Without
+            # resolve_triage_path a bare `--triage isak/x.txt` was written raw:
+            # it landed in CWD, or failed outright when the station
+            # subdirectory did not exist there.
+            from .archive import resolve_triage_path
+
             audit_cmd = "tos audit " + " ".join(argv) if argv else "tos audit"
-            content = ama_mod.format_triage_file(report, audit_command=audit_cmd)
-            args.triage_path.write_text(content, encoding="utf-8")
+            triage_path = resolve_triage_path(args.triage_path)
+            triage_path.parent.mkdir(parents=True, exist_ok=True)
+            content = ama_mod.format_triage_file(
+                report, audit_command=audit_cmd, apply_path=triage_path
+            )
+            triage_path.write_text(content, encoding="utf-8")
             print(
-                f"wrote triage file: {args.triage_path} "
+                f"wrote triage file: {triage_path} "
                 f"({len(report.violations)} violation(s))",
                 file=sys.stderr,
             )
+            print(f"  apply with: tos audit apply {triage_path}", file=sys.stderr)
         if args.json:
             print(
                 _json.dumps(
