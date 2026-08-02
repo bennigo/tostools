@@ -9583,9 +9583,16 @@ def _audit_constellations_history_main(args, client) -> int:
         from .station_triage import default_triage_path
 
         audit_cmd = "tos audit constellations " + args.name + " --history"
-        out_path = default_triage_path(args.name, base_dir=tos_corrections_dir())
-        out_path = out_path.with_name(
-            out_path.name.replace("_audit_", "_constellations_")
+        # Repo convention is <repo>/<sta>/<sta>_<topic>_<YYYYMMDD>.txt — 107
+        # files follow it (incl. nyla/nyla_constellations_20260710.txt), against
+        # 8 under the data/triage/ layout default_triage_path() builds. So reuse
+        # only its date-stamped FILENAME and place the file at <repo>/<sta>/,
+        # exactly as fleet_ops does for the fleet sweep.
+        canonical = default_triage_path(args.name)
+        out_path = (
+            tos_corrections_dir()
+            / args.name.lower()
+            / canonical.name.replace("_audit_", "_constellations_")
         )
         try:
             out_path.parent.mkdir(parents=True, exist_ok=True)

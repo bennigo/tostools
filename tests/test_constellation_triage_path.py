@@ -9,6 +9,8 @@ history.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from tostools.archive import resolve_triage_path, tos_corrections_dir
 
 
@@ -42,24 +44,41 @@ class TestResolution:
 
 
 class TestDefaultName:
-    def test_lands_under_the_corrections_repo(self, tmp_path, monkeypatch):
+    """The repo convention is <repo>/<sta>/<sta>_<topic>_<YYYYMMDD>.txt.
+
+    107 files follow it (e.g. nyla/nyla_constellations_20260710.txt) against 8
+    under the data/triage/<stn>/ layout `default_triage_path` builds — so the
+    auto-written file must use the station dir directly, reusing only the
+    date-stamped filename. This mirrors what fleet_ops already does.
+    """
+
+    def _auto_path(self, station: str, root: Path) -> Path:
         from tostools.station_triage import default_triage_path
 
-        monkeypatch.setenv("TOS_TRIAGE_DIR", str(tmp_path))
-        p = default_triage_path("ISAK", base_dir=tos_corrections_dir())
-        assert tmp_path in p.parents
-        assert "isak" in str(p)
+        canonical = default_triage_path(station)
+        return (
+            root
+            / station.lower()
+            / canonical.name.replace("_audit_", "_constellations_")
+        )
 
-    def test_constellation_variant_is_distinguishable(self, tmp_path):
-        """Constellation sweeps must not overwrite the generic station audit
-        file for the same station on the same day."""
+    def test_station_dir_sits_directly_under_the_repo(self, tmp_path):
+        p = self._auto_path("ISAK", tmp_path)
+        assert p.parent == tmp_path / "isak", "must not nest under data/triage/"
+        assert "data" not in p.relative_to(tmp_path).parts
+
+    def test_filename_matches_the_established_pattern(self, tmp_path):
+        """Same shape as the existing nyla/nyla_constellations_YYYYMMDD.txt."""
+        import re
+
+        p = self._auto_path("ISAK", tmp_path)
+        assert re.fullmatch(r"isak_constellations_\d{8}\.txt", p.name), p.name
+
+    def test_does_not_collide_with_the_generic_station_audit(self, tmp_path):
         from tostools.station_triage import default_triage_path
 
-        base = default_triage_path("ISAK", base_dir=tmp_path)
-        con = base.with_name(base.name.replace("_audit_", "_constellations_"))
-        assert con != base
-        assert con.parent == base.parent
-        assert "_constellations_" in con.name
+        audit = default_triage_path("ISAK", base_dir=tmp_path)
+        assert self._auto_path("ISAK", tmp_path).name != audit.name
 
 
 class TestParentCreation:
