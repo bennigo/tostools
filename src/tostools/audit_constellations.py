@@ -46,7 +46,21 @@ from .constellation_history import (
     segment_by_constellation,
     system_first_seen,
 )
+from .constellation_sbf import read_constellations_sbf_first, sbf2rin_available
 from .rinex.reader import find_most_recent_rinex
+
+
+def _history_reader():
+    """Pick the constellation reader for a historical sweep.
+
+    RINEX 2 headers cannot enumerate the constellation set, and the IMO archive
+    is R2 until 2026 — so header-only reading makes every 2017-2025 period
+    report "GPS+GLO, unreliable" regardless of what the receiver actually
+    tracked. When ``sbf2rin`` is present we decode that day's raw instead,
+    which is authoritative; without it we keep the previous behaviour rather
+    than fail, so the audit still runs on a host with no converter.
+    """
+    return read_constellations_sbf_first if sbf2rin_available() else read_constellations
 
 
 @dataclass(frozen=True)
@@ -314,7 +328,7 @@ def audit_station_constellations_history(
             df = _to_date(join.get("time_from"))
             dt = _to_date(join.get("time_to"))
             files = list_rinex_in_period(root, marker, df, dt)
-            segments = segment_by_constellation(files)
+            segments = segment_by_constellation(files, read_fn=_history_reader())
             first_seen = system_first_seen(segments, min_segment_days=min_segment_days)
             reliable = bool(segments) and all(s.reliable for s in segments)
             missing = [
