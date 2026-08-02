@@ -68,7 +68,11 @@ devices:
     description: Manufacturer / model designation (e.g. "TRIMBLE NETR9", "TRM57971.00")
     classification: inherent
     tos_required_for: [gnss_receiver, antenna, radome]
-    gps_required_for: [gnss_receiver, antenna, radome] # monument structure type lives in infrastructure_type instead
+    # monument included: TOS stores the monument's construction type here (ISAK
+    # 20499 = 'GPS stál-fjórfótur'), and IGS site log §3.1 "Foundation" renders
+    # from it. The old comment sent this to `infrastructure_type`, which is a
+    # web-form label with no API attribute code behind it.
+    gps_required_for: [gnss_receiver, antenna, radome, monument]
     default_value: ~ # USER OPTIONAL — what TOS records as the default
     applies_to: [gnss_receiver, antenna, radome, monument]
     gps_relevance: "yes"
@@ -257,7 +261,14 @@ devices:
     description: Sub-type of monument (form-required for monument; differs from devices' Tegund tækis — high-level class, e.g. "GPS undirstaða")
     classification: inherent
     tos_required_for: [monument]
-    gps_required_for: [monument]
+    # NOT a real API attribute code — `add_attribute_value` rejects it as
+    # "unknown attribute code, not in /admin_attribute_rows" (proved against
+    # ISAK monument 20499, 2026-08-01). `walked: false` / `n_devices: 0` is the
+    # tell: this was transcribed from the TOS web form, and the form label
+    # "Undirtegund" maps to the API code `subtype`. Requiring it produced a
+    # fleet-wide false positive on every monument. Kept as documentation of the
+    # form↔API mapping; requirement moved to `subtype`/`model`.
+    gps_required_for: []
     default_value: "GPS undirstaða"
     applies_to: [monument]
     gps_relevance: "yes"
@@ -265,14 +276,18 @@ devices:
     sample_values: []
     n_devices: 0
     walked: false
-    why: "TOS form labels are crossed — Undirtegund carries the high-level monument class (default GPS undirstaða); Tegund innviða carries the model-equivalent (specific construction type). IS↔EN translation table needed for sitelog rendering — see infrastructure_type."
+    why: "TOS form labels are crossed — Undirtegund carries the high-level monument class (default GPS undirstaða); Tegund innviða carries the model-equivalent (specific construction type). IS↔EN translation table needed for sitelog rendering — see infrastructure_type. API-side these live in `subtype` / `model`."
 
   infrastructure_type:
     icelandic_label: Tegund innviða
     description: Type of infrastructure — monument's "model" equivalent. Known IS values — GPS stál-fjórfótur (default) | GPS stál-staur | GPS stöng á þaki | GPS steyptur stöpull | Short Drilled Braced Monument (SDBM) | Þrífótur. Rendered as "Foundation" in IGS site log section 3.1.
     classification: inherent
     tos_required_for: []
-    gps_required_for: [monument]
+    # NOT a real API attribute code — see infrastructure_subtype above. The web
+    # form's "Tegund innviða" is the API's `model` on a monument, which ISAK's
+    # monument already carries as 'GPS stál-fjórfótur'. Requirement moved to
+    # `model` (which now lists monument in gps_required_for).
+    gps_required_for: []
     default_value: "GPS stál-fjórfótur"
     applies_to: [monument]
     gps_relevance: "yes"
