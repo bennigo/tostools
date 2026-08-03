@@ -10594,6 +10594,23 @@ def _dispatch_patch_attribute_date_to(writer, action: ParsedAction) -> ActionRes
         )
 
     target = matches[0]
+    if new_to <= match_date:
+        # A period cannot end at or before it began. Reached when a triage
+        # proposes closing a value at the very date it was opened — the
+        # same-day-move shape, where the NEXT installation's attributes start
+        # exactly when the previous tenure ended. Writing it would produce a
+        # zero-length or inverted period, so refuse rather than truncate the
+        # record of the installation that just started.
+        return ActionResult(
+            action=action,
+            status="failed",
+            detail=(
+                f"patch-attribute-date-to: new date_to {new_to} is not after "
+                f"date_from {match_date} for code={code!r} — a period cannot "
+                "end at or before it began (same-day move? the open period "
+                "likely belongs to the NEXT installation)"
+            ),
+        )
     id_av_raw = target.get("id_attribute_value")
     if id_av_raw is None:
         return ActionResult(

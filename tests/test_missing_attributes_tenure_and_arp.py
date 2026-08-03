@@ -409,3 +409,43 @@ class TestClosedPeriodsAreNotReProposed:
         """No date_to → still installed → only the open-period test applies."""
         got = self._violations({"attributes": []}, date_from="2002-01-09", date_to=None)
         assert "antenna_height" in got
+
+
+class TestSameDayMoveIsNotClosed:
+    """A period starting exactly when the device left belongs to the NEXT site.
+
+    `move_device` writes Pattern-2 moves as close-then-open on ONE date, so the
+    receiving station's attributes start precisely on the removal date of the
+    station being audited. Flagging those would end the new installation's
+    record at the instant it began.
+    """
+
+    def _collect(self, date_from, removal="2026-07-30"):
+        report = StationMissingAttributesReport(station_id=1, station_name="X")
+        _collect_stale_open(
+            report=report,
+            history={
+                "attributes": [
+                    {
+                        "code": "antenna_height",
+                        "value": "1.0",
+                        "date_from": date_from,
+                        "date_to": None,
+                    }
+                ]
+            },
+            entity_id=999,
+            entity_subtype="antenna",
+            entity_label="sn",
+            removal_date=removal,
+        )
+        return [s.code for s in report.stale_open]
+
+    def test_period_starting_on_the_removal_date_is_skipped(self):
+        assert self._collect("2026-07-30T00:00:00") == []
+
+    def test_period_starting_after_removal_is_skipped(self):
+        assert self._collect("2026-08-01T00:00:00") == []
+
+    def test_period_starting_before_removal_is_still_flagged(self):
+        assert self._collect("2002-01-09T00:00:00") == ["antenna_height"]

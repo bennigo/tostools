@@ -729,9 +729,13 @@ def _collect_stale_open(
         if not date_from_raw:
             continue
         date_from = _date_only(str(date_from_raw))
-        if date_from > removal_date:
-            # Opened after the device left here — it belongs to a later
-            # installation elsewhere, not to this station's tenure.
+        if date_from >= removal_date:
+            # Opened on or after the device left here — it belongs to a later
+            # installation, not to this station's tenure. The `>=` matters:
+            # a same-day move (which is what move_device writes — close and
+            # open on one date) leaves the NEXT site's attributes starting
+            # exactly on this removal date. Closing those would end the new
+            # installation's record at the moment it began.
             continue
         value = attribute.get("value")
         report.stale_open.append(
