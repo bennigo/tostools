@@ -465,6 +465,46 @@ def _format_decimal(value: "Decimal") -> str:
     return text
 
 
+def _period_covers_window(
+    history: Dict[str, Any],
+    code: str,
+    window_from: Optional[str],
+    window_to: Optional[str],
+) -> bool:
+    """True if some existing period already records ``code`` over the window.
+
+    The "is it missing?" test elsewhere asks only whether an OPEN period
+    exists, which is the right question for a device still installed. For a
+    finished occupation it is the wrong one twice over: the value is recorded
+    as a CLOSED period (correctly — see D1), and once the close-on-removal
+    check has ended a stale open period the code would read as missing again
+    and get re-proposed. Applying that writes a second period for a window
+    that already has one, and the exact-match idempotency guard does not catch
+    it because TOS stores values as strings — the '0.000' already on ISAK
+    antenna 4527 is not equal to the '0.0' a fresh suggestion produces.
+
+    Overlap, not equality: any period intersecting the occupation means the
+    window is described, even when the boundaries were recorded slightly
+    differently from the join dates.
+    """
+    for attribute in history.get("attributes") or []:
+        if attribute.get("code") != code:
+            continue
+        date_from_raw = attribute.get("date_from")
+        if not date_from_raw:
+            continue
+        period_from = _date_only(str(date_from_raw))
+        date_to_raw = attribute.get("date_to")
+        period_to = _date_only(str(date_to_raw)) if date_to_raw else None
+        starts_before_window_ends = window_to is None or period_from < window_to
+        ends_after_window_starts = (
+            period_to is None or window_from is None or period_to > window_from
+        )
+        if starts_before_window_ends and ends_after_window_starts:
+            return True
+    return False
+
+
 def _is_unrecorded_monument_height(code: str, value: str) -> bool:
     """True when a monument height of zero means "never measured".
 
@@ -573,6 +613,12 @@ def _audit_entity(
         report.audited_entities += 1
     for code, entry, severity in _required_codes_in_scope(scope_rules, entity_subtype):
         if _open_attribute_value(history, code) is not None:
+            continue
+        if suggested_date_to is not None and _period_covers_window(
+            history, code, suggested_date_from, suggested_date_to
+        ):
+            # Finished occupation whose value is already on file as a closed
+            # period. Re-proposing it would duplicate the row.
             continue
         default = entry.get("default_value")
         suggested_value = str(default) if default is not None else None

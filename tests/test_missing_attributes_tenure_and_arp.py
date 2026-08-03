@@ -330,3 +330,82 @@ class TestStaleOpenAttributes:
         report = StationMissingAttributesReport(station_id=1, station_name="Ísakot")
         text = format_triage_file(report, generated_at="2026-08-03T00:00:00+00:00")
         assert "STILL OPEN AFTER REMOVAL" not in text
+
+
+class TestClosedPeriodsAreNotReProposed:
+    """D1 and D3 must not fight each other.
+
+    Once the close-on-removal check ends a stale open period, the code reads as
+    "no open period" again. Without a coverage test the audit re-proposes it and
+    the operator writes a SECOND period for a window that already has one — the
+    exact-match idempotency guard misses it because TOS stores values as
+    strings, and the '0.000' on ISAK antenna 4527 is not equal to the '0.0' a
+    fresh suggestion produces.
+    """
+
+    def _history(self, date_to):
+        return {
+            "attributes": [
+                {
+                    "code": "antenna_height",
+                    "value": "0.000",
+                    "date_from": "2002-01-09T00:00:00",
+                    "date_to": date_to,
+                }
+            ]
+        }
+
+    def _violations(self, history, *, date_from, date_to):
+        report = StationMissingAttributesReport(station_id=1, station_name="Ísakot")
+        _audit_entity(
+            report=report,
+            scope_rules=GEOMETRY_RULES,
+            history=history,
+            entity_id=4527,
+            entity_subtype="antenna",
+            entity_label="262509",
+            scope_name="devices",
+            suggested_date_from=date_from,
+            suggested_date_to=date_to,
+        )
+        return {v.code for v in report.violations}
+
+    def test_covered_window_is_not_reported(self):
+        """The live 4527 case: closed 2002-01-09..2026-07-30 after D3 ran."""
+        got = self._violations(
+            self._history("2026-07-30T12:00:00"),
+            date_from="2002-01-09",
+            date_to="2026-07-30",
+        )
+        assert "antenna_height" not in got
+
+    def test_a_genuinely_uncovered_window_is_still_reported(self):
+        """A different occupation, years later — nothing on file for it."""
+        got = self._violations(
+            self._history("2026-07-30T12:00:00"),
+            date_from="2026-09-01",
+            date_to="2026-09-30",
+        )
+        assert "antenna_height" in got
+
+    def test_an_earlier_window_is_still_reported(self):
+        got = self._violations(
+            self._history("2026-07-30T12:00:00"),
+            date_from="1995-01-01",
+            date_to="1995-06-01",
+        )
+        assert "antenna_height" in got
+
+    def test_partial_overlap_counts_as_covered(self):
+        """Boundaries recorded slightly off the join dates still describe it."""
+        got = self._violations(
+            self._history("2026-07-30T12:00:00"),
+            date_from="2002-01-10",
+            date_to="2020-01-01",
+        )
+        assert "antenna_height" not in got
+
+    def test_open_device_is_unaffected_by_the_coverage_test(self):
+        """No date_to → still installed → only the open-period test applies."""
+        got = self._violations({"attributes": []}, date_from="2002-01-09", date_to=None)
+        assert "antenna_height" in got
