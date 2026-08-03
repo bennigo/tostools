@@ -136,8 +136,26 @@ DEFAULT_ORPHAN_SCAN_MODELS: Dict[str, tuple[str, ...]] = {
         "u-blox",
         "ublox",  # alternate spelling found in live data
     ),
-    # Antenna / radome / monument seed lists are TBD — extend when the
-    # audit grows beyond receiver-only.
+    "antenna": (
+        # Vendor prefixes rather than full codes: IGS antenna names are
+        # vendor-prefixed, so three characters catch every model of a make,
+        # including ones absent from our curated ANTENNA_IGS table. Derived
+        # from the distinct prefixes in that table (2026-08-03), which between
+        # them cover every antenna the fleet has had on a mark.
+        "TRM",  # TRM29659.00, TRM14532.00, TRM41249.00, TRM57971.00
+        "SEP",  # SEPVC6150L, SEPCHOKE_B3E6
+        "LEI",  # LEIAR25.R4
+        "ASH",  # ASH700700.A
+        "AS-",  # AS-ANT3BCAL / AS-ANT3BCAL01 — separate NGS calibrations
+        "NAX",
+        "TPS",
+        "TWI",
+        "AER",  # AERAT2775_42 / _43 — separate NGS calibrations
+    ),
+    # Radome / monument seed lists are TBD. Monument models are free text
+    # ("GPS stál-fjórfótur") carrying synthetic serials, so a model-substring
+    # scan is the wrong shape for them — they need enumeration from the
+    # station side instead.
 }
 
 
