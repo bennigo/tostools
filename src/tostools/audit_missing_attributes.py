@@ -423,7 +423,7 @@ _CURRENT_STATE_CODES = frozenset({"status"})
 #: device wherever it now is and stay open by design.
 #: ``antenna_reference_point`` is excluded because the catalog classifies it
 #: ``inherent`` (the DHARP convention travels with the antenna model).
-_INSTALL_SCOPED_CODES = frozenset(
+INSTALL_SCOPED_CODES = frozenset(
     {
         "antenna_height",
         "antenna_offset_north",
@@ -431,6 +431,11 @@ _INSTALL_SCOPED_CODES = frozenset(
         "azimuth",
     }
 )
+
+#: Private alias kept for readability inside this module. The public name is
+#: what ``receivers`` imports so the write path closes exactly the codes this
+#: audit reports — one definition, so detector and writer can never disagree.
+_INSTALL_SCOPED_CODES = INSTALL_SCOPED_CODES
 
 #: Antenna geometry code -> the monument code carrying the same axis.
 #:
