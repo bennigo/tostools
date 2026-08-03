@@ -346,8 +346,7 @@ def add_visit_filter_arguments(parser) -> None:
         choices=["on_site", "remote"],
         default=None,
         help=(
-            "Filter to one visit type: on_site (Staðarvitjun) or remote "
-            "(Fjarvitjun)."
+            "Filter to one visit type: on_site (Staðarvitjun) or remote (Fjarvitjun)."
         ),
     )
     parser.add_argument(
@@ -1729,8 +1728,7 @@ def _device_delete_main(args) -> int:
         print(f"  ✓ device {dev} deleted (re-read confirms it is gone).")
     else:
         print(
-            f"  ✗ device {dev} STILL EXISTS after DELETE — the admin DELETE "
-            "no-op'd.",
+            f"  ✗ device {dev} STILL EXISTS after DELETE — the admin DELETE no-op'd.",
             file=sys.stderr,
         )
         print(
@@ -2180,8 +2178,7 @@ def _device_main(argv):
     p_add.add_argument(
         "--date-start",
         required=True,
-        help="Start date for all attribute values (YYYY-MM-DD or "
-        "YYYY-MM-DDTHH:MM:SS).",
+        help="Start date for all attribute values (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).",
     )
     p_add.add_argument("--firmware", help="Optional firmware_version attribute.")
     p_add.add_argument("--comment", help="Optional free-form comment attribute.")
@@ -2709,8 +2706,7 @@ def _device_main(argv):
             )
         except ValueError as e:
             print(
-                f"Device created (id_entity={id_entity}) but location join "
-                f"failed: {e}",
+                f"Device created (id_entity={id_entity}) but location join failed: {e}",
                 file=sys.stderr,
             )
             return 1
@@ -2753,16 +2749,12 @@ def _device_main(argv):
     else:
         suffix = " (dry-run)" if dry_run else ""
         id_str = id_entity if id_entity is not None else "<would be assigned>"
-        print(
-            f"Created {args.subtype} serial={args.serial} "
-            f"id_entity={id_str}{suffix}"
-        )
+        print(f"Created {args.subtype} serial={args.serial} id_entity={id_str}{suffix}")
         if not dry_run and isinstance(connection_response, dict):
             conn_id = connection_response.get("id_connection")
             if conn_id is not None:
                 print(
-                    f"Connected to location {args.location!r} "
-                    f"(connection id={conn_id})"
+                    f"Connected to location {args.location!r} (connection id={conn_id})"
                 )
 
     # ---- Triage-file substitution -------------------------------------------
@@ -4036,8 +4028,7 @@ def _station_show_main(args) -> int:
             console,
             closed_rows,
             title=(
-                f"Past devices — {len(closed_rows)} closed join(s) at "
-                f"{parent_label}"
+                f"Past devices — {len(closed_rows)} closed join(s) at {parent_label}"
             ),
             empty_note="(no closed joins)",
         )
@@ -4223,9 +4214,7 @@ def _render_device_attribute_history(
     from .devices import attribute_periods
 
     table = Table(
-        title=(
-            "Device attribute history " "(closed periods on currently-joined devices)"
-        )
+        title=("Device attribute history (closed periods on currently-joined devices)")
     )
     table.add_column("id", justify="right")
     table.add_column("subtype")
@@ -4802,8 +4791,7 @@ def _location_main(argv):
     p_add.add_argument(
         "--date-start",
         required=True,
-        help="date_from for every site attribute (YYYY-MM-DD or "
-        "YYYY-MM-DDTHH:MM:SS).",
+        help="date_from for every site attribute (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).",
     )
     p_add.add_argument("--lon-isn93", help="Optional ISN93 easting.")
     p_add.add_argument("--lat-isn93", help="Optional ISN93 northing.")
@@ -5005,9 +4993,7 @@ def _print_site_power(writer, land_id) -> None:
 
     rows = summarize_site_power(writer, land_id)
     if not rows:
-        print(
-            "  Site power: none modelled yet (neither on the site nor its " "stations)."
-        )
+        print("  Site power: none modelled yet (neither on the site nor its stations).")
         return
     print("  Site power (shared across colocated stations — don't duplicate):")
     for r in rows:
@@ -5018,8 +5004,7 @@ def _print_site_power(writer, land_id) -> None:
         model = r.get("model") or ""
         tied = "  [sensor-tied]" if r.get("sensor_tied") else ""
         print(
-            f"    - {r['subtype']:22} id={r['id_entity']:<7} {model:14} "
-            f"{where}{tied}"
+            f"    - {r['subtype']:22} id={r['id_entity']:<7} {model:14} {where}{tied}"
         )
 
 
@@ -5654,8 +5639,7 @@ def _contact_write_main(args, base_url: str) -> int:
         else:
             changed = ", ".join(f"{k}={v}" for k, v in fields.items())
             print(
-                f"Patched contact {args.id_contact} (FLEET-GLOBAL): "
-                f"{changed}{suffix}"
+                f"Patched contact {args.id_contact} (FLEET-GLOBAL): {changed}{suffix}"
             )
         if not dry_run and getattr(args, "commit", False):
             _audit_log_contact_change(
@@ -6301,8 +6285,7 @@ def _visit_main(argv):
         # would be POSTed even when the writer's own log is muted.
         if dry_run and not args.json:
             print(
-                f"DRY RUN: would add vitjun on {target_label} "
-                f"(id_entity={id_entity})"
+                f"DRY RUN: would add vitjun on {target_label} (id_entity={id_entity})"
             )
             print(f"         start_time      = {start_resolved}")
             print(f"         end_time        = {end_resolved or start_resolved}")
@@ -7688,7 +7671,7 @@ def _audit_main(argv):
     p_sweep.add_argument(
         "markers",
         nargs="*",
-        help="Station markers to sweep (default: every station in " "stations.cfg).",
+        help="Station markers to sweep (default: every station in stations.cfg).",
     )
     p_sweep.add_argument(
         "--stations",
@@ -8107,6 +8090,24 @@ def _audit_main(argv):
     )
     p_missing.add_argument(
         "--id", dest="id_entity", type=int, help="Station id_entity."
+    )
+    p_missing.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Audit EVERY station in stations.cfg instead of one. Read-only "
+            "survey: prints a per-station tally and a defect-class summary, "
+            "never a triage file (--triage is refused). Slow — one station is "
+            "several history fetches, so the whole fleet is tens of minutes. "
+            "Per-station failures are isolated, not fatal."
+        ),
+    )
+    p_missing.add_argument(
+        "--cfg",
+        help=(
+            "stations.cfg path for --all. Default: $GPS_CONFIG_PATH/stations.cfg "
+            "→ ~/.config/gpsconfig/stations.cfg."
+        ),
     )
     p_missing.add_argument(
         "--subtypes",
@@ -9022,7 +9023,10 @@ def _audit_main(argv):
         return 1 if report.has_violations else 0
 
     if args.kind == "missing-attributes":
-        from . import audit_missing_attributes as ama_mod
+        from . import audit_missing_attributes as ama_mod  # noqa: F401
+
+        if getattr(args, "all", False):
+            return _run_missing_attributes_fleet(client, args)
 
         try:
             report = ama_mod.audit_station_missing_attributes(
@@ -9611,7 +9615,7 @@ def _audit_constellations_history_main(args, client) -> int:
         triage_path.write_text(content, encoding="utf-8")
         n_actions = sum(len(p.missing) + len(p.contradicted) for p in report.periods)
         print(
-            f"wrote triage file: {triage_path} " f"({n_actions} action(s), commented)",
+            f"wrote triage file: {triage_path} ({n_actions} action(s), commented)",
             file=sys.stderr,
         )
     elif args.triage and report.has_actions:
@@ -9742,7 +9746,7 @@ def _parse_action_file(text: str) -> tuple[List[ParsedAction], List[ParseError]]
                 ParseError(
                     line_no=i,
                     message=(
-                        "expected line to start with 'ACTION' " f"(got {tokens[0]!r})"
+                        f"expected line to start with 'ACTION' (got {tokens[0]!r})"
                     ),
                     raw=raw,
                 )
@@ -9822,7 +9826,7 @@ def _parse_action_file(text: str) -> tuple[List[ParsedAction], List[ParseError]]
                 ParseError(
                     line_no=i,
                     message=(
-                        "move requires exactly two arguments: " "<to_parent_id> <date>"
+                        "move requires exactly two arguments: <to_parent_id> <date>"
                     ),
                     raw=raw,
                 )
@@ -10187,8 +10191,7 @@ def _dispatch_move(
             action=action,
             status="failed",
             detail=(
-                f"cannot move device {action.id_entity}: no open parent "
-                "join to close"
+                f"cannot move device {action.id_entity}: no open parent join to close"
             ),
         )
 
@@ -10702,8 +10705,7 @@ def _dispatch_add_attribute(writer, action: ParsedAction) -> ActionResult:
             action=action,
             status="failed",
             detail=(
-                f"add-attribute: date_from must be YYYY-MM-DD "
-                f"(got {date_from_raw!r})"
+                f"add-attribute: date_from must be YYYY-MM-DD (got {date_from_raw!r})"
             ),
         )
 
@@ -11021,7 +11023,7 @@ def _dispatch_add_visit(writer, action: ParsedAction) -> ActionResult:
         return ActionResult(
             action=action,
             status="failed",
-            detail=(f"add-visit: date must be YYYY-MM-DD " f"(got {date_resolved!r})"),
+            detail=(f"add-visit: date must be YYYY-MM-DD (got {date_resolved!r})"),
         )
 
     try:
@@ -11293,9 +11295,7 @@ def _dispatch_patch_join_date(writer, action: ParsedAction) -> ActionResult:
         return ActionResult(
             action=action,
             status="failed",
-            detail=(
-                f"patch-join-date: new_date must be YYYY-MM-DD " f"(got {new_date!r})"
-            ),
+            detail=(f"patch-join-date: new_date must be YYYY-MM-DD (got {new_date!r})"),
         )
 
     try:
@@ -11647,8 +11647,7 @@ def _dispatch_delete_join(writer, action: ParsedAction) -> ActionResult:
             action=action,
             status="failed",
             detail=(
-                f"delete-join requires integer id_connection, got "
-                f"{connection_token!r}"
+                f"delete-join requires integer id_connection, got {connection_token!r}"
             ),
         )
 
@@ -11665,8 +11664,7 @@ def _dispatch_delete_join(writer, action: ParsedAction) -> ActionResult:
         action=action,
         status="ok",
         detail=(
-            f"DELETE /join/{id_connection} "
-            f"(device={action.id_entity}) — {response!r}"
+            f"DELETE /join/{id_connection} (device={action.id_entity}) — {response!r}"
         ),
     )
 
@@ -12420,7 +12418,7 @@ def _print_attribute_date_report(report, *, verbose: bool = False):
     status = "CLEAN" if not report.has_violations else "VIOLATIONS"
     marker = "✓" if not report.has_violations else "✗"
     name = report.station_name or "?"
-    print(f"{marker} Station {name!r} (id_entity={report.station_id}) — " f"{status}")
+    print(f"{marker} Station {name!r} (id_entity={report.station_id}) — {status}")
     print(
         f"  audited devices: {report.audited_devices}  "
         f"(skipped {report.devices_skipped} outside requested subtypes)"
@@ -12506,6 +12504,133 @@ def _print_attribute_date_report(report, *, verbose: bool = False):
             f"  ({len(report.unknown_codes)} unknown attribute code(s); "
             f"re-run with --verbose to list them)"
         )
+
+
+def _run_missing_attributes_fleet(client, args) -> int:
+    """Read-only missing-attributes survey across every station in stations.cfg.
+
+    Deliberately a SURVEY, not a bulk triage generator. The single-station verb
+    exists to produce an action file a human then reviews; fanning that out to
+    ~194 stations would produce more proposed writes than anyone can read, and
+    the ISAK run proved the per-station judgement is the expensive part (which
+    monument covers which occupation, whether a value is a composite, whether a
+    device is campaign kit). So ``--all`` answers "how big is this, and of what
+    kind", and the per-station verb stays the way anything gets fixed.
+
+    Failures are isolated per station: one unreachable history must not abort a
+    survey that takes tens of minutes.
+    """
+    import json as _json
+
+    from . import audit_fleet_sweep as sweep_mod
+    from . import audit_missing_attributes as ama_mod
+    from . import history as history_mod
+
+    if getattr(args, "triage_path", None):
+        print(
+            "--all is a read-only survey and does not write triage files. "
+            "Run the per-station verb for the stations you want to fix.",
+            file=sys.stderr,
+        )
+        return 2
+
+    cfg_path = (
+        str(args.cfg)
+        if getattr(args, "cfg", None)
+        else (history_mod.default_station_cfg_path())
+    )
+    if not cfg_path:
+        print(
+            "Could not locate stations.cfg. Set GPS_CONFIG_PATH or pass --cfg PATH.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        cfg = sweep_mod.parse_stations_cfg(cfg_path)
+    except OSError as e:
+        print(f"Could not read stations.cfg ({cfg_path}): {e}", file=sys.stderr)
+        return 2
+
+    markers = sorted(m.upper() for m in cfg)
+    total = len(markers)
+    print(f"surveying {total} station(s) from {cfg_path}", file=sys.stderr)
+
+    rows = []
+    by_code: Dict[str, int] = {}
+    stale_by_code: Dict[str, int] = {}
+    for i, marker in enumerate(markers, 1):
+        try:
+            report = ama_mod.audit_station_missing_attributes(
+                client,
+                name=marker,
+                id_entity=None,
+                subtypes=args.subtypes,
+                catalog_path=args.catalog,
+                suppressions_path=args.suppressions,
+                use_suppressions=not args.no_suppressions,
+                include_closed=getattr(args, "history", False),
+                station_info_path=getattr(args, "station_info", None),
+            )
+        except Exception as e:  # noqa: BLE001 — isolate per-station failures
+            rows.append({"marker": marker, "error": str(e)[:120]})
+            print(f"  [{i}/{total}] {marker}: ERROR {str(e)[:80]}", file=sys.stderr)
+            continue
+        for v in report.violations:
+            by_code[v.code] = by_code.get(v.code, 0) + 1
+        for s in report.stale_open:
+            stale_by_code[s.code] = stale_by_code.get(s.code, 0) + 1
+        rows.append(
+            {
+                "marker": marker,
+                "violations": len(report.violations),
+                "stale_open": len(report.stale_open),
+                "audited_entities": report.audited_entities,
+            }
+        )
+        print(
+            f"  [{i}/{total}] {marker}: {len(report.violations)} missing, "
+            f"{len(report.stale_open)} open-after-removal",
+            file=sys.stderr,
+        )
+
+    summary = {
+        "stations": total,
+        "surveyed": len([r for r in rows if "error" not in r]),
+        "errors": len([r for r in rows if "error" in r]),
+        "missing_total": sum(r.get("violations", 0) for r in rows),
+        "stale_open_total": sum(r.get("stale_open", 0) for r in rows),
+        "missing_by_code": dict(sorted(by_code.items(), key=lambda kv: -kv[1])),
+        "stale_open_by_code": dict(
+            sorted(stale_by_code.items(), key=lambda kv: -kv[1])
+        ),
+        "stations_with_stale_open": sorted(
+            r["marker"] for r in rows if r.get("stale_open")
+        ),
+    }
+
+    if args.json:
+        print(
+            _json.dumps(
+                {"summary": summary, "stations": rows}, ensure_ascii=False, indent=2
+            )
+        )
+        return 0
+
+    print("")
+    print(f"=== surveyed {summary['surveyed']}/{total} station(s)", end="")
+    print(f", {summary['errors']} error(s)" if summary["errors"] else "")
+    print(f"  missing attributes:  {summary['missing_total']}")
+    for code, n in summary["missing_by_code"].items():
+        print(f"      {code:26} {n}")
+    print(f"  open after removal:  {summary['stale_open_total']}")
+    for code, n in summary["stale_open_by_code"].items():
+        print(f"      {code:26} {n}")
+    if summary["stations_with_stale_open"]:
+        print(
+            "  stations with open-after-removal: "
+            + ", ".join(summary["stations_with_stale_open"])
+        )
+    return 0
 
 
 def _missing_attributes_report_to_dict(report):
@@ -13133,8 +13258,7 @@ def _print_one_timeline(t, parent_names):
         state_bits.append("no joins indexed" if not t.joins else "state unknown")
     state = "; ".join(state_bits)
     print(
-        f"Device id={t.id_entity}  SN {serial!r}  model {model!r}  "
-        f"{subtype}  — {state}"
+        f"Device id={t.id_entity}  SN {serial!r}  model {model!r}  {subtype}  — {state}"
     )
 
     if not t.joins:
@@ -13199,8 +13323,7 @@ def _print_orphan_scan(scan, *, verbose: bool = False):
             tail = "no current parent in TOS"
         else:
             tail = (
-                f"last at {r.current_parent_name!r} "
-                f"(id_entity={r.current_parent_id})"
+                f"last at {r.current_parent_name!r} (id_entity={r.current_parent_id})"
             )
         print(f"  ✗ id_entity={r.id_entity} SN {serial}  {tail}")
     if not verbose:
@@ -13554,8 +13677,7 @@ def display_device_record(
         file=file,
     )
     print(
-        f"  current status: {open_status}  "
-        f"id_entity_parent (stale field): {parent_id}",
+        f"  current status: {open_status}  id_entity_parent (stale field): {parent_id}",
         file=file,
     )
 
