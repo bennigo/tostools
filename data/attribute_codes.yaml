@@ -501,13 +501,24 @@ devices:
     description: Antenna direction relative to true north (degrees)
     classification: mutable # likely inherent — installation orientation
     tos_required_for: []
-    # REQUIRED (bgo, 2026-08-03 — promoted from gps_recommended_for). Orientation
-    # is part of the installation, not an optional note: dissemination and site
-    # logs silently assume 0.0 when it is absent, so an unrecorded non-zero survey
-    # is published as north-aligned with no trace of the assumption. A reminder is
-    # too weak for a value that gets consumed whether or not it was recorded.
-    # default_value 0.0 keeps the fill cheap for the north-aligned majority.
-    gps_required_for: [antenna]
+    # REQUIRED, BUT ONLY WHILE INSTALLED (bgo, 2026-08-03).
+    #
+    # Orientation is part of the installation: dissemination and site logs
+    # silently assume 0.0 when it is absent, so an unrecorded non-zero survey is
+    # published as north-aligned with no trace of the assumption. That argues for
+    # required, and it was promoted from gps_recommended_for the same day.
+    #
+    # Plain `gps_required_for` was too broad. With `--history` it made azimuth a
+    # violation on every historical occupation in the fleet — 423 of 2,535 on the
+    # 2026-08-03 survey, the single largest bucket — and not one of them could be
+    # answered: nobody can survey the orientation of a 1995 campaign tripod after
+    # the fact, so every one would be closed with the catalog default. A check
+    # that large and that unanswerable is how a check gets ignored.
+    #
+    # `gps_required_when_installed` keeps the teeth where they bite (a live
+    # antenna whose azimuth someone can still go and measure) and stays silent
+    # on history.
+    gps_required_when_installed: [antenna]
     default_value: "0.0" # north-aligned default when unrecorded
     applies_to: [antenna]
     gps_relevance: "yes"

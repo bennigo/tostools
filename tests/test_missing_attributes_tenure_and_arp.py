@@ -449,3 +449,80 @@ class TestSameDayMoveIsNotClosed:
 
     def test_period_starting_before_removal_is_still_flagged(self):
         assert self._collect("2002-01-09T00:00:00") == ["antenna_height"]
+
+
+class TestRequiredOnlyWhileInstalled:
+    """`gps_required_when_installed` — teeth on live installs, silent on history.
+
+    Promoting azimuth to plain `gps_required_for` made it a violation on every
+    historical occupation in the fleet (423 of 2,535 on the 2026-08-03 survey),
+    none of which anyone can answer: you cannot survey the orientation of a 1995
+    campaign tripod after the fact. This tier keeps the requirement where it is
+    actionable.
+    """
+
+    RULES = {
+        "azimuth": {
+            "gps_required_when_installed": ["antenna"],
+            "default_value": "0.0",
+            "gps_relevance": "yes",
+        },
+        "serial_number": {
+            "gps_required_for": ["antenna"],
+            "gps_relevance": "yes",
+        },
+    }
+
+    def _codes(self, *, date_to):
+        report = StationMissingAttributesReport(station_id=1, station_name="X")
+        _audit_entity(
+            report=report,
+            scope_rules=self.RULES,
+            history={"attributes": []},
+            entity_id=4520,
+            entity_subtype="antenna",
+            entity_label="sn",
+            scope_name="devices",
+            suggested_date_from="2001-05-30",
+            suggested_date_to=date_to,
+        )
+        return {v.code for v in report.violations}
+
+    def test_required_while_installed(self):
+        assert "azimuth" in self._codes(date_to=None)
+
+    def test_silent_on_a_finished_occupation(self):
+        assert "azimuth" not in self._codes(date_to="2001-06-09")
+
+    def test_unconditional_codes_still_apply_to_history(self):
+        """Only the when-installed tier is gated — a missing serial on a
+        historical antenna is still published in site logs and RINEX headers."""
+        assert "serial_number" in self._codes(date_to="2001-06-09")
+
+    def test_not_demoted_to_recommended(self):
+        """A reminder nobody can act on is the same noise, quieter."""
+        report = StationMissingAttributesReport(station_id=1, station_name="X")
+        _audit_entity(
+            report=report,
+            scope_rules=self.RULES,
+            history={"attributes": []},
+            entity_id=4520,
+            entity_subtype="antenna",
+            entity_label="sn",
+            scope_name="devices",
+            suggested_date_from="2001-05-30",
+            suggested_date_to="2001-06-09",
+        )
+        assert [v.code for v in report.recommended_missing] == []
+
+    def test_catalog_uses_the_gated_tier_for_azimuth(self):
+        import yaml
+
+        from tostools.data_files import data_path
+
+        entry = yaml.safe_load(open(data_path("attribute_codes.yaml")))["devices"][
+            "azimuth"
+        ]
+        assert entry.get("gps_required_when_installed") == ["antenna"]
+        assert not entry.get("gps_required_for")
+        assert entry["default_value"] == "0.0"

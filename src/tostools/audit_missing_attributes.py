@@ -281,25 +281,44 @@ def _device_display_label(history: Dict[str, Any]) -> Optional[str]:
 def _required_codes_in_scope(
     scope_rules: Dict[str, Dict[str, Any]],
     entity_subtype: str,
+    *,
+    installed: bool = True,
 ) -> List[Tuple[str, Dict[str, Any], str]]:
     """Return ``[(code, entry, severity)]`` for rules that apply to
     ``entity_subtype``, where ``severity`` is:
 
     * ``"required"`` — ``entity_subtype ∈ gps_required_for`` (a real violation).
     * ``"recommended"`` — ``entity_subtype ∈ gps_recommended_for`` (a logged
-      reminder; a safe default is applied downstream, e.g. azimuth → 0.0).
+      reminder; a safe default is applied downstream).
 
-    ``gps_required_for`` wins if a code lists the subtype in both. Filtering on
-    ``gps_relevance == 'yes'`` keeps "no"/"maybe" entries out until classified.
+    ``gps_required_when_installed`` is a third tier: required, but only while
+    the device is actually installed here (``installed=True``). It exists for
+    values that describe a live installation and cannot be reconstructed for a
+    historical one. Antenna ``azimuth`` is the case that motivated it —
+    promoting it to plain ``gps_required_for`` made it a violation on every
+    historical occupation in the fleet (423 of 2,535 on the 2026-08-03 survey),
+    all of which would only ever be filled with the catalog default. Nobody can
+    survey the orientation of a 1995 campaign setup after the fact; asking is
+    noise, and noise is how a check gets ignored.
+
+    ``gps_required_for`` wins if a code lists the subtype in several. Filtering
+    on ``gps_relevance == 'yes'`` keeps "no"/"maybe" entries out until classified.
     """
     out: List[Tuple[str, Dict[str, Any], str]] = []
     for code, entry in scope_rules.items():
         if entry.get("gps_relevance") != "yes":
             continue
         required = entry.get("gps_required_for") or []
+        when_installed = entry.get("gps_required_when_installed") or []
         recommended = entry.get("gps_recommended_for") or []
         if entity_subtype in required:
             out.append((code, entry, "required"))
+        elif entity_subtype in when_installed:
+            if installed:
+                out.append((code, entry, "required"))
+            # Not installed → not asked for at all. Deliberately not demoted to
+            # "recommended": a reminder nobody can act on is the same noise in
+            # a quieter voice.
         elif entity_subtype in recommended:
             out.append((code, entry, "recommended"))
     return out
@@ -611,7 +630,11 @@ def _audit_entity(
     """
     if seen_codes is None:
         report.audited_entities += 1
-    for code, entry, severity in _required_codes_in_scope(scope_rules, entity_subtype):
+    # An occupation with an end date is finished, so the device is not
+    # installed here now — that is what gates gps_required_when_installed.
+    for code, entry, severity in _required_codes_in_scope(
+        scope_rules, entity_subtype, installed=suggested_date_to is None
+    ):
         if _open_attribute_value(history, code) is not None:
             continue
         if suggested_date_to is not None and _period_covers_window(
