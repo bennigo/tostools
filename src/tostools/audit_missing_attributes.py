@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -94,6 +95,14 @@ class MissingAttributeViolation:
     # (gps_recommended_for → a logged reminder, not a violation; a safe default
     # is applied at dissemination/sitelog — e.g. antenna azimuth → 0.0).
     severity: str = "required"
+    # Set when the device is NOT currently installed here: the value describes
+    # one finished occupation, so it must be written as a CLOSED period. An
+    # open period would assert this station's geometry as the device's
+    # forever-truth — wrong for campaign kit that went on to other marks.
+    suggested_date_to: Optional[str] = None
+    # Human-readable provenance for suggested_value, rendered into the triage
+    # so the operator can see whether a number was derived or taken raw.
+    value_basis: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,33 @@ class SuppressedMissing:
     line_no: int
 
 
+@dataclass(frozen=True)
+class StaleOpenAttribute:
+    """An installation-scoped attribute still open after the device left.
+
+    The inverse defect to a missing attribute: the value is present, but its
+    period never got closed when the device was removed, so TOS still claims
+    this station's geometry describes a device that is now in a warehouse or at
+    another mark.
+
+    ISAK antenna 4527 is the worked example — removed 2026-07-30T12:00, its
+    join correctly closed and ``status``/``comment`` correctly updated by
+    ``cfg replace-antenna``, but ``antenna_height`` (id 113122) left open since
+    2002-01-09. Only codes in :data:`_INSTALL_SCOPED_CODES` qualify: ``status``,
+    ``comment`` and ``owner`` are also mutable but describe the device wherever
+    it now is, so they stay open by design.
+    """
+
+    id_entity: int
+    subtype: str
+    name: Optional[str]
+    code: str
+    value: Optional[str]
+    date_from: str
+    #: Date the device left this station — the ``date_to`` the period wants.
+    removal_date: str
+
+
 @dataclass
 class StationMissingAttributesReport:
     """Result of :func:`audit_station_missing_attributes`."""
@@ -114,6 +150,7 @@ class StationMissingAttributesReport:
     audited_entities: int = 0
     devices_skipped: int = 0
     violations: List[MissingAttributeViolation] = field(default_factory=list)
+    stale_open: List[StaleOpenAttribute] = field(default_factory=list)
     suppressed: List[SuppressedMissing] = field(default_factory=list)
     suppressions_path: Optional[Path] = None
     suppressions_errors: List[SuppressionParseError] = field(default_factory=list)
@@ -192,8 +229,7 @@ def load_missing_suppressions(
                 SuppressionParseError(
                     line_no=i,
                     message=(
-                        f"expected line to start with 'SUPPRESS' "
-                        f"(got {tokens[0]!r})"
+                        f"expected line to start with 'SUPPRESS' (got {tokens[0]!r})"
                     ),
                     raw=raw,
                 )
@@ -378,6 +414,124 @@ def _occupation_for(occupations, serial: Optional[str], date_from: Optional[str]
 #: retired one. Offsets/azimuth are historical facts and stay defaulted.
 _CURRENT_STATE_CODES = frozenset({"status"})
 
+#: Attribute codes that describe ONE INSTALLATION rather than the device.
+#: They must be written as closed periods when the device is no longer here,
+#: and an open one after removal is the :class:`StaleOpenAttribute` defect.
+#:
+#: Deliberately a fixed list, not "every ``classification: mutable`` code":
+#: ``status``, ``comment`` and ``owner`` are mutable too, but they describe the
+#: device wherever it now is and stay open by design.
+#: ``antenna_reference_point`` is excluded because the catalog classifies it
+#: ``inherent`` (the DHARP convention travels with the antenna model).
+INSTALL_SCOPED_CODES = frozenset(
+    {
+        "antenna_height",
+        "antenna_offset_north",
+        "antenna_offset_east",
+        "azimuth",
+    }
+)
+
+#: Private alias kept for readability inside this module. The public name is
+#: what ``receivers`` imports so the write path closes exactly the codes this
+#: audit reports — one definition, so detector and writer can never disagree.
+_INSTALL_SCOPED_CODES = INSTALL_SCOPED_CODES
+
+#: Antenna geometry code -> the monument code carrying the same axis.
+#:
+#: GAMIT ``station.info`` records the STATION COMPOSITE (``Ant Ht`` = monument
+#: height + ARP delta). TOS splits it: the monument entity holds the bulk, the
+#: antenna entity holds only the delta above it. Suggesting the composite for
+#: the antenna is a ~1 m error — see ISAK 4520, whose correct second-occupation
+#: value is 0.0311 against a station.info height of 1.0358 (monument 1.0047).
+_MONUMENT_BASELINE_CODES = {
+    "antenna_height": "monument_height",
+    "antenna_offset_north": "antenna_offset_north",
+    "antenna_offset_east": "antenna_offset_east",
+}
+
+
+def _format_decimal(value: "Decimal") -> str:
+    """Render a derived number without float noise or a bare integer.
+
+    ``1.0358 - 1.0047`` in binary floating point is 0.031099999999999906;
+    quantising first keeps the 4-decimal survey precision TOS stores. Trailing
+    zeros go, but at least one decimal stays so a zero delta reads as "0.0"
+    (matching what ``cfg replace-antenna`` writes) rather than "0".
+    """
+    text = f"{value:.4f}".rstrip("0")
+    if text.endswith("."):
+        text += "0"
+    return text
+
+
+def _is_unrecorded_monument_height(code: str, value: str) -> bool:
+    """True when a monument height of zero means "never measured".
+
+    Only ``monument_height`` qualifies. A monument IS a pillar or a bolted
+    tripod — it always has a height — so 0 is a placeholder, not a survey.
+    ISAK's three campaign-era monuments (5132/5133/5134) all read ``'0.000'``.
+    A zero ``antenna_offset_*`` by contrast is the normal, real answer.
+    """
+    if code != "monument_height":
+        return False
+    try:
+        return Decimal(value) == 0
+    except InvalidOperation:
+        return False
+
+
+def _covering_join(joins: Sequence[Dict[str, Any]], window_from: str) -> bool:
+    """True if any join in ``joins`` was active on ``window_from``."""
+    for j in joins:
+        tf = j.get("time_from")
+        if not tf:
+            continue
+        start = _date_only(str(tf))
+        end_raw = j.get("time_to")
+        end = _date_only(str(end_raw)) if end_raw else None
+        if start <= window_from and (end is None or window_from < end):
+            return True
+    return False
+
+
+def _monument_baseline(
+    client: TOSClient,
+    joins_by_device: Dict[int, List[Dict[str, Any]]],
+    window_from: str,
+) -> Optional[Dict[str, str]]:
+    """Monument values in force at ``window_from``, as ``{code: value}``.
+
+    Returns ``None`` when no monument covers the window at all, versus ``{}``
+    or a partial dict when one covers it but has no open value for some code.
+    The caller reports those differently: "there was no monument to split
+    against" is a fact about the site, "the monument exists but this axis was
+    never recorded" is a gap someone can go and fill.
+
+    Lookup failures degrade to ``{}`` — a read-only audit must not die because
+    one device history is unavailable.
+
+    Devices are visited in id order so a station that (wrongly) has two
+    monuments covering one window still yields a stable answer run to run.
+    """
+    for device_id in sorted(joins_by_device):
+        joins = joins_by_device[device_id]
+        if not _covering_join(joins, window_from):
+            continue
+        try:
+            history = client.get_entity_history(device_id)
+        except Exception:  # noqa: BLE001 - never fail the audit on a lookup
+            continue
+        if not history or (history.get("code_entity_subtype") or "") != "monument":
+            continue
+        out: Dict[str, str] = {}
+        for monument_code in set(_MONUMENT_BASELINE_CODES.values()):
+            value = _open_attribute_value(history, monument_code)
+            if value is not None:
+                out[monument_code] = value
+        return out
+    return None
+
 
 def _audit_entity(
     *,
@@ -389,8 +543,11 @@ def _audit_entity(
     entity_label: Optional[str],
     scope_name: str,
     suggested_date_from: Optional[str] = None,
+    suggested_date_to: Optional[str] = None,
     decommissioned: bool = False,
     occupation=None,
+    monument_baseline: Optional[Dict[str, str]] = None,
+    seen_codes: Optional[set] = None,
 ) -> None:
     """Walk one entity (station, device, or monument).
 
@@ -401,25 +558,89 @@ def _audit_entity(
 
     ``decommissioned`` suppresses catalog defaults that assert a CURRENT
     operational state — see :data:`_CURRENT_STATE_CODES`.
+
+    ``suggested_date_to`` marks the occupation as finished, so the triage emits
+    a closed ``add-attribute-period`` instead of an open ``add-attribute``.
+
+    ``monument_baseline`` de-composites the antenna geometry: station.info
+    carries monument + ARP, TOS wants the ARP alone. See
+    :data:`_MONUMENT_BASELINE_CODES`.
+
+    ``seen_codes`` lets a caller auditing several occupation windows of the same
+    device keep ``report.audited_entities`` honest across the repeats.
     """
-    report.audited_entities += 1
+    if seen_codes is None:
+        report.audited_entities += 1
     for code, entry, severity in _required_codes_in_scope(scope_rules, entity_subtype):
         if _open_attribute_value(history, code) is not None:
             continue
         default = entry.get("default_value")
         suggested_value = str(default) if default is not None else None
+        value_basis: Optional[str] = None
         # GAMIT station.info wins over a catalog default: it is the field
         # record of what was actually installed, not a fleet-wide guess.
         if occupation is not None and code in _STATION_INFO_FIELDS:
             observed = getattr(occupation, _STATION_INFO_FIELDS[code], None)
             if observed not in (None, ""):
                 suggested_value = str(observed).strip()
+                value_basis = "station.info"
+                baseline_code = _MONUMENT_BASELINE_CODES.get(code)
+                if baseline_code is not None:
+                    # station.info gives the STATION COMPOSITE; TOS wants only
+                    # the antenna's delta above the monument. Without this the
+                    # suggestion is the monument height itself — ~1 m wrong.
+                    baseline = (
+                        None
+                        if monument_baseline is None
+                        else monument_baseline.get(baseline_code)
+                    )
+                    if monument_baseline is None:
+                        value_basis = (
+                            "station.info composite — no monument covers this "
+                            "window, so this IS the whole height"
+                        )
+                    elif baseline is None:
+                        value_basis = (
+                            f"station.info COMPOSITE — the covering monument has "
+                            f"no open {baseline_code}, so the split is unknown"
+                        )
+                    elif _is_unrecorded_monument_height(baseline_code, baseline):
+                        # A monument with height 0 is physically meaningless —
+                        # it means nobody recorded it (ISAK's three campaign-era
+                        # monuments all read '0.000'). Subtracting it would turn
+                        # the composite into a delta that looks derived and
+                        # isn't. Say the split is unknown instead of faking it.
+                        # NB the asymmetry: a zero antenna_offset_* IS a real
+                        # measurement, so only the height gets this treatment.
+                        value_basis = (
+                            f"station.info COMPOSITE — {baseline_code} is "
+                            f"{baseline!r} (unrecorded), so the monument/ARP "
+                            "split is unknown. Fill the monument height first, "
+                            "or record this as the whole height knowingly."
+                        )
+                    else:
+                        try:
+                            delta = Decimal(suggested_value) - Decimal(baseline)
+                        except InvalidOperation:
+                            value_basis = (
+                                f"station.info composite (could not subtract "
+                                f"{baseline_code}={baseline!r})"
+                            )
+                        else:
+                            suggested_value = _format_decimal(delta)
+                            value_basis = (
+                                f"station.info {observed} - {baseline_code} "
+                                f"{baseline} (monument-relative)"
+                            )
         if decommissioned and code in _CURRENT_STATE_CODES:
             # The catalog default describes a device in service ("virkt" =
             # active). On a retired device that is not merely unhelpful, it is
             # false — and it would be applied in bulk from the triage file.
             # Force a human decision instead of proposing a wrong value.
             suggested_value = None
+            value_basis = None
+        if seen_codes is not None:
+            seen_codes.add(code)
         report.violations.append(
             MissingAttributeViolation(
                 id_entity=entity_id,
@@ -429,7 +650,53 @@ def _audit_entity(
                 scope=scope_name,
                 suggested_value=suggested_value,
                 suggested_date_from=suggested_date_from,
+                suggested_date_to=suggested_date_to,
+                value_basis=value_basis,
                 severity=severity,
+            )
+        )
+
+
+def _collect_stale_open(
+    *,
+    report: StationMissingAttributesReport,
+    history: Dict[str, Any],
+    entity_id: int,
+    entity_subtype: str,
+    entity_label: Optional[str],
+    removal_date: str,
+) -> None:
+    """Flag installation-scoped attributes still open after the device left.
+
+    Called only for devices with no open join at this station. The join is
+    closed, so TOS already knows the device is gone — but an open
+    ``antenna_height`` still asserts this mark's geometry for it, and every
+    consumer that reads "the current value" gets a stale answer.
+    """
+    for attribute in history.get("attributes") or []:
+        code = attribute.get("code")
+        if code not in _INSTALL_SCOPED_CODES:
+            continue
+        if attribute.get("date_to") is not None:
+            continue
+        date_from_raw = attribute.get("date_from")
+        if not date_from_raw:
+            continue
+        date_from = _date_only(str(date_from_raw))
+        if date_from > removal_date:
+            # Opened after the device left here — it belongs to a later
+            # installation elsewhere, not to this station's tenure.
+            continue
+        value = attribute.get("value")
+        report.stale_open.append(
+            StaleOpenAttribute(
+                id_entity=entity_id,
+                subtype=entity_subtype,
+                name=entity_label,
+                code=code,
+                value=None if value is None else str(value),
+                date_from=date_from,
+                removal_date=removal_date,
             )
         )
 
@@ -592,6 +859,57 @@ def audit_station_missing_attributes(
         ]
         suggested_date = min(join_dates) if join_dates else None
 
+        if include_closed and not open_joins:
+            # The device is history here, so its values belong to finished
+            # occupations. Audit each occupation window separately rather than
+            # once across min(from)..max(to): ISAK antenna 4520 sat here twice
+            # in 2001 with DIFFERENT heights (1.0047 then 1.0358) and was at
+            # Austmannsbunga in between, so one span covering both would be
+            # wrong at each end and would swallow the trip elsewhere.
+            windows = sorted(
+                (
+                    _date_only(str(j["time_from"])),
+                    _date_only(str(j["time_to"])) if j.get("time_to") else None,
+                )
+                for j in audited_joins
+                if j.get("time_from")
+            )
+            seen: set = set()
+            report.audited_entities += 1
+            for window_from, window_to in windows:
+                _audit_entity(
+                    report=report,
+                    scope_rules=devices_rules,
+                    history=history,
+                    entity_id=device_id,
+                    entity_subtype=dev_subtype,
+                    entity_label=device_label,
+                    scope_name="devices",
+                    suggested_date_from=window_from,
+                    suggested_date_to=window_to,
+                    decommissioned=retired,
+                    occupation=_occupation_for(
+                        occupations,
+                        _open_attribute_value(history, "serial_number"),
+                        window_from,
+                    ),
+                    monument_baseline=_monument_baseline(
+                        client, joins_by_device, window_from
+                    ),
+                    seen_codes=seen,
+                )
+            last_removal = _last_removal(joins)
+            if last_removal:
+                _collect_stale_open(
+                    report=report,
+                    history=history,
+                    entity_id=device_id,
+                    entity_subtype=dev_subtype,
+                    entity_label=device_label,
+                    removal_date=last_removal,
+                )
+            continue
+
         _audit_entity(
             report=report,
             scope_rules=devices_rules,
@@ -609,6 +927,13 @@ def audit_station_missing_attributes(
                 occupations,
                 _open_attribute_value(history, "serial_number"),
                 suggested_date,
+            ),
+            # A currently-installed antenna needs de-compositing too: the
+            # station.info height is monument + ARP whichever way the join runs.
+            monument_baseline=(
+                _monument_baseline(client, joins_by_device, suggested_date)
+                if suggested_date
+                else None
             ),
         )
 
@@ -706,11 +1031,33 @@ def format_triage_file(
     if audit_command:
         lines.append(f"# Audit cmd:  {audit_command}")
     lines.append(f"# Violations: {len(report.violations)}")
+    if report.stale_open:
+        lines.append(f"# Open-after-removal: {len(report.stale_open)}")
     lines.append("#")
     lines.append("# Format: one ACTION per line, '#' for comments.")
     lines.append("#")
     lines.append("#   ACTION <id_entity> add-attribute \\")
-    lines.append("#          <code> <value> <date_from>")
+    lines.append("#          <code> <value> <date_from>                  (open period)")
+    lines.append("#   ACTION <id_entity> add-attribute-period \\")
+    lines.append(
+        "#          <code> <value> <date_from> <date_to>        (finished occupation)"
+    )
+    lines.append("#   ACTION <id_entity> patch-attribute-date-to \\")
+    lines.append(
+        "#          <code> <date_from> <date_to>                (close a leftover)"
+    )
+    lines.append("#")
+    lines.append("# A device that has LEFT this station gets closed periods: an open")
+    lines.append("# one would assert this mark's geometry as its forever-truth, which")
+    lines.append("# is wrong for campaign kit that went on to other marks.")
+    lines.append("#")
+    lines.append(
+        "# Antenna heights/offsets are monument-RELATIVE. station.info records"
+    )
+    lines.append(
+        "# the station composite (monument + ARP); the value below already has"
+    )
+    lines.append("# the monument subtracted where one covers the window.")
     lines.append("#")
     lines.append("# Workflow:")
     lines.append("#   1. Review each block below. Replace any")
@@ -732,9 +1079,15 @@ def format_triage_file(
     lines.append("")
 
     if not report.violations:
-        lines.append("# (no violations — nothing to triage)")
-        lines.append("")
-        return "\n".join(lines)
+        if not report.stale_open:
+            lines.append("# (no violations — nothing to triage)")
+            lines.append("")
+            return "\n".join(lines)
+        # No gaps to fill, but there are periods to close. Falling through to
+        # the stale-open block matters: once a device's attributes are all
+        # filled, leftover open periods are the ONLY thing left to report, and
+        # an early return here would print "nothing to triage" over them.
+        lines.append("# (no missing attributes — see the close section below)")
 
     # Group by entity for readability. Station entity always comes first
     # if present; devices follow in id_entity order.
@@ -763,10 +1116,19 @@ def format_triage_file(
             elif v.suggested_date_from is not None:
                 suggested_note = f"  (date hint: {v.suggested_date_from})"
             lines.append(f"# missing: {v.code}{suggested_note}")
-            lines.append(
-                f"#ACTION {v.id_entity} add-attribute "
-                f"{v.code} {value_token} {date_token}"
-            )
+            if v.value_basis:
+                lines.append(f"#   value from: {v.value_basis}")
+            if v.suggested_date_to is not None:
+                # A finished occupation: closed period, never an open one.
+                lines.append(
+                    f"#ACTION {v.id_entity} add-attribute-period "
+                    f"{v.code} {value_token} {date_token} {v.suggested_date_to}"
+                )
+            else:
+                lines.append(
+                    f"#ACTION {v.id_entity} add-attribute "
+                    f"{v.code} {value_token} {date_token}"
+                )
             lines.append(f"# (or suppress: SUPPRESS {v.id_entity} {v.code})")
             lines.append("")
 
@@ -776,4 +1138,57 @@ def format_triage_file(
     for did in sorted(by_device):
         _emit_entity_block(did, by_device[did])
 
+    _emit_stale_open_block(report, lines)
+
     return "\n".join(lines)
+
+
+def _emit_stale_open_block(
+    report: StationMissingAttributesReport, lines: List[str]
+) -> None:
+    """Append the close-the-loose-ends section, if there is anything to close.
+
+    The inverse of the blocks above: those add a missing value, these end a
+    value that outlived its installation. Emitted last so the file reads
+    "fill the gaps, then close the leftovers", and kept in the same file so one
+    ``tos audit apply`` run settles a device completely.
+    """
+    if not report.stale_open:
+        return
+
+    lines.append("")
+    lines.append("# " + "=" * 72)
+    lines.append("# INSTALLATION-SCOPED ATTRIBUTES STILL OPEN AFTER REMOVAL")
+    lines.append("#")
+    lines.append("# These devices are no longer joined to this station, but the")
+    lines.append("# attributes below still have no date_to — so TOS reports this")
+    lines.append("# mark's geometry as their CURRENT value. Closing them at the")
+    lines.append("# removal date preserves the history without the false claim.")
+    lines.append("#")
+    lines.append("# status / comment / owner are deliberately NOT listed: they")
+    lines.append("# describe the device wherever it is now, so they stay open.")
+    lines.append("# " + "=" * 72)
+    lines.append("")
+
+    by_entity: Dict[int, List[StaleOpenAttribute]] = {}
+    for stale in report.stale_open:
+        by_entity.setdefault(stale.id_entity, []).append(stale)
+
+    for entity_id in sorted(by_entity):
+        entries = by_entity[entity_id]
+        label = entries[0].name
+        label_part = f" {label!r}" if label else ""
+        lines.append(
+            f"# --- {entries[0].subtype} id_entity={entity_id}{label_part} ---"
+        )
+        for stale in entries:
+            lines.append(
+                f"# open since {stale.date_from}"
+                f"{'' if stale.value is None else f'  value={stale.value!r}'}"
+                f"  — device removed {stale.removal_date}"
+            )
+            lines.append(
+                f"#ACTION {stale.id_entity} patch-attribute-date-to "
+                f"{stale.code} {stale.date_from} {stale.removal_date}"
+            )
+            lines.append("")

@@ -1653,6 +1653,38 @@ class TOSWriter:
         )
         return {"closed": closed_resp, "opened": opened_resp}
 
+    def close_attribute_period(
+        self,
+        id_entity: int,
+        code: str,
+        close_date: str,
+    ) -> Any:
+        """Close the open period for ``code`` without opening a replacement.
+
+        :meth:`transition_attribute_value` is the wrong primitive when a value
+        simply stops being true and nothing succeeds it — the case for
+        installation-scoped attributes when a device is removed. An antenna's
+        height above its monument has no successor value while it sits in a
+        warehouse, and opening a new period would demand a number nobody has.
+
+        Returns the PATCH response, or ``None`` when there is nothing to do:
+        no open period, or one starting on/after ``close_date``. The latter
+        would make ``date_to <= date_from`` — TOS's own ordering invariant, and
+        a sign the period belongs to a later installation, not this one.
+        """
+        existing = self.get_attribute_values(id_entity, code)
+        open_periods = [a for a in existing if a.get("date_to") is None]
+        if not open_periods:
+            return None
+        current = max(open_periods, key=lambda a: a.get("date_from") or "")
+        date_from = str(current.get("date_from") or "")[:10]
+        if date_from and date_from >= str(close_date)[:10]:
+            return None
+        id_av = current.get("id_attribute_value") or current.get("id")
+        if id_av is None:
+            return None
+        return self.patch_attribute_value(int(id_av), date_to=close_date)
+
     def update_entity_subtype(
         self,
         id_entity: int,
