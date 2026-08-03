@@ -38,6 +38,57 @@ def rinex_labels():
     return get_rinex_labels()
 
 
+def receiver_version_for_header(receiver_attributes):
+    """The TOS value that belongs in RINEX ``REC # / TYPE / VERS``.
+
+    That field is ``firmware_version``, not ``software_version``. The two are
+    different representations of the same quantity for Septentrio and
+    genuinely different values for Trimble/Ashtech:
+
+        POLARX5        firmware '5.3.0'            software '5.30'
+        TRIMBLE 5700   firmware 'NP 1.05 SP 0.00'  software '1.05'
+        ASHTECH        firmware 'C00'              software '9.10'
+
+    The RINEX header carries the firmware form in every case. GAMIT
+    ``station.info`` says the same thing structurally — ``gps_metadata_functions``
+    writes ``firmware_version`` into the ``Vers`` column (which is what a RINEX
+    header records) and ``software_version`` into ``SwVer``.
+
+    Reading ``software_version`` here made a correct header lose to a formatting
+    difference: measured on ISAK 2026-08-03, **200 of 202** daily files were
+    flagged "receiver mismatch" because the header's correct ``5.6.0`` was
+    compared against ``5.60``. Acting on those flags via
+    ``--fix-headers --correct-receiver`` would have written ``5.60`` over 200
+    correct headers.
+
+    Falls back to ``software_version`` when firmware is absent — mirroring
+    :func:`tostools.core.site_log`, which has always preferred firmware.
+    """
+    return (
+        receiver_attributes.get("firmware_version")
+        or receiver_attributes.get("software_version")
+        or ""
+    )
+
+
+def _normalise_version(value):
+    """Fold punctuation/spacing so only a real version difference compares."""
+    if value is None:
+        return ""
+    return " ".join(str(value).replace("/", " ").split()).upper()
+
+
+def versions_equivalent(rinex_value, tos_value):
+    """True when header and TOS state the same version.
+
+    Separator-tolerant, because the same Trimble firmware is written
+    ``NP 1.05 SP 0.00`` in TOS and ``NP 1.05 / SP 0.00`` in the RINEX header —
+    a punctuation difference, not a metadata defect. Digits still have to match,
+    so ``NP 1.04 …`` never equals ``NP 1.05 …``.
+    """
+    return _normalise_version(rinex_value) == _normalise_version(tos_value)
+
+
 def extract_from_rheader(rheader, loglevel=logging.WARNING):
     """
     Extracts lines containing the keywords in "searchlist" from a Rinex header string and returns as dictonary with keyword as keys
@@ -380,7 +431,7 @@ def compare_tos_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
             module_logger.debug("{}".format(TOS_receiver_attributes))
             TOS_receiver_serial = TOS_receiver_attributes["serial_number"]
             TOS_receiver_model = TOS_receiver_attributes["model"]
-            TOS_receiver_sversion = TOS_receiver_attributes["software_version"]
+            TOS_receiver_sversion = receiver_version_for_header(TOS_receiver_attributes)
 
             if rinex_receiver[0] != TOS_receiver_serial:
                 module_logger.info(
@@ -424,7 +475,7 @@ def compare_tos_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
                     )
                 )
 
-            if rinex_receiver[2] != TOS_receiver_sversion:
+            if not versions_equivalent(rinex_receiver[2], TOS_receiver_sversion):
                 module_logger.info(
                     'Label VERS  in "{0}" is "{1}" in file "{2}", DOES NOT match database value "{3}"'.format(
                         label,
