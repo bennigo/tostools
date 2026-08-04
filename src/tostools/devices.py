@@ -1016,14 +1016,36 @@ def absorb_short_boundary_sessions(
         new["device"] = dict(s["device"])
         return new
 
+    def _as_datetime(value: Any) -> Optional[datetime]:
+        """Coerce a TOS date to datetime. Strings are the common case here.
+
+        The site-log path carries dates as TOS strings, not datetimes — which
+        is why an earlier datetime-only version of this silently absorbed
+        nothing while its unit tests passed. Formats mirror ``_fmt_igs_date``.
+        """
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        text = str(value)[:19]
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d",
+        ):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return None
+
     def _span_days(dev: Dict[str, Any]) -> Optional[float]:
-        start, end = dev.get("date_from"), dev.get("date_to")
+        start = _as_datetime(dev.get("date_from"))
+        end = _as_datetime(dev.get("date_to"))
         if start is None or end is None:
             return None
-        try:
-            return (end - start).total_seconds() / 86400.0
-        except TypeError:
-            return None  # already-formatted strings: leave alone
+        return (end - start).total_seconds() / 86400.0
 
     out: List[Dict[str, Any]] = []
     for row in sessions:

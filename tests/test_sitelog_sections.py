@@ -148,3 +148,48 @@ class TestAbsorbShortBoundarySessions:
         ]
         absorb_short_boundary_sessions(rows, _ident)
         assert rows[1]["device"]["date_from"] == dt(2026, 8, 2)
+
+
+class TestStringDatesAreTheRealShape:
+    """The site-log path carries TOS date STRINGS, not datetimes.
+
+    An earlier datetime-only implementation passed every unit test above and
+    absorbed nothing in production, because subtracting two strings raised
+    TypeError and was swallowed as "not a sliver". Regenerating the ISAK log is
+    what exposed it — 3.16 was still there.
+    """
+
+    def test_isak_sliver_with_tos_string_dates(self):
+        rows = [
+            _sess(
+                frm="2026-08-01T00:00:00",
+                to="2026-08-02T00:00:00",
+                sat="GPS+GLO+GAL+BDS+QZSS+SBAS",
+            ),
+            _sess(frm="2026-08-02T00:00:00", to=None, sat="GPS+GLO+GAL+BDS"),
+        ]
+        out = absorb_short_boundary_sessions(rows, _ident)
+        assert len(out) == 1
+        assert out[0]["device"]["date_from"] == "2026-08-01T00:00:00"
+        assert out[0]["device"]["satellite_system"] == "GPS+GLO+GAL+BDS"
+
+    def test_space_separated_string_form(self):
+        rows = [
+            _sess(frm="2026-08-01 00:00:00", to="2026-08-02 00:00:00"),
+            _sess(frm="2026-08-02 00:00:00", to=None),
+        ]
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 1
+
+    def test_long_string_period_is_still_kept(self):
+        rows = [
+            _sess(frm="2026-02-16T00:00:00", to="2026-08-01T00:00:00"),
+            _sess(frm="2026-08-01T00:00:00", to=None),
+        ]
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
+
+    def test_unparseable_date_is_not_absorbed(self):
+        rows = [
+            _sess(frm="not-a-date", to="also-not"),
+            _sess(frm="also-not", to=None),
+        ]
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
