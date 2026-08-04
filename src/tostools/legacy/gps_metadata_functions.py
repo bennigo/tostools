@@ -69,29 +69,25 @@ def normalize_icelandic_for_gamit(text):
 
 
 def get_data_file_path(filename):
+    """Absolute path to a ``data/station_config/`` file, checkout or wheel.
+
+    Delegates to :func:`tostools.data_files.data_path`, which checks the repo
+    root first (a source checkout's edits must win) and the packaged copy
+    second.
+
+    The old ``Path(__file__).parent…`` arithmetic resolved to the repo root for
+    an editable install and to ``<venv>/lib/pythonX.Y`` for a wheel, so on
+    rek-d01 the site-log renderer died with::
+
+        No such file or directory:
+        '<venv>/lib/python3.13/data/station_config/antenna_arp.list'
+
+    i.e. site logs had never been generatable from a wheel install — the same
+    shape as the attribute-catalog bug that ``data_files`` was written to fix.
     """
-    Get absolute path to data files, independent of working directory.
+    from ..data_files import data_path
 
-    This function locates data files relative to the package directory,
-    making tosGPS work from any directory.
-    """
-    # Get the directory containing this module
-    package_dir = Path(__file__).parent.parent.parent.parent
-    data_path = package_dir / "data" / "station_config" / filename
-
-    if not data_path.exists():
-        # Fallback: try legacy path for backwards compatibility
-        legacy_path = package_dir / "tmp" / "organized" / "station_data" / filename
-        if legacy_path.exists():
-            return str(legacy_path)
-        # Fallback: try relative to current working directory
-        fallback_path = Path("data") / "station_config" / filename
-        if fallback_path.exists():
-            return str(fallback_path)
-        # If none exist, return the expected path for error reporting
-        return str(data_path)
-
-    return str(data_path)
+    return str(data_path("station_config", filename))
 
 
 def print_station_history(station, raw_format=False, loglevel=logging.WARNING):

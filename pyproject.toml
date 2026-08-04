@@ -115,8 +115,14 @@ ignore = ["E501"]
 # catalog-backed audits — previously `tos audit missing-attributes` resolved
 # them to <venv>/lib/pythonX.Y/data/ and failed. `data_files.data_path()`
 # prefers the repo-root copy, so a source checkout's edits still win.
-# Only the two the audits read — data/ also holds station_config (56 MB),
-# rinex_samples and sitelogs_archive, which have no business in a wheel.
+# Only what the code actually reads at runtime — data/ also holds the rest of
+# station_config (56 MB, mostly backups/ and work/), rinex_samples and
+# sitelogs_archive, which have no business in a wheel. The two station_config
+# entries are named individually for that reason: the site-log renderer needs
+# them (§4 antenna reference point, §11 tectonic plate) and died on rek-d01
+# without them, so site logs had never been generatable from a wheel install.
 [tool.hatch.build.targets.wheel.force-include]
 "data/attribute_codes.yaml" = "tostools/data/attribute_codes.yaml"
 "data/audit_suppressions" = "tostools/data/audit_suppressions"
+"data/station_config/antenna_arp.list" = "tostools/data/station_config/antenna_arp.list"
+"data/station_config/station-plate" = "tostools/data/station_config/station-plate"
