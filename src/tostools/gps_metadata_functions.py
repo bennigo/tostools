@@ -715,54 +715,6 @@ def get_monument_height(device_iter, date_from, date_to, loglevel=logging.WARNIN
     return monument_height
 
 
-def _merge_equivalent_receiver_sessions(receiver_list):
-    """Collapse consecutive §3 sessions that describe the same receiver state.
-
-    The device-history synthesis opens a new window at EVERY attribute-period
-    boundary, which is right for reconstructing history and wrong for a site
-    log. A §3 subsection is meant to record an installation, so a metadata edit
-    that changes nothing about which box is on the mark should not produce one.
-
-    ISAK reached 3.17 this way: firmware went 5.6.0 → 5.7.0 on 2026-08-01 and
-    the QZSS/SBAS constellation periods were closed on 2026-08-02, leaving a
-    ONE-DAY subsection whose only difference from its successor was the
-    satellite-system string.
-
-    The rule is structural rather than a duration threshold — merge while
-    ``(model, serial_number, firmware_version)`` is unchanged, i.e. the same
-    physical box in the same firmware state. A real receiver swap or firmware
-    upgrade differs in one of those three and is never merged, so no genuine
-    §3 boundary can be lost to this. A duration cutoff would have been
-    arbitrary and would silently swallow a short but real installation.
-
-    The surviving row keeps the earliest ``date_from`` and the last row's
-    ``date_to`` and remaining fields, so the section reports the state the
-    receiver ended the period in (for an open period, its state now).
-    """
-    if not receiver_list:
-        return receiver_list
-
-    def _identity(session):
-        d = session["device"]
-        return (
-            d.get("model"),
-            d.get("serial_number"),
-            d.get("firmware_version"),
-        )
-
-    merged = [receiver_list[0]]
-    for session in receiver_list[1:]:
-        previous = merged[-1]
-        if _identity(session) != _identity(previous):
-            merged.append(session)
-            continue
-        # Same box, same firmware: fold forward, keeping the original start.
-        start = previous["device"].get("date_from")
-        session = {**session, "device": {**session["device"], "date_from": start}}
-        merged[-1] = session
-    return merged
-
-
 def site_log(station_identifier, loglevel=logging.WARNING):
     """"""
 
@@ -896,7 +848,6 @@ def site_log(station_identifier, loglevel=logging.WARNING):
         if session["device"]["code_entity_subtype"] == "gnss_receiver"
     )
     receiver_list.sort(key=lambda x: x["device"]["date_from"])
-    receiver_list = _merge_equivalent_receiver_sessions(receiver_list)
     receiver_info = "\n3.   GNSS Receiver Information\n\n"
     for session_nr, session in enumerate(receiver_list):
         device = session["device"]

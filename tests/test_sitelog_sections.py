@@ -13,7 +13,9 @@ Two defects found on ISAK's generated log (2026-08-04), which had reached 3.17:
 
 from __future__ import annotations
 
-from tostools.gps_metadata_functions import _merge_equivalent_receiver_sessions
+from datetime import datetime as dt
+
+from tostools.devices import absorb_short_boundary_sessions
 
 
 def _session(serial="3018434", fw="5.7.0", model="SEPT POLARX5", frm="", to=None):
@@ -51,83 +53,98 @@ class TestSubsectionAlignment:
         assert old.index(":") != cont.index(":")
 
 
-class TestMergeEquivalentSessions:
-    def test_the_isak_case_collapses_to_one(self):
-        """3.16 (one day) and 3.17 differ only in satellite system."""
-        sessions = [
-            _session(frm="2026-08-01", to="2026-08-02"),
-            _session(frm="2026-08-02", to=None),
+def _sess(
+    serial="3018434", fw="5.7.0", model="SEPT POLARX5", frm=None, to=None, sat="GPS"
+):
+    return {
+        "device": {
+            "id_entity": 4972,
+            "model": model,
+            "serial_number": serial,
+            "firmware_version": fw,
+            "satellite_system": sat,
+            "date_from": frm,
+            "date_to": to,
+        }
+    }
+
+
+def _ident(d):
+    return (
+        d.get("id_entity"),
+        d.get("model"),
+        d.get("serial_number"),
+        d.get("firmware_version"),
+    )
+
+
+class TestAbsorbShortBoundarySessions:
+    """Slivers left by a constellation period entered off the equipment change."""
+
+    def test_the_isak_one_day_block_is_absorbed(self):
+        rows = [
+            _sess(
+                frm=dt(2026, 8, 1), to=dt(2026, 8, 2), sat="GPS+GLO+GAL+BDS+QZSS+SBAS"
+            ),
+            _sess(frm=dt(2026, 8, 2), to=None, sat="GPS+GLO+GAL+BDS"),
         ]
-        merged = _merge_equivalent_receiver_sessions(sessions)
-        assert len(merged) == 1
+        out = absorb_short_boundary_sessions(rows, _ident)
+        assert len(out) == 1
+        assert out[0]["device"]["date_from"] == dt(2026, 8, 1)
+        assert out[0]["device"]["date_to"] is None
 
-    def test_merged_row_keeps_the_earliest_start(self):
-        sessions = [
-            _session(frm="2026-08-01", to="2026-08-02"),
-            _session(frm="2026-08-02", to=None),
+    def test_successor_values_win(self):
+        """The section should report the state the period ended in."""
+        rows = [
+            _sess(frm=dt(2026, 8, 1), to=dt(2026, 8, 2), sat="GPS+QZSS"),
+            _sess(frm=dt(2026, 8, 2), to=None, sat="GPS"),
         ]
-        merged = _merge_equivalent_receiver_sessions(sessions)
-        assert merged[0]["device"]["date_from"] == "2026-08-01"
+        out = absorb_short_boundary_sessions(rows, _ident)
+        assert out[0]["device"]["satellite_system"] == "GPS"
 
-    def test_merged_row_keeps_the_later_end(self):
-        sessions = [
-            _session(frm="2026-08-01", to="2026-08-02"),
-            _session(frm="2026-08-02", to=None),
+    def test_a_real_installation_is_kept(self):
+        """Longer than the sliver bound — a genuine period, however brief."""
+        rows = [
+            _sess(frm=dt(2026, 7, 1), to=dt(2026, 8, 1), sat="GPS+QZSS"),
+            _sess(frm=dt(2026, 8, 1), to=None, sat="GPS"),
         ]
-        merged = _merge_equivalent_receiver_sessions(sessions)
-        assert merged[0]["device"]["date_to"] is None
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
 
-    def test_firmware_change_is_never_merged(self):
-        """The boundary a site log exists to record."""
-        sessions = [
-            _session(fw="5.6.0", frm="2026-02-16", to="2026-08-01"),
-            _session(fw="5.7.0", frm="2026-08-01", to=None),
+    def test_firmware_upgrade_is_never_absorbed(self):
+        """Even a one-day firmware window is a real §3 boundary."""
+        rows = [
+            _sess(fw="5.6.0", frm=dt(2026, 8, 1), to=dt(2026, 8, 2)),
+            _sess(fw="5.7.0", frm=dt(2026, 8, 2), to=None),
         ]
-        assert len(_merge_equivalent_receiver_sessions(sessions)) == 2
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
 
-    def test_receiver_swap_is_never_merged(self):
-        sessions = [
-            _session(serial="5207K82295", model="TRIMBLE NETR9", frm="2013-03-27"),
-            _session(serial="3018434", frm="2017-07-03"),
+    def test_receiver_swap_is_never_absorbed(self):
+        rows = [
+            _sess(serial="AAA", frm=dt(2026, 8, 1), to=dt(2026, 8, 2)),
+            _sess(serial="BBB", frm=dt(2026, 8, 2), to=None),
         ]
-        assert len(_merge_equivalent_receiver_sessions(sessions)) == 2
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
 
-    def test_model_change_is_never_merged(self):
-        sessions = [
-            _session(model="SEPT POLARX5", frm="2017-07-03"),
-            _session(model="SEPT MOSAIC-X5", frm="2024-01-01"),
+    def test_non_contiguous_rows_are_kept(self):
+        """A real gap in service is not an entry artifact."""
+        rows = [
+            _sess(frm=dt(2026, 8, 1), to=dt(2026, 8, 2)),
+            _sess(frm=dt(2026, 9, 1), to=None),
         ]
-        assert len(_merge_equivalent_receiver_sessions(sessions)) == 2
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
 
-    def test_a_long_run_of_equivalents_collapses(self):
-        sessions = [_session(frm=f"2026-08-{d:02d}") for d in range(1, 6)]
-        merged = _merge_equivalent_receiver_sessions(sessions)
-        assert len(merged) == 1
-        assert merged[0]["device"]["date_from"] == "2026-08-01"
+    def test_open_ended_row_is_never_a_sliver(self):
+        rows = [_sess(frm=dt(2026, 8, 1), to=None), _sess(frm=dt(2026, 8, 2), to=None)]
+        assert len(absorb_short_boundary_sessions(rows, _ident)) == 2
 
-    def test_merge_then_real_change_then_merge(self):
-        sessions = [
-            _session(fw="5.6.0", frm="2026-01-01"),
-            _session(fw="5.6.0", frm="2026-02-01"),
-            _session(fw="5.7.0", frm="2026-08-01"),
-            _session(fw="5.7.0", frm="2026-08-02"),
-        ]
-        merged = _merge_equivalent_receiver_sessions(sessions)
-        assert len(merged) == 2
-        assert merged[0]["device"]["date_from"] == "2026-01-01"
-        assert merged[1]["device"]["date_from"] == "2026-08-01"
-
-    def test_single_session_untouched(self):
-        assert len(_merge_equivalent_receiver_sessions([_session()])) == 1
-
-    def test_empty_input(self):
-        assert _merge_equivalent_receiver_sessions([]) == []
+    def test_empty_and_single(self):
+        assert absorb_short_boundary_sessions([], _ident) == []
+        assert len(absorb_short_boundary_sessions([_sess()], _ident)) == 1
 
     def test_input_is_not_mutated(self):
-        """The caller's session dicts are shared with other §-builders."""
-        sessions = [
-            _session(frm="2026-08-01", to="2026-08-02"),
-            _session(frm="2026-08-02", to=None),
+        rows = [
+            _sess(frm=dt(2026, 8, 1), to=dt(2026, 8, 2)),
+            _sess(frm=dt(2026, 8, 2), to=None),
         ]
-        _merge_equivalent_receiver_sessions(sessions)
-        assert sessions[1]["device"]["date_from"] == "2026-08-02"
+        absorb_short_boundary_sessions(rows, _ident)
+        assert rows[1]["device"]["date_from"] == dt(2026, 8, 2)

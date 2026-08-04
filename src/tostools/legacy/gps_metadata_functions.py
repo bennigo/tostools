@@ -1021,7 +1021,7 @@ def site_log(
     # Real constellation changes (GPS+GLO → GPS+GLO+GAL) differ in the
     # satellite-system component and are preserved. See
     # devices.coalesce_render_sessions.
-    from ..devices import coalesce_render_sessions
+    from ..devices import absorb_short_boundary_sessions, coalesce_render_sessions
 
     receiver_list = coalesce_render_sessions(
         receiver_list,
@@ -1029,6 +1029,22 @@ def site_log(
             d.get("id_entity"),
             d.get("model"),
             satellite_system_from_toggles(d),
+            d.get("serial_number"),
+            d.get("firmware_version"),
+        ),
+    )
+    # Then absorb slivers the signature match cannot reach: a constellation
+    # period entered a day or two off the equipment change leaves a one-day
+    # block between two states of the SAME box. ISAK's firmware bump
+    # (2026-08-01) and QZSS/SBAS closure (2026-08-02) produced exactly that.
+    # Identity here deliberately excludes the satellite system — its
+    # disagreement is the artifact being absorbed — so a real receiver swap or
+    # firmware upgrade is still never merged.
+    receiver_list = absorb_short_boundary_sessions(
+        receiver_list,
+        lambda d: (
+            d.get("id_entity"),
+            d.get("model"),
             d.get("serial_number"),
             d.get("firmware_version"),
         ),
@@ -1046,8 +1062,11 @@ def site_log(
         temperature_stab = device.get("temperature_stab") or "(deg C) +/- (deg C)"
         add_information = device.get("add_information") or "(multiple lines)"
 
+        # Fixed 5-column label field so the colons stay aligned with the 5-space
+        # continuation rows once the number reaches two digits (3.10+). Writing
+        # "3.{n}  " is correct only for 3.1-3.9; ISAK reached 3.17.
         receiver_info += (
-            f"3.{session_nr + 1}  Receiver Type            : {device_type}\n"
+            f"{f'3.{session_nr + 1}':<5}Receiver Type            : {device_type}\n"
             f"     Satellite System         : {satellite_system}\n"
             f"     Serial Number            : {serial_number}\n"
             f"     Firmware Version         : {firmware_version}\n"
@@ -1169,7 +1188,8 @@ def site_log(
         module_logger.debug("antenna_radome_serial: %s", antenna_radome_serial)
 
         antenna_info += (
-            f"4.{session_nr + 1}  Antenna Type             : {device_type:<16}{antenna_radome}\n"
+            # Fixed 5-column label field — same reason as §3 above.
+            f"{f'4.{session_nr + 1}':<5}Antenna Type             : {device_type:<16}{antenna_radome}\n"
             # ASH701073.1     SNOW
             f"     Serial Number            : {serial_number}\n"
             f"     Antenna Reference Point  : {arp[-3:]}\n"

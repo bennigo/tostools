@@ -463,7 +463,7 @@ def fill_join_gap(
     """
     if not date_to:
         raise ValueError(
-            "fill_join_gap requires date_to — use open_join for " "still-active joins"
+            "fill_join_gap requires date_to — use open_join for still-active joins"
         )
     return writer.create_entity_connection(
         id_parent=int(parent_id),
@@ -972,6 +972,78 @@ def coalesce_render_sessions(
             pdev["date_to"] = cdev.get("date_to")
         else:
             out.append(_clone(cur))
+    return out
+
+
+def absorb_short_boundary_sessions(
+    sessions: List[Dict[str, Any]],
+    identity: Callable[[Dict[str, Any]], Any],
+    *,
+    max_days: int = 2,
+) -> List[Dict[str, Any]]:
+    """Fold a sliver window into its successor when the device is unchanged.
+
+    The companion to :func:`coalesce_render_sessions`, for the case that one
+    cannot catch. That merges rows whose render signature is *equal*; this
+    handles rows that differ only because a TOS attribute period was entered a
+    day or two off the real equipment change, leaving a sliver between two
+    states of the same box.
+
+    ISAK is the worked example: firmware went 5.6.0 → 5.7.0 on 2026-08-01 and
+    the QZSS/SBAS periods were closed on 2026-08-02, so §3 gained a ONE-DAY
+    subsection whose only difference from its successor was the satellite
+    system. The signature differs — correctly, a constellation change is real —
+    so coalescing leaves it, and the site log reports an installation that
+    lasted a day.
+
+    ``identity`` must return what makes it the SAME PHYSICAL DEVICE in the same
+    firmware state (model, serial, firmware) and must NOT include the field
+    whose disagreement is the artifact. A sliver is absorbed only when its
+    identity matches its successor, so a genuine receiver swap or firmware
+    upgrade is never touched however short it is.
+
+    The successor's values win — they describe the state the period ended in —
+    and the absorbed row's ``date_from`` is carried back, so no time is lost.
+    ``max_days`` bounds what counts as a sliver; anything longer is a real
+    installation and stays. An open-ended row is never a sliver. Input is not
+    mutated.
+    """
+    if not sessions:
+        return sessions
+
+    def _clone(s: Dict[str, Any]) -> Dict[str, Any]:
+        new = dict(s)
+        new["device"] = dict(s["device"])
+        return new
+
+    def _span_days(dev: Dict[str, Any]) -> Optional[float]:
+        start, end = dev.get("date_from"), dev.get("date_to")
+        if start is None or end is None:
+            return None
+        try:
+            return (end - start).total_seconds() / 86400.0
+        except TypeError:
+            return None  # already-formatted strings: leave alone
+
+    out: List[Dict[str, Any]] = []
+    for row in sessions:
+        cur = _clone(row)
+        if out:
+            pdev, cdev = out[-1]["device"], cur["device"]
+            span = _span_days(pdev)
+            contiguous = pdev.get("date_to") is not None and pdev[
+                "date_to"
+            ] == cdev.get("date_from")
+            if (
+                contiguous
+                and span is not None
+                and span <= max_days
+                and identity(pdev) == identity(cdev)
+            ):
+                cur["device"]["date_from"] = pdev.get("date_from")
+                out[-1] = cur
+                continue
+        out.append(cur)
     return out
 
 
