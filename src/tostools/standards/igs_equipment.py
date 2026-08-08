@@ -97,6 +97,11 @@ ANTENNA_IGS: dict[str, str] = {
     "TRM41249.00": "TRM41249.00",
     "TRM55971.00": "TRM55971.00",
     "TRM57971.00": "TRM57971.00",
+    # Zephyr 3 pair — .00 (Geodetic) and .10 (Rugged) are distinct IGS entries
+    # differing only in the trailing digits. Confirm against the antenna label,
+    # not the receiver's configured string: that field is operator-typed at
+    # provisioning and is as likely to carry a typo as to be right.
+    "TRM115000.00": "TRM115000.00",  # NPSK — confirmed from a photo of the label
     "TRM115000.10": "TRM115000.10",  # deployed at GONH
     # Leica antennas -----------------------------------------------------------
     "LEIAR25.R4": "LEIAR25.R4",
