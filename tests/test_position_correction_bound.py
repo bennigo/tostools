@@ -76,3 +76,54 @@ class TestNearPositionIsStillCorrected:
     def test_the_bound_sits_between_the_two_regimes(self):
         """Far above any real a-priori error, far below any wrong-site distance."""
         assert 100.0 < _MAX_POSITION_CORRECTION_M < 10_000.0
+
+
+class TestCorrectorRefusesTheRewrite:
+    """The corrector is the path that actually launders the file.
+
+    `compare_rinex_to_tos` is the QC/compare path; `corrector` is the one
+    `set_header` uses, and it builds its own corrections without consulting the
+    validator. Guarding only the validator left the laundering intact — verified
+    in production, where the campaign file still pushed after that fix.
+    """
+
+    def _corrections(self, tmp_path, header_xyz, tos_xyz):
+        from unittest.mock import patch
+
+        from tostools.rinex import corrector
+
+        f = tmp_path / "ISAK2140.16D"
+        f.write_text("dummy")
+        corr = {"APPROX POSITION XYZ": list(tos_xyz), "MARKER NAME": ["ISAK"]}
+        with patch.object(corrector, "read_rinex_header", return_value={"header": []}):
+            with patch(
+                "tostools.rinex.reader.extract_header_info",
+                return_value={"APPROX POSITION XYZ": header_xyz},
+            ):
+                return corrector._guard_position_correction(
+                    f, corr, corrector.get_logger(__name__, 40), 40
+                )
+
+    def test_km_scale_rewrite_is_dropped(self, tmp_path):
+        out = self._corrections(
+            tmp_path, CAMPAIGN_XYZ, (2627583.4397, -943252.7548, 5715821.3894)
+        )
+        assert "APPROX POSITION XYZ" not in out
+
+    def test_other_corrections_survive_the_refusal(self, tmp_path):
+        """Refusing the position must not discard the legitimate fixes."""
+        out = self._corrections(
+            tmp_path, CAMPAIGN_XYZ, (2627583.4397, -943252.7548, 5715821.3894)
+        )
+        assert out["MARKER NAME"] == ["ISAK"]
+
+    def test_metre_scale_rewrite_still_applies(self, tmp_path):
+        out = self._corrections(
+            tmp_path, ISAK_XYZ, (2627583.4397 + 20, -943252.7548, 5715821.3894)
+        )
+        assert "APPROX POSITION XYZ" in out
+
+    def test_the_two_paths_share_one_bound(self, tmp_path):
+        from tostools.rinex.corrector import MAX_POSITION_CORRECTION_M
+
+        assert MAX_POSITION_CORRECTION_M == _MAX_POSITION_CORRECTION_M

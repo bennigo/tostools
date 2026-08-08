@@ -13,6 +13,7 @@ Architecture:
 
 import gzip
 import logging
+import math
 import re
 import shutil
 from datetime import datetime
@@ -61,6 +62,21 @@ def _is_placeholder_serial(serial: str) -> bool:
         return True
 
     return False
+
+
+#: Largest APPROX POSITION rewrite this corrector will ever apply, in metres.
+#: Mirrors ``validator._MAX_POSITION_CORRECTION_M`` — the two paths must agree,
+#: or one will rewrite what the other refuses.
+MAX_POSITION_CORRECTION_M = 1000.0
+
+
+def _parse_xyz_triplet(value):
+    """Parse a RINEX ``APPROX POSITION XYZ`` field → ``(x, y, z)`` or None."""
+    try:
+        parts = [float(v) for v in str(value or "").split()[:3]]
+    except (TypeError, ValueError):
+        return None
+    return tuple(parts) if len(parts) == 3 else None
 
 
 def correct_rinex_from_tos(
@@ -184,10 +200,57 @@ def correct_rinex_from_tos(
             )
             return rinex_file
 
+    # Refuse a km-scale APPROX POSITION rewrite. An a-priori position is
+    # legitimately out by metres — a hand-entered header, a stale seed, the
+    # receiver's own solution. Out by KILOMETRES means the file was recorded
+    # somewhere else, and overwriting it launders foreign data into looking
+    # authentic under this station's marker, coordinates and DOMES.
+    #
+    # This is the path that did it: ISAK's receiver was taken off the mark for a
+    # campaign survey in Aug 2016 and set-header moved 14 days of it up to 245 km
+    # onto ISAK. The EPOS QC gate then compared the REWRITTEN header against TOS,
+    # matched, and published every one. Guarded here rather than in the two
+    # correction builders so the config path is covered as well.
+    corrections = _guard_position_correction(rinex_file, corrections, logger, loglevel)
+
     # Apply corrections
     corrected_file = _apply_corrections(rinex_file, corrections, output_file, logger)
 
     return corrected_file
+
+
+def _guard_position_correction(rinex_file, corrections, logger, loglevel):
+    """Drop an APPROX POSITION correction that moves the file kilometres.
+
+    Returns ``corrections`` unchanged when there is nothing to guard. Never
+    raises: a header it cannot read simply isn't second-guessed.
+    """
+    proposed = corrections.get("APPROX POSITION XYZ")
+    if not proposed:
+        return corrections
+    try:
+        header = read_rinex_header(rinex_file, loglevel=loglevel)
+        from .reader import extract_header_info
+
+        info = extract_header_info(header, loglevel=loglevel) if header else {}
+        current = _parse_xyz_triplet((info or {}).get("APPROX POSITION XYZ"))
+        target = _parse_xyz_triplet(" ".join(str(v) for v in proposed))
+    except Exception as exc:  # noqa: BLE001 - guard must never break the fix
+        logger.debug("position guard could not read %s: %s", rinex_file, exc)
+        return corrections
+    if current is None or target is None:
+        return corrections
+    distance = math.dist(current, target)
+    if distance <= MAX_POSITION_CORRECTION_M:
+        return corrections
+    logger.error(
+        "REFUSING to rewrite APPROX POSITION for %s: the header is %.0f m from "
+        "the TOS position. That is not a header error — the file was recorded "
+        "elsewhere. Investigate; do not rewrite.",
+        Path(rinex_file).name,
+        distance,
+    )
+    return {k: v for k, v in corrections.items() if k != "APPROX POSITION XYZ"}
 
 
 def _get_corrections_from_config(
