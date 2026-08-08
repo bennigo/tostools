@@ -28,6 +28,16 @@ def _parse_time_of_first_obs(value: Any) -> Any:
         return None
 
 
+#: Largest APPROX POSITION rewrite we will ever propose, in metres.
+#:
+#: An a-priori position is legitimately wrong by metres — a hand-entered header,
+#: a stale seed, a receiver's own solution. It is never legitimately wrong by
+#: kilometres: that means the file was recorded somewhere else. 1 km is far
+#: above any real a-priori error and far below any plausible wrong-site
+#: distance (the closest such case measured, ISAK Aug-2016, was 210 km).
+_MAX_POSITION_CORRECTION_M = 1000.0
+
+
 def compare_rinex_to_tos(
     rinex_info: Dict[str, str],
     tos_session: Dict[str, Any],
@@ -284,7 +294,36 @@ def compare_rinex_to_tos(
                 # APPROX POSITION XYZ is an a-priori position; correct it to the
                 # TOS surveyed ECEF. The tolerance means only gross errors fire —
                 # normal cm/dm plate motion never trips it.
-                comparison_result["corrections"]["APPROX POSITION XYZ"] = tos_xyz
+                #
+                # But only within a sane bound. Past it the file is not this
+                # station's, and rewriting the position does not fix a header —
+                # it launders foreign data into looking authentic under this
+                # marker, coordinates and DOMES. Measured: ISAK's receiver was
+                # taken off the mark for a campaign survey in Aug 2016, and this
+                # correction silently moved 14 days of it 220 km onto ISAK. The
+                # dissemination QC gate then compared the REWRITTEN header
+                # against TOS, found it matching, and published every one.
+                #
+                # Beyond the bound the discrepancy is KEPT (so a blocking gate
+                # still fires) and no correction is offered — such a file needs a
+                # human, not a rewrite.
+                if distance <= _MAX_POSITION_CORRECTION_M:
+                    comparison_result["corrections"]["APPROX POSITION XYZ"] = tos_xyz
+                else:
+                    comparison_result["discrepancies"]["coordinates"][
+                        "refused_correction"
+                    ] = (
+                        f"{distance:.0f} m exceeds the "
+                        f"{_MAX_POSITION_CORRECTION_M:.0f} m correction bound — "
+                        "this file is probably not this station's"
+                    )
+                    logger.error(
+                        "REFUSING to rewrite APPROX POSITION for %s: %.0f m from "
+                        "the TOS position. A correction that large means the file "
+                        "belongs to another site — investigate, do not rewrite.",
+                        rinex_info.get("rinex file", "<file>"),
+                        distance,
+                    )
             else:
                 comparison_result["matches"]["coordinates"] = distance
         except (ValueError, TypeError) as e:
@@ -304,9 +343,9 @@ def compare_rinex_to_tos(
         rinex_observer = v[0:20].strip()
         rinex_agency = v[20:60].strip()
         if rinex_observer == tos_observer and rinex_agency == tos_agency:
-            comparison_result["matches"][
-                "observer_agency"
-            ] = f"{tos_observer} / {tos_agency}"
+            comparison_result["matches"]["observer_agency"] = (
+                f"{tos_observer} / {tos_agency}"
+            )
         else:
             comparison_result["discrepancies"]["observer_agency"] = {
                 "rinex": f"{rinex_observer} / {rinex_agency}",
@@ -570,7 +609,7 @@ def generate_qc_report(
             report_lines.append("\nDISCREPANCIES FOUND:")
             for i, comp in enumerate(rinex_comparisons):
                 if comp.get("discrepancies"):
-                    report_lines.append(f"File {i+1}:")
+                    report_lines.append(f"File {i + 1}:")
                     for field, diff in comp["discrepancies"].items():
                         report_lines.append(
                             f"  {field}: RINEX='{diff.get('rinex', '')}' vs TOS='{diff.get('tos', '')}'"
