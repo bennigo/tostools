@@ -93,6 +93,62 @@ def test_not_found_with_failed_parents_is_inconclusive():
     assert "UNCONFIRMED" in df.format_report(res)
 
 
+def test_create_downgraded_when_basic_search_finds_orphan(monkeypatch):
+    # Clean walk, no join match → would be CREATE. But basic_search finds the
+    # entity (an orphan/unjoined device the join-walk cannot reach) → the
+    # verdict must downgrade to INCONCLUSIVE so the caller adopts, not mints.
+    by_child = {4910: [_join(HOTJ, 4910, "2012-06-27T00:00:00", None)]}
+    index = _index(by_child)
+    client = _client({4910: _dev_hist("gnss_receiver", "AAA111")})
+    monkeypatch.setattr(
+        "tostools.devices.find_device",
+        lambda client, serial, subtype: {"id_entity": 21734},
+    )
+    res = df.find_devices_by_serial(
+        client, "3160", subtype="gnss_receiver",
+        parents=[_parent(HOTJ, "HOTJ")], index=index,
+    )
+    assert res.matches == []
+    assert res.bucket == df.INCONCLUSIVE
+    assert res.basic_search_found == 21734
+    assert "orphan" in df.format_report(res).lower()
+
+
+def test_create_kept_when_basic_search_also_absent(monkeypatch):
+    # Neither authority finds it → genuinely absent → CREATE stands.
+    by_child = {4910: [_join(HOTJ, 4910, "2012-06-27T00:00:00", None)]}
+    index = _index(by_child)
+    client = _client({4910: _dev_hist("gnss_receiver", "AAA111")})
+
+    def _absent(client, serial, subtype):
+        raise LookupError("not found")
+
+    monkeypatch.setattr("tostools.devices.find_device", _absent)
+    res = df.find_devices_by_serial(
+        client, "3160", subtype="gnss_receiver",
+        parents=[_parent(HOTJ, "HOTJ")], index=index,
+    )
+    assert res.bucket == df.CREATE
+    assert res.basic_search_found is None
+
+
+def test_create_without_subtype_skips_basic_search_crosscheck(monkeypatch):
+    # No subtype → can't safely disambiguate a basic_search hit → skip the
+    # cross-check entirely (preserves the original clean-walk CREATE).
+    called = []
+    monkeypatch.setattr(
+        "tostools.devices.find_device",
+        lambda *a, **k: called.append(1) or {"id_entity": 1},
+    )
+    by_child = {4910: [_join(HOTJ, 4910, "2012-06-27T00:00:00", None)]}
+    res = df.find_devices_by_serial(
+        client=_client({4910: _dev_hist("gnss_receiver", "AAA111")}),
+        serial="3160", parents=[_parent(HOTJ, "HOTJ")], index=_index(by_child),
+    )
+    assert res.bucket == df.CREATE
+    assert called == []
+
+
 def test_single_attached_is_attached():
     by_child = {16358: [_join(BRTT, 16358, "2019-08-02T00:00:00", None)]}
     index = _index(by_child)

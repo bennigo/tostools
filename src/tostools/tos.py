@@ -7177,6 +7177,233 @@ def _fleet_main(argv):
     return 0
 
 
+def _audit_reconstruct_main(args, client) -> int:
+    """Handle ``tos audit reconstruct-from-archive --station X``.
+
+    Thin runner: pull the archive's receiver + antenna eras
+    (:func:`audit_rinex_timeline.run_rinex_timeline`), fetch the station's TOS
+    child joins (the ``verify-from-rinex`` walk), reconcile them
+    (:func:`audit_reconstruct.reconcile_eras`), and render the triage. TOS is
+    read-only here — the output is an operator-reviewed ACTION file, never a
+    live write.
+
+    Exit codes: 0 = clean (archive and TOS agree), 1 = triage produced, 2 =
+    lookup/usage error.
+    """
+    from . import audit_reconstruct as recon
+    from .audit_rinex_timeline import run_rinex_timeline
+    from .audit_verify_from_rinex import _resolve_station_id
+    from .devices import open_attribute
+
+    station = args.station.upper()
+
+    # --- archive eras (receiver + antenna) ---
+    try:
+        rec_tl = run_rinex_timeline(station, "receiver", root=args.archive_root)
+        ant_tl = run_rinex_timeline(station, "antenna", root=args.archive_root)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+
+    if not rec_tl.rows and not ant_tl.rows:
+        print(
+            f"No archived RINEX headers for {station!r} under "
+            f"{rec_tl.archive_root}",
+            file=sys.stderr,
+        )
+        return 2
+
+    archive_eras = [
+        recon.ArchiveEra(
+            recon.RECEIVER, r.get("rec_type"), r.get("rec_serial"),
+            r["date_from"], r["last_seen"],
+        )
+        for r in rec_tl.rows
+    ] + [
+        recon.ArchiveEra(
+            recon.ANTENNA, r.get("antenna_type"), r.get("ant_serial"),
+            r["date_from"], r["last_seen"],
+        )
+        for r in ant_tl.rows
+    ]
+    current_install = {
+        recon.RECEIVER: rec_tl.unit_install_date,
+        recon.ANTENNA: ant_tl.unit_install_date,
+    }
+
+    # --- TOS child joins (receiver + antenna, open and closed) ---
+    parent_id = _resolve_station_id(client, station)
+    if parent_id is None:
+        print(f"Station {station!r} not found in TOS", file=sys.stderr)
+        return 2
+
+    tos_joins = []
+    parent = client.get_entity_history(parent_id) or {}
+    for conn in parent.get("children_connections") or []:
+        child_id_raw = conn.get("id_entity_child")
+        if child_id_raw is None:
+            continue
+        try:
+            child_id = int(child_id_raw)
+        except (TypeError, ValueError):
+            continue
+        child = client.get_entity_history(child_id) or {}
+        subtype = child.get("code_entity_subtype")
+        if subtype not in (recon.RECEIVER, recon.ANTENNA):
+            continue
+        tf = (conn.get("time_from") or "")[:10]
+        tt_raw = conn.get("time_to")
+        tt = tt_raw[:10] if tt_raw else None
+        id_conn = conn.get("id_entity_connection") or conn.get("id")
+        if id_conn is None:
+            continue
+        tos_joins.append(
+            recon.TosJoin(
+                child_id=child_id,
+                id_connection=int(id_conn),
+                subtype=subtype,
+                serial=open_attribute(child, "serial_number"),
+                time_from=tf,
+                time_to=tt,
+            )
+        )
+
+    # --- serial dup-guard (device find) — adopt vs create for missing eras ---
+    # One fleet walk per DISTINCT missing serial (~110s each). The engine only
+    # calls this for serials absent from the joins above, so the cost is bounded
+    # to the genuinely-missing eras; --no-serial-lookup skips it entirely.
+    _serial_lookup = None
+    if not args.no_serial_lookup:
+        from .audit import canonical_subtype
+        from .device_find import (
+            ATTACHED as _ATT,
+            CREATE as _CRE,
+            DUPLICATE as _DUP,
+            INCONCLUSIVE as _INC,
+            REOPEN as _REO,
+            find_devices_by_serial,
+        )
+
+        _bucket_map = {
+            _CRE: recon.BUCKET_CREATE,
+            _REO: recon.BUCKET_REOPEN,
+            _ATT: recon.BUCKET_ATTACHED,
+            _DUP: recon.BUCKET_DUPLICATE,
+            _INC: recon.BUCKET_INCONCLUSIVE,
+        }
+        _lookup_cache: dict = {}
+
+        def _serial_lookup(serial, subtype):  # noqa: ANN001
+            key = (serial or "").strip().upper()
+            if not key:
+                return None
+            if key in _lookup_cache:
+                return _lookup_cache[key]
+            try:
+                res = find_devices_by_serial(
+                    client, serial, subtype=canonical_subtype(subtype)
+                )
+            except Exception as exc:  # noqa: BLE001 — dup-guard is best-effort
+                print(f"  serial dup-guard failed for {serial}: {exc}", file=sys.stderr)
+                return None
+            only = res.matches[0] if res.matches else None
+            # entity_id: a walk match, else the basic_search cross-check's find
+            # (device_find downgrades a false-absent CREATE to INCONCLUSIVE and
+            # sets basic_search_found for the orphan/unjoined entity).
+            entity_id = only.id_entity if only else res.basic_search_found
+            hit = recon.SerialHit(
+                bucket=_bucket_map.get(res.bucket, recon.BUCKET_INCONCLUSIVE),
+                entity_id=entity_id,
+                parent=(only.open_parent_name or (str(only.open_parent_id) if only and only.open_parent_id else None)) if only else None,
+                summary=res.recommendation,
+            )
+            _lookup_cache[key] = hit
+            return hit
+
+    # --- station.info enrichment (curated model + composite height) ----------
+    si_path = args.station_info
+    if si_path is None:
+        # Best-effort auto-resolve. Search the tostools repo root (derived from
+        # this module's location) AND cwd, so enrichment doesn't silently drop
+        # when the operator runs from a different directory (e.g. receivers/).
+        import glob as _glob
+        from pathlib import Path as _P
+
+        _roots = []
+        try:
+            _roots.append(_P(__file__).resolve().parents[2])  # src/tostools/tos.py → repo root
+        except Exception:  # noqa: BLE001
+            pass
+        _roots.append(_P.cwd())
+        for _root in _roots:
+            for pat in (
+                "data/station_config/work/station.info.sopac*",
+                "data/station_config/station.info.sopac*",
+            ):
+                hits = sorted(_glob.glob(str(_root / pat)))
+                if hits:
+                    si_path = hits[-1]
+                    break
+            if si_path:
+                break
+    station_info_eras = None
+    if si_path:
+        try:
+            from .standards.gamit_station_info import parse_station_info
+
+            occs = parse_station_info(si_path, marker=station)
+            station_info_eras = []
+            for o in occs:
+                tf_o = o.time_from.date().isoformat() if hasattr(o.time_from, "date") else str(o.time_from)[:10]
+                tt_o = (
+                    None if o.time_to is None
+                    else (o.time_to.date().isoformat() if hasattr(o.time_to, "date") else str(o.time_to)[:10])
+                )
+                station_info_eras.append(
+                    recon.StationInfoEra(
+                        subtype=recon.RECEIVER, model=o.receiver_type or None,
+                        serial=o.receiver_sn or None, date_from=tf_o, date_to=tt_o,
+                    )
+                )
+                station_info_eras.append(
+                    recon.StationInfoEra(
+                        subtype=recon.ANTENNA, model=o.antenna_type or None,
+                        serial=o.antenna_sn or None, date_from=tf_o, date_to=tt_o,
+                        composite_height=o.antenna_height or None,
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001 — enrichment is best-effort
+            print(f"  station.info enrichment failed ({si_path}): {exc}", file=sys.stderr)
+            station_info_eras = None
+
+    report = recon.reconcile_eras(
+        station, archive_eras, tos_joins,
+        current_install=current_install,
+        station_id=parent_id,
+        serial_lookup=_serial_lookup,
+        station_info=station_info_eras,
+    )
+    apply_path = args.triage or "<file>"
+    text = recon.format_triage(
+        report, apply_path=apply_path, station_info_path=si_path
+    )
+
+    if args.triage:
+        path = Path(args.triage)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        n_fix = len(report.join_fixes)
+        n_missing = len(report.missing_eras)
+        print(
+            f"Wrote {args.triage}: {n_fix} join-date fix(es), "
+            f"{n_missing} missing era(s) flagged for review."
+        )
+    else:
+        print(text)
+
+    return 0 if report.is_clean else 1
+
+
 def _audit_main(argv):
     """Handle ``tos audit <kind>`` subcommands.
 
@@ -8420,6 +8647,68 @@ def _audit_main(argv):
     )
     p_verify.add_argument("--port", type=int, default=443)
 
+    p_recon = sub.add_parser(
+        "reconstruct-from-archive",
+        help=(
+            "Draft a device-history reconstruction triage from the cold RINEX "
+            "archive: patch-join-date for backdated open joins + a REVIEW block "
+            "for missing eras and the composite height split."
+        ),
+        description=(
+            "Reconciles the empirical hardware eras (rinex-timeline, receiver + "
+            "antenna) against TOS's child joins and emits an apply-ready triage. "
+            "Deterministic backdated-join fixes are UNCOMMENTED (the archive "
+            "proves the current unit's install date); archive eras with no TOS "
+            "device, and the station.info composite -> monument/ARP height split, "
+            "go in a commented REVIEW block for a human. Never auto-applies.\n\n"
+            "Archive root resolves like verify-from-rinex (--archive-root -> env "
+            "TOSTOOLS_ARCHIVE_ROOT -> receivers.cfg -> mount probe)."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  tos audit reconstruct-from-archive --station KOSK\n"
+            "  tos audit reconstruct-from-archive --station KOSK "
+            "--triage kosk/kosk_reconstruct.txt\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_recon.add_argument(
+        "--station", required=True, help="Station marker (e.g. KOSK). Case-insensitive."
+    )
+    p_recon.add_argument(
+        "--triage",
+        default=None,
+        help="Write the triage ACTION file here. Default: print to stdout.",
+    )
+    p_recon.add_argument(
+        "--station-info",
+        default=None,
+        help=(
+            "GAMIT station.info to enrich missing eras (curated model + "
+            "composite ARP height). Default: the repo SOPAC station.info if found."
+        ),
+    )
+    p_recon.add_argument(
+        "--no-serial-lookup",
+        action="store_true",
+        help=(
+            "Skip the serial dup-guard (device find) fleet walk (~110s/serial). "
+            "Missing eras are then reported unclassified (adopt-vs-create by hand)."
+        ),
+    )
+    p_recon.add_argument(
+        "--archive-root",
+        type=Path,
+        default=None,
+        help="Override the resolved archive root (env -> cfg -> probe otherwise).",
+    )
+    p_recon.add_argument(
+        "--server",
+        default="vi-api.vedur.is",
+        help="TOS API host (default: vi-api.vedur.is).",
+    )
+    p_recon.add_argument("--port", type=int, default=443)
+
     p_rtl = sub.add_parser(
         "rinex-timeline",
         help=(
@@ -9176,6 +9465,9 @@ def _audit_main(argv):
 
     if args.kind == "rinex-timeline":
         return _audit_rinex_timeline_main(args)
+
+    if args.kind == "reconstruct-from-archive":
+        return _audit_reconstruct_main(args, client)
 
     if args.kind == "firmware-chain":
         return _audit_firmware_chain_main(args, client)

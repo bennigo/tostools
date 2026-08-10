@@ -82,6 +82,10 @@ class SerialLookup:
     matches: List[DeviceScanRow]
     coverage: Dict[str, int] = field(default_factory=dict)
     bucket: str = INCONCLUSIVE
+    #: id_entity found by the basic_search cross-check when the join-index walk
+    #: saw nothing (an orphan/unjoined device the walk cannot reach). Set only
+    #: when a CREATE verdict was downgraded to INCONCLUSIVE by that check.
+    basic_search_found: Optional[int] = None
 
     @property
     def parents_failed(self) -> int:
@@ -103,6 +107,13 @@ class SerialLookup:
                 "(e.g. tos device add / receivers cfg add-receiver)."
             )
         if self.bucket == INCONCLUSIVE:
+            if self.basic_search_found is not None:
+                return (
+                    f"The join-index walk saw no join, but basic_search found "
+                    f"id_entity={self.basic_search_found} — an ORPHAN/UNJOINED "
+                    f"entity the walk cannot reach. Do NOT create; ADOPT it "
+                    f"(create-join / reopen)."
+                )
             return (
                 f"Not found, but {self.parents_failed} parent(s) failed to "
                 "read — absence is UNCONFIRMED. Do NOT create. Re-run when the "
@@ -222,12 +233,34 @@ def find_devices_by_serial(
     ]
     matches.sort(key=lambda r: r.id_entity)
     bucket = _classify(matches, coverage)
+    basic_search_found: Optional[int] = None
+    if bucket == CREATE and subtype is not None:
+        # The join-index walk only sees a device under a readable parent, so an
+        # orphan / freshly-created-unjoined entity is invisible to it and would
+        # classify as CREATE — advising a duplicate mint. basic_search indexes
+        # by serial regardless of joins, so it catches those. (basic_search has
+        # the opposite blind spot — a stale index — so the two are complementary;
+        # neither alone is authoritative for absence.) On a hit, downgrade to
+        # INCONCLUSIVE with the id so the caller adopts rather than re-creates.
+        try:
+            from .devices import find_device
+
+            hist = find_device(client, serial=target, subtype=subtype)
+            eid = hist.get("id_entity")
+            if eid is not None:
+                basic_search_found = int(eid)
+                bucket = INCONCLUSIVE
+        except LookupError:
+            pass  # genuinely absent by both authorities — keep CREATE
+        except Exception:  # noqa: BLE001 — basic_search is best-effort
+            pass
     return SerialLookup(
         serial=target,
         subtype=subtype,
         matches=matches,
         coverage=coverage,
         bucket=bucket,
+        basic_search_found=basic_search_found,
     )
 
 
