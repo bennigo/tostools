@@ -7277,10 +7277,20 @@ def _audit_reconstruct_main(args, client) -> int:
         from .audit import canonical_subtype
         from .device_find import (
             ATTACHED as _ATT,
+        )
+        from .device_find import (
             CREATE as _CRE,
+        )
+        from .device_find import (
             DUPLICATE as _DUP,
+        )
+        from .device_find import (
             INCONCLUSIVE as _INC,
+        )
+        from .device_find import (
             REOPEN as _REO,
+        )
+        from .device_find import (
             find_devices_by_serial,
         )
 
@@ -9796,6 +9806,24 @@ def _audit_constellations_main(args, client) -> int:
     print(
         f"  {src_label} {reading.version} [{rel}] records: "
         f"{', '.join(sorted(reading.systems)) or '(none)'}"
+    )
+    # ONE file was read. The set is what that day recorded — it does NOT
+    # establish when each system started, yet the emitted periods run from the
+    # receiver's INSTALL date, which is an assumption this reading cannot
+    # support. Measured on VMEY: the single-file reading says BDS+GAL+GLO+GPS
+    # and the ACTIONs proposed all four from 2017-07-11, but --history segments
+    # the same archive as GAL@2023-01-20 and BDS@2024-02-16 — backdating two
+    # systems by 5.5 and 6.5 years. GAL first appears nine days after the
+    # 2023-01-11 antenna/box replacement, so the archive and the visit log
+    # corroborate each other.
+    print(
+        "  ⚠ single-file reading: this is the most recent day only. It shows "
+        "WHICH systems are on, not SINCE WHEN — the periods below start at the "
+        "receiver's install date by assumption."
+    )
+    print(
+        f"    Confirm the start dates before applying:  "
+        f"tos audit constellations {args.name} --history"
     )
     if report.set_true:
         print("  data records systems TOS does not have set 'true':")
