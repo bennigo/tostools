@@ -605,7 +605,19 @@ def export_site_log_to_file(
     logger = get_logger(__name__, loglevel)
 
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
+        # IGS site logs are ISO-8859-1 (Latin-1), not UTF-8 — that is what M3G
+        # serves back (`file` reports "ISO-8859 text" on every log fetched from
+        # gnss-metadata.eu) and what the IGS series has always used. Writing
+        # UTF-8 made every Icelandic character a two-byte sequence that renders
+        # as mojibake for anyone reading the published log, and made a local↔M3G
+        # diff show spurious changes on every line containing á é í ó ú ý þ æ ö ð.
+        #
+        # Latin-1 covers Icelandic completely, so nothing is lost. Encoding is
+        # STRICT on purpose: a character genuinely outside Latin-1 (a typographic
+        # dash pasted into an address, say) raises here and is reported as an
+        # export failure by the caller, rather than being silently replaced with
+        # "?" in a document that gets distributed worldwide.
+        with open(output_path, "w", encoding="latin-1") as f:
             f.write(site_log_content)
 
         logger.info(f"Site log exported to {output_path}")
