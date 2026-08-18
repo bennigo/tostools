@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from .. import gps_metadata_qc as gpsqc
+from ..device import is_synthetic_serial
 from ..utils.logging import get_logger
 from .domes import domes_or_skip
 
@@ -175,8 +176,18 @@ def compare_rinex_to_tos(
                 delta_n=None,
             )
             radome_info = tos_session.get("radome") or {}
+            # A synthetic placeholder serial (``antenna-VMEY-20230111``) is a TOS
+            # bookkeeping id, not a manufacturer serial, and it is 21 chars — one
+            # over the A20 field. Writing it produced 65 VMEY headers whose serial
+            # ran straight into the antenna type with no separator. The converter
+            # suppresses it (receivers.rinex.metadata_provider); this path must
+            # agree, or every freshly converted file would read back as discrepant
+            # and --fix-headers would re-inject what the converter just withheld.
+            _tos_serial = str(antenna_info.get("serial_number") or "").strip()
+            if is_synthetic_serial(_tos_serial):
+                _tos_serial = ""
             tos_ant = AntennaHeader(
-                serial=(str(antenna_info.get("serial_number") or "").strip() or None),
+                serial=(_tos_serial or None),
                 atype=(str(antenna_info.get("model") or "").strip() or None),
                 radome=(str(radome_info.get("model") or "").strip() or None),
                 delta_h=None,
