@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from ..device import is_synthetic_serial
 from ..utils.logging import get_logger
 
 
@@ -250,7 +251,11 @@ def _generate_receiver_section(device_sessions: List[Dict[str, Any]]) -> str:
         # `or ""` (not .get default): TOS delivers present-but-None fields, which
         # would crash the fixed-width format specs below (the HAMR/SKOG case).
         receiver_type = receiver.get("model") or ""
+        # Defensive: the pattern cannot match a real receiver serial (they are
+        # numeric), but a sentinel here would be just as wrong as on the antenna.
         serial_num = receiver.get("serial_number") or ""
+        if is_synthetic_serial(serial_num):
+            serial_num = ""
         firmware_ver = (
             receiver.get("firmware_version") or receiver.get("software_version") or ""
         )
@@ -355,7 +360,15 @@ def _generate_antenna_section(device_sessions: List[Dict[str, Any]]) -> str:
         # `or ""`: a present-but-None model/serial (e.g. HAMR's antenna session)
         # crashed the `{antenna_type:<16}` format spec with NoneType.__format__.
         antenna_type = antenna.get("model") or ""
+        # A synthetic serial (<subtype>-<STID>-<YYYYMMDD>) is a TOS-internal key
+        # minted only because TOS requires a non-empty serial_number; radomes
+        # never have a factory serial and antennas frequently do not. Publishing
+        # it would put its first 5 characters into SINEX worldwide -- ELDC's
+        # "antenna-eldc-20200129" becomes "anten". IGS offers no placeholder for
+        # an unknown serial, so the correct published value is an empty field.
         serial_num = antenna.get("serial_number") or ""
+        if is_synthetic_serial(serial_num):
+            serial_num = ""
         # IGS "Marker->ARP Up Ecc." is the FULL mark -> ARP height and must equal the
         # RINEX header's "ANTENNA: DELTA H". TOS stores the antenna eccentricity
         # (monument-top -> ARP) separately from the monument height (mark ->

@@ -19,6 +19,7 @@ from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 from tabulate import tabulate
 
+from ..device import is_synthetic_serial
 from ..utils.data_quality import IssueSeverity, IssueType, data_quality_manager
 from . import gps_metadata_qc as gpsqc
 
@@ -1051,6 +1052,17 @@ def site_log(
         device_type = device.get("model") or ""
         satellite_system = satellite_system_from_toggles(device)
         serial_number = device.get("serial_number") or "000000"
+        # A synthetic serial (<subtype>-<STID>-<YYYYMMDD>) is a TOS-INTERNAL key,
+        # minted only because TOS requires serial_number to be non-empty (radomes
+        # never have a factory serial; antennas and steel monuments frequently do
+        # not either). Only the first 5 characters of this field reach SINEX, so
+        # publishing ELDC's "antenna-eldc-20200129" would distribute "anten"
+        # worldwide as though it were equipment data. The IGS instructions define
+        # no placeholder for an unknown serial -- the only guidance is "if an
+        # answer in an optional field is unknown, try to learn the answer for the
+        # next log update" -- so the correct published value is an empty field.
+        if is_synthetic_serial(serial_number):
+            serial_number = ""
         firmware_version = device.get("firmware_version") or ""
         elevation_cuttoff = device.get("elevation_cuttoff") or "0 deg"
         date_installed = _fmt_igs_date(device.get("date_from"))
@@ -1100,6 +1112,17 @@ def site_log(
 
         device_type = device.get("model") or ""
         serial_number = device.get("serial_number") or "000000"
+        # A synthetic serial (<subtype>-<STID>-<YYYYMMDD>) is a TOS-INTERNAL key,
+        # minted only because TOS requires serial_number to be non-empty (radomes
+        # never have a factory serial; antennas and steel monuments frequently do
+        # not either). Only the first 5 characters of this field reach SINEX, so
+        # publishing ELDC's "antenna-eldc-20200129" would distribute "anten"
+        # worldwide as though it were equipment data. The IGS instructions define
+        # no placeholder for an unknown serial -- the only guidance is "if an
+        # answer in an optional field is unknown, try to learn the answer for the
+        # next log update" -- so the correct published value is an empty field.
+        if is_synthetic_serial(serial_number):
+            serial_number = ""
         arp = device.get("antenna_reference_point") or "BPA"
         if arp == "DHARP":
             arp = grep_line_aslist(get_data_file_path("antenna_arp.list"), device_type)[
