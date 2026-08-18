@@ -7321,31 +7321,24 @@ def _audit_reconstruct_main(args, client) -> int:
             return hit
 
     # --- station.info enrichment (curated model + composite height) ----------
-    si_path = args.station_info
-    if si_path is None:
-        # Best-effort auto-resolve. Search the tostools repo root (derived from
-        # this module's location) AND cwd, so enrichment doesn't silently drop
-        # when the operator runs from a different directory (e.g. receivers/).
-        import glob as _glob
-        from pathlib import Path as _P
+    # Resolve station.info the same way every other authority is resolved:
+    # explicit flag → env → cfg → mount → packaged snapshot. This replaces a
+    # glob over the repo root and cwd that took the last sorted hit and reported
+    # nothing, so "which station.info did this audit read?" was unanswerable —
+    # and it could never reach okada's live copy at all.
+    from .standards.gamit_station_info import resolve_station_info
 
-        _roots = []
-        try:
-            _roots.append(_P(__file__).resolve().parents[2])  # src/tostools/tos.py → repo root
-        except Exception:  # noqa: BLE001
-            pass
-        _roots.append(_P.cwd())
-        for _root in _roots:
-            for pat in (
-                "data/station_config/work/station.info.sopac*",
-                "data/station_config/station.info.sopac*",
-            ):
-                hits = sorted(_glob.glob(str(_root / pat)))
-                if hits:
-                    si_path = hits[-1]
-                    break
-            if si_path:
-                break
+    _si = resolve_station_info(args.station_info)
+    si_path = str(_si.path) if _si else None
+    if _si:
+        # Always say which copy was used. A packaged SNAPSHOT can be silently
+        # stale once GAMIT's copy moves on, and this audit's suggestions
+        # (antenna models, composite heights) are only as good as its input.
+        # stderr, matching this module's convention — no logger is configured here.
+        print(
+            f"{'⚠️  ' if _si.is_snapshot else ''}station.info: {_si.describe()}",
+            file=sys.stderr,
+        )
     station_info_eras = None
     if si_path:
         try:
@@ -9327,7 +9320,7 @@ def _audit_main(argv):
                 suppressions_path=args.suppressions,
                 use_suppressions=not args.no_suppressions,
                 include_closed=getattr(args, "history", False),
-                station_info_path=getattr(args, "station_info", None),
+                station_info_path=_resolved_station_info_path(args),
             )
         except (LookupError, ValueError, FileNotFoundError) as e:
             print(str(e), file=sys.stderr)
@@ -12815,6 +12808,39 @@ def _print_attribute_date_report(report, *, verbose: bool = False):
         )
 
 
+_STATION_INFO_ANNOUNCED = False
+
+
+def _resolved_station_info_path(args):
+    """station.info for the missing-attributes audits, resolved not hardcoded.
+
+    Previously both call sites passed ``args.station_info`` straight through, so
+    WITHOUT the flag there was no enrichment at all — which is why the
+    remediation runbook had to spell out
+    ``--station-info data/station_config/station.info.sopac.apr05``, a packaged
+    2005 snapshot named by hand in a pipeline whose premise is "no hardcoded
+    paths". Now the flag is an override on a normal resolution chain
+    (flag → env → cfg → mount → packaged) and the default case reads okada's
+    live file over the /D/DATABASE export.
+
+    Announces the chosen copy ONCE per process — the fleet loop calls this per
+    station and repeating it 173 times would bury it.
+    """
+    global _STATION_INFO_ANNOUNCED
+    from .standards.gamit_station_info import resolve_station_info
+
+    src = resolve_station_info(getattr(args, "station_info", None))
+    if src is None:
+        return None
+    if not _STATION_INFO_ANNOUNCED:
+        _STATION_INFO_ANNOUNCED = True
+        print(
+            f"{'⚠️  ' if src.is_snapshot else ''}station.info: {src.describe()}",
+            file=sys.stderr,
+        )
+    return str(src.path)
+
+
 def _run_missing_attributes_fleet(client, args) -> int:
     """Read-only missing-attributes survey across every station in stations.cfg.
 
@@ -12878,7 +12904,7 @@ def _run_missing_attributes_fleet(client, args) -> int:
                 suppressions_path=args.suppressions,
                 use_suppressions=not args.no_suppressions,
                 include_closed=getattr(args, "history", False),
-                station_info_path=getattr(args, "station_info", None),
+                station_info_path=_resolved_station_info_path(args),
             )
         except Exception as e:  # noqa: BLE001 — isolate per-station failures
             rows.append({"marker": marker, "error": str(e)[:120]})
