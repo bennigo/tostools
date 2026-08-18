@@ -433,6 +433,23 @@ def _occupation_for(occupations, serial: Optional[str], date_from: Optional[str]
 #: retired one. Offsets/azimuth are historical facts and stay defaulted.
 _CURRENT_STATE_CODES = frozenset({"status"})
 
+#: Fleet-mode fallback for a monument's ``model`` — the mark's CONSTRUCTION TYPE,
+#: which IGS site log §3.1 "Foundation" renders from. The catalog cannot carry
+#: this as ``default_value`` because ``model`` also applies to receivers,
+#: antennas and radomes, where a monument default would be nonsense.
+#:
+#: Measured across 24 fleet monuments (2026-08-18): 11 GPS stál-fjórfótur,
+#: 3 steyptur stöpull, 1 pinni, 1 GPS stál-staur, 8 with no value at all. So it
+#: is 69 % of the sixteen that are known — a clear mode, but roughly ONE IN
+#: THREE known marks is something else, across four types.
+#:
+#: That ratio is why the provenance string says so out loud. This is the weakest
+#: tier of evidence in this module: station.info is the field record and wins;
+#: a catalog default describes the code itself; this is only "what most marks
+#: happen to be". It is published to an international site log, so it must read
+#: as a prompt to look, not as a finding.
+_MONUMENT_MODEL_FLEET_MODE = "GPS stál-fjórfótur"
+
 #: Attribute codes that describe ONE INSTALLATION rather than the device.
 #: They must be written as closed periods when the device is no longer here,
 #: and an open one after removal is the :class:`StaleOpenAttribute` defect.
@@ -646,6 +663,16 @@ def _audit_entity(
         default = entry.get("default_value")
         suggested_value = str(default) if default is not None else None
         value_basis: Optional[str] = None
+        # Lowest-tier fallback, applied only when the catalog offers nothing.
+        # station.info still overrides it below — the ordering is deliberate:
+        # field record > catalog default > what most marks happen to be.
+        if suggested_value is None and code == "model" and entity_subtype == "monument":
+            suggested_value = _MONUMENT_MODEL_FLEET_MODE
+            value_basis = (
+                "fleet mode (11/16 known monuments; steyptur stöpull, pinni and "
+                "GPS stál-staur also occur) — CONFIRM against the actual mark, "
+                "this is published as IGS site-log §3.1 Foundation"
+            )
         # GAMIT station.info wins over a catalog default: it is the field
         # record of what was actually installed, not a fleet-wide guess.
         if occupation is not None and code in _STATION_INFO_FIELDS:
