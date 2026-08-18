@@ -8847,6 +8847,15 @@ def _audit_main(argv):
             "an R2 reading — recorded means on);\n"
             "  TOS says true, data lacks it → 'review', ONLY for a reliable R3 "
             "reading (R2 under-reports, so its absence proves nothing).\n\n"
+            "TWO archive authorities, in order. An R3 header is authoritative and "
+            "is used as-is. When the header is R2 or unparseable it cannot answer "
+            "— R2 under-reports — so the day's RAW SBF is decoded with sbf2rin "
+            "instead. That decode is the only thing that can answer the 2017-2025 "
+            "span, and the report names which one replied ('archive RINEX ...' vs "
+            "'raw SBF decode ...'): a decode yields an R3 reading, so without the "
+            "label it would look like the archived header said it.\n"
+            "Degrades gracefully — with no sbf2rin on PATH, or no raw archived "
+            "for that day, it falls back to the header reading alone.\n\n"
             "The live-receiver query (authoritative for PolaRX5) is the preferred "
             "confirmation; this verb reads the archive. Archive root resolves like "
             "verify-from-rinex (--archive-root → env → cfg → mount probe)."
@@ -9770,6 +9779,13 @@ def _audit_constellations_main(args, client) -> int:
     reading = report.reading
     assert reading is not None
     rel = "R3 reliable" if reading.reliable else f"R{reading.version} — UNDER-REPORTS"
+    # Name the authority. An SBF decode yields a RINEX-3 reading, so without
+    # this the line claims "archive RINEX 3.04" for a set the archived header
+    # never contained — the raw was decoded because the header could not answer.
+    src_label = (
+        "raw SBF decode" if getattr(reading, "origin", "") == "sbf_decode"
+        else "archive RINEX"
+    )
     marker = "✗" if report.has_findings else "✓"
     status = "FINDINGS" if report.has_findings else "CLEAN"
     print(f"{marker} Station {name!r} (id={report.station_id}) — {status}")
@@ -9778,7 +9794,7 @@ def _audit_constellations_main(args, client) -> int:
         f"install {report.receiver_install}"
     )
     print(
-        f"  archive RINEX {reading.version} [{rel}] records: "
+        f"  {src_label} {reading.version} [{rel}] records: "
         f"{', '.join(sorted(reading.systems)) or '(none)'}"
     )
     if report.set_true:

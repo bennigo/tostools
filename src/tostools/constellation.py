@@ -60,6 +60,16 @@ class ConstellationReading:
     systems: FrozenSet[str]  # TOS codes, e.g. {"GPS", "GLO", "GAL"}
     reliable: bool
     source_path: Optional[str] = None
+    #: Which authority answered. ``'rinex_header'`` = read from the archived
+    #: RINEX; ``'sbf_decode'`` = the archived header could not answer (R2, or
+    #: unparseable) so the day's raw SBF was decoded instead.
+    #:
+    #: Worth stating explicitly rather than inferring from ``source_path``: a
+    #: decode produces a RINEX-3 reading, so version/reliable look identical to
+    #: a genuine R3 header and the report would claim the archive said something
+    #: it did not. Raw SBF is a distinct authority — the only one that can
+    #: answer the 2017-2025 span — and should be named as one.
+    origin: str = "rinex_header"
 
 
 def _parse_version(line: str) -> Optional[float]:

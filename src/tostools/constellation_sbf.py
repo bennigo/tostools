@@ -163,6 +163,7 @@ def systems_from_sbf(
             if not reading.systems:
                 return None
             return ConstellationReading(
+                origin="sbf_decode",
                 version=reading.version,
                 systems=reading.systems,
                 reliable=reading.reliable,
