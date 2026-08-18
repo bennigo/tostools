@@ -13,7 +13,10 @@ the formatting can be shared with any RINEX-producing tool in the
 ecosystem, not just receivers.
 """
 
+import logging
 from typing import Any, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # RINEX header field specifications: (Fortran format, total width).
 # Based on the RINEX 3.x spec and tostools.rinex.reader column layouts.
@@ -27,6 +30,33 @@ RINEX_FIELD_SPECS: Dict[str, Tuple[str, int]] = {
     "ANTENNA: DELTA H/E/N": ("3F14.4", 42),
     "INTERVAL": ("F10.3", 10),
 }
+
+
+def _warn_if_overflows(field: str, part: str, value: str, width: int) -> None:
+    """Log when a value is about to be silently truncated to a fixed field.
+
+    ``ljust(n)[:n]`` pads AND truncates without complaint, which is how VMEY
+    ended up with 65 malformed headers: TOS's 21-char synthetic antenna serial
+    `antenna-VMEY-20230111` was written into the A20 serial field, truncated to
+    `antenna-VMEY-2023011`, and filled the column exactly — so it abutted the
+    antenna type with no separator. Nothing reported it, and the corrupted
+    header then defeated the reconstruct dup-guard, which read the truncated
+    string back and proposed creating a duplicate device.
+
+    A warning does not prevent the truncation — the RINEX field width is fixed
+    and the caller has already decided what to write. It makes the loss visible.
+    """
+    if len(value) > width:
+        logger.warning(
+            "RINEX %s: %s %r is %d chars, truncated to %d — %r. "
+            "Fixed-width field; the written header will differ from the source.",
+            field,
+            part,
+            value,
+            len(value),
+            width,
+            value[:width],
+        )
 
 
 def format_rinex_field(field_name: str, value: Any) -> Optional[str]:
@@ -105,8 +135,15 @@ def format_rinex_field(field_name: str, value: Any) -> Optional[str]:
             parts = str(value).split(None, 1)
             serial = parts[0] if parts else ""
             ant_type = parts[1] if len(parts) > 1 else ""
-        if not serial:
+        # Emit on EITHER part. Dropping the line for a blank serial discards the
+        # antenna type and radome too, which are the fields downstream actually
+        # needs — and a blank serial is legitimate: IGS defines no placeholder
+        # for an unknown one, and a TOS synthetic serial is deliberately
+        # suppressed upstream rather than published.
+        if not serial and not ant_type:
             return None
+        _warn_if_overflows(field_name, "serial", serial, 20)
+        _warn_if_overflows(field_name, "antenna type", ant_type, 20)
         return f"{serial.ljust(20)[:20]}{ant_type.ljust(20)[:20]}"
 
     elif field_name == "ANTENNA: DELTA H/E/N":
