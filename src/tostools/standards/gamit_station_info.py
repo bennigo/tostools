@@ -90,6 +90,115 @@ class Occupation:
         return self.time_to is None
 
 
+#: Where the authoritative GAMIT station.info lives. NOT NFS-mounted anywhere:
+#: the laptop mounts okada's /D/GMT/ and /D/GMT/TOT/, but not /D/DATABASE/, and
+#: rek-d01 has no /D at all. So the packaged copy is a snapshot taken over ssh,
+#: and that is exactly why this resolver reports which copy it used.
+CANONICAL_REMOTE = "okada.vedur.is:/D/DATABASE/GAMIT/station.info.sopac.apr05"
+
+#: Local paths probed before falling back to the packaged snapshot. okada
+#: exported /D/DATABASE read-only on 2026-08-18, so the laptop now automounts it
+#: and `origin=mount` is the normal case — a live read, no ssh hop inside an
+#: audit, no snapshot drift.
+#:
+#: Both entries are cheap stats on a host that lacks them (rek-d01 has no /D and
+#: no such mount). On the laptop the first is an autofs trigger, bounded by the
+#: fstab's x-systemd.mount-timeout=10 — so off-network this costs ~10 s once,
+#: then falls through to the packaged copy rather than failing.
+_PROBE_PATHS = (
+    "/mnt_data/gps_database/GAMIT/station.info.sopac.apr05",  # laptop NFS mount
+    "/D/DATABASE/GAMIT/station.info.sopac.apr05",  # on okada itself
+)
+
+
+@dataclass(frozen=True)
+class StationInfoSource:
+    """Which station.info was read, and how it was found."""
+
+    path: Path
+    origin: str  #: 'override' | 'env' | 'config' | 'mount' | 'packaged'
+
+    @property
+    def is_snapshot(self) -> bool:
+        """True when this is the frozen in-repo copy rather than a live file."""
+        return self.origin == "packaged"
+
+    def describe(self) -> str:
+        try:
+            from datetime import datetime as _dt
+
+            age = _dt.fromtimestamp(self.path.stat().st_mtime).strftime("%Y-%m-%d")
+            size = f", {self.path.stat().st_size // 1024} KB"
+        except OSError:
+            age, size = "unknown", ""
+        base = f"{self.path} (origin={self.origin}, mtime={age}{size})"
+        if self.is_snapshot:
+            base += f" — SNAPSHOT, may have drifted from {CANONICAL_REMOTE}"
+        return base
+
+
+def resolve_station_info(
+    override: Optional[Union[str, Path]] = None,
+) -> Optional[StationInfoSource]:
+    """Resolve which ``station.info`` to read, mirroring ``cold_archive_prepath``.
+
+    Resolution order (first hit wins):
+      1. Explicit ``override`` (CLI ``--station-info``).
+      2. Env var ``TOSTOOLS_STATION_INFO``.
+      3. ``[paths] gamit_station_info`` in the shared ``receivers.cfg``.
+      4. A local mount, if ``/D/DATABASE`` is ever exported.
+      5. The packaged snapshot shipped with tostools.
+
+    Returns ``None`` only when even the packaged copy is absent.
+
+    Unlike the archive root this never raises: a station.info is always better
+    than none for the audits that consult it. What it does instead is report
+    the ORIGIN, so "which station.info am I reading, and is it live?" is always
+    answerable. The packaged copy was byte-identical to okada's on 2026-08-09
+    (md5 0200c248…, 19,579 lines) — the risk is not that it is wrong today but
+    that it drifts silently once GAMIT's copy is updated.
+    """
+    if override is not None:
+        return StationInfoSource(Path(override).expanduser(), "override")
+
+    import os
+
+    env = os.environ.get("TOSTOOLS_STATION_INFO")
+    if env:
+        return StationInfoSource(Path(env).expanduser(), "env")
+
+    try:
+        import configparser
+
+        from ..archive import _find_receivers_cfg
+
+        cfg_path = _find_receivers_cfg()
+        if cfg_path is not None:
+            parser = configparser.ConfigParser()
+            parser.read(cfg_path)
+            if parser.has_option("paths", "gamit_station_info"):
+                value = parser.get("paths", "gamit_station_info").strip()
+                if value:
+                    return StationInfoSource(Path(value).expanduser(), "config")
+    except Exception:  # noqa: BLE001 — a bad cfg must never block the fallback
+        pass
+
+    for cand in _PROBE_PATHS:
+        try:
+            p = Path(cand).resolve()
+            if p.is_file():
+                return StationInfoSource(p, "mount")
+        except OSError:
+            continue
+
+    packaged = Path(__file__).resolve().parents[3] / (
+        "data/station_config/station.info.sopac.apr05"
+    )
+    if packaged.is_file():
+        return StationInfoSource(packaged, "packaged")
+    return None
+
+
 def _slice(line: str, start: int, end: int) -> str:
     if end == -1:
         return line[start:].strip()
