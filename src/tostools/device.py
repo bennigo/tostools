@@ -273,6 +273,36 @@ def synthetic_serial(subtype: str, station: str, date_start: str) -> str:
     return f"{subtype}-{station}-{date_part}"
 
 
+#: Matches a serial minted by :func:`synthetic_serial`. Case-insensitive because
+#: both spellings exist in TOS: the convention documented above uses an
+#: uppercase marker (``radome-REYK-20130502``) while older rows carry lowercase
+#: (``antenna-eldc-20200129``, ELDC).
+_SYNTHETIC_SERIAL_RE = re.compile(
+    r"^(antenna|radome|monument)-[a-z0-9]{4}-\d{8}$", re.IGNORECASE
+)
+
+
+def is_synthetic_serial(value: Optional[str]) -> bool:
+    """True when ``value`` is a placeholder minted by :func:`synthetic_serial`.
+
+    These exist only because TOS requires a non-empty ``serial_number`` on every
+    device, and radomes never have a factory serial (antennas and steel monuments
+    frequently do not either). They are internal keys — ``move-device --serial``
+    matches units by them — and must never be published as if they were real
+    equipment serials.
+
+    The IGS site log is the case that matters: only the **first 5 characters** of
+    the serial reach SINEX, so ``antenna-eldc-20200129`` would be distributed
+    worldwide as ``anten``. The IGS instructions give no placeholder for an
+    unknown serial — the only guidance is "if an answer in an optional field is
+    unknown, try to learn the answer for the next log update" — so the correct
+    published value is an empty field, not a stand-in.
+    """
+    if not value:
+        return False
+    return bool(_SYNTHETIC_SERIAL_RE.match(value.strip()))
+
+
 def build_antenna_attributes(
     serial: str,
     model: str,
