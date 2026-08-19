@@ -277,8 +277,21 @@ def synthetic_serial(subtype: str, station: str, date_start: str) -> str:
 #: both spellings exist in TOS: the convention documented above uses an
 #: uppercase marker (``radome-REYK-20130502``) while older rows carry lowercase
 #: (``antenna-eldc-20200129``, ELDC).
+#:
+#: The date part is ``\d{6,8}``, not ``\d{8}``, so a **truncated** placeholder
+#: still reads as one. RINEX gives ``ANT # / TYPE`` an A20 field, and
+#: ``antenna-VMEY-20230111`` is 21 characters — writing it drops the last digit,
+#: leaving ``antenna-VMEY-2023011``. A strict ``\d{8}`` classifies that survivor
+#: as a *real* serial, which is exactly how 66 VMEY headers defeated the
+#: reconstruct dup-guard: the truncated value could never match TOS, so the verb
+#: proposed minting a duplicate antenna.
+#:
+#: Six is the lower bound because it is the worst truncation the convention can
+#: actually produce, not a round number: ``monument-`` (22 chars) loses two
+#: digits, ``antenna-`` (21) loses one, ``radome-`` (20) fits exactly. Going
+#: lower starts eating real serials — ``antenna-part-1234`` is a genuine one.
 _SYNTHETIC_SERIAL_RE = re.compile(
-    r"^(antenna|radome|monument)-[a-z0-9]{4}-\d{8}$", re.IGNORECASE
+    r"^(antenna|radome|monument)-[a-z0-9]{4}-\d{6,8}$", re.IGNORECASE
 )
 
 
@@ -297,6 +310,10 @@ def is_synthetic_serial(value: Optional[str]) -> bool:
     unknown serial — the only guidance is "if an answer in an optional field is
     unknown, try to learn the answer for the next log update" — so the correct
     published value is an empty field, not a stand-in.
+
+    A value truncated by a fixed-width field (RINEX ``ANT # / TYPE`` is A20) is
+    still a placeholder and answers ``True`` — see :data:`_SYNTHETIC_SERIAL_RE`
+    for why treating the survivor as a real serial is the more expensive error.
     """
     if not value:
         return False
