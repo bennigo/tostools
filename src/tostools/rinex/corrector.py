@@ -142,6 +142,53 @@ def correct_rinex_from_tos(
         if observation_date is None:
             logger.warning(f"Could not extract date from {rinex_file.name}")
 
+    corrections = resolve_corrections(
+        rinex_file,
+        station_id,
+        observation_date,
+        station_config=station_config,
+        loglevel=loglevel,
+        only_fields=only_fields,
+        extra_corrections=extra_corrections,
+        tos_metadata_cache=tos_metadata_cache,
+    )
+    if not corrections:
+        return rinex_file  # Return original file unchanged
+
+    # Apply corrections
+    corrected_file = _apply_corrections(rinex_file, corrections, output_file, logger)
+
+    return corrected_file
+
+
+def resolve_corrections(
+    rinex_file: Path,
+    station_id: str,
+    observation_date: Optional[datetime] = None,
+    *,
+    station_config: Optional[Dict[str, Any]] = None,
+    loglevel: int = logging.INFO,
+    only_fields: Optional[set] = None,
+    extra_corrections: Optional[Dict[str, Any]] = None,
+    tos_metadata_cache: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Decide WHICH header fields change and to WHAT value — nothing is written.
+
+    This is the single source of truth for the correction values, extracted so a
+    dry-run preview and the real write cannot diverge. They did: ``--fix-headers``
+    previewed the value :func:`compare_rinex_to_tos` proposed while the write used
+    the value built here, and for a TOS placeholder antenna serial the two differ
+    (blank vs ``0000``). A preview that does not match the action is worthless on
+    the one run where it matters — the review before rewriting archived files.
+
+    Returns the label→values mapping :func:`_apply_corrections` would apply, after
+    the config/TOS source choice, the ``extra_corrections`` merge, the
+    ``only_fields`` filter and the position guard. Empty means "nothing to write".
+    A value of :data:`STRIP_LINE` means the label's line is REMOVED.
+    """
+    logger = get_logger(__name__, loglevel)
+    rinex_file = Path(rinex_file)
+
     # Determine whether to use config or TOS
     use_config = False
     if station_config:
@@ -183,7 +230,7 @@ def correct_rinex_from_tos(
 
     if not corrections:
         logger.warning(f"No corrections available for {station_id}")
-        return rinex_file  # Return original file unchanged
+        return {}
 
     # Field-selective mode: keep only the requested labels (used by
     # `receivers rinex --fix-headers` to touch only discrepant fields).
@@ -198,7 +245,7 @@ def correct_rinex_from_tos(
                 "No corrections after only_fields filter for %s — leaving file unchanged",
                 station_id,
             )
-            return rinex_file
+            return {}
 
     # Refuse a km-scale APPROX POSITION rewrite. An a-priori position is
     # legitimately out by metres — a hand-entered header, a stale seed, the
@@ -211,12 +258,22 @@ def correct_rinex_from_tos(
     # onto ISAK. The EPOS QC gate then compared the REWRITTEN header against TOS,
     # matched, and published every one. Guarded here rather than in the two
     # correction builders so the config path is covered as well.
-    corrections = _guard_position_correction(rinex_file, corrections, logger, loglevel)
+    return _guard_position_correction(rinex_file, corrections, logger, loglevel)
 
-    # Apply corrections
-    corrected_file = _apply_corrections(rinex_file, corrections, output_file, logger)
 
-    return corrected_file
+def render_correction(label: str, values: Any) -> Optional[str]:
+    """The 60-char header field the write will emit for ``label``.
+
+    ``None`` means the line is REMOVED — either the :data:`STRIP_LINE` sentinel
+    (e.g. a MARKER NUMBER with no real DOMES) or a label this formatter cannot
+    render. Callers previewing a change must distinguish "removed" from "written
+    as empty"; they are different edits.
+    """
+    if values is STRIP_LINE:
+        return None
+    if not isinstance(values, (list, tuple)):
+        values = [values]
+    return _format_rinex_data(label, list(values))
 
 
 def _guard_position_correction(rinex_file, corrections, logger, loglevel):
