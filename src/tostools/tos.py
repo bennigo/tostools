@@ -13935,6 +13935,8 @@ def _search_main(argv):
             "EXAMPLES\n"
             "  tos search --epos\n"
             "  tos search --no-epos --markers-only\n"
+            "  tos search --active-gps --no-receiver   # operational fleet\n"
+            "                                          # missing receivers\n"
             "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
             "  tos search 'iers_domes_number != null'\n"
             "  tos search --epos --receiver polarx5 --show iers_domes_number\n"
@@ -13967,6 +13969,16 @@ def _search_main(argv):
         "--no-epos",
         action="store_true",
         help="Sugar for 'in_network_epos != true' (absent also counts).",
+    )
+    p.add_argument(
+        "--active-gps",
+        action="store_true",
+        help=(
+            "Sugar for the operational IMO GNSS fleet: 'subtype = GPS stöð' "
+            "'date_end = null' 'geological_characteristic != ice' "
+            "'continuity = continuous'. Composes with every other "
+            "flag/expression."
+        ),
     )
     p.add_argument(
         "--receiver",
@@ -14123,6 +14135,8 @@ def _search_main(argv):
         predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "=", "true"))
     if args.no_epos:
         predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "!=", "true"))
+    if args.active_gps:
+        predicates.extend(search_mod.ACTIVE_GPS_PREDICATES)
 
     # ---- Build device specs ---------------------------------------------
     device_must, device_must_not = [], []

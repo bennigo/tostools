@@ -95,6 +95,19 @@ class Predicate:
         return f"{self.code} {self.op} {self.value}"
 
 
+#: The operational IMO GNSS fleet definition — what ``--active-gps`` expands
+#: to: GPS subtype, not ended (no open Lokadagsetning), on bedrock rather
+#: than a moving glacier (geological != ice, absent geology passes), and
+#: recorded as a continuous station (Samfella = continuous — strict, so
+#: unrecorded continuity does NOT pass; fill the attribute instead).
+ACTIVE_GPS_PREDICATES = (
+    Predicate("subtype", "=", "GPS stöð"),
+    Predicate("date_end", "=", "null"),
+    Predicate("geological_characteristic", "!=", "ice"),
+    Predicate("continuity", "=", "continuous"),
+)
+
+
 def parse_expression(expr: str) -> Predicate:
     """Parse ``'code OP value'`` into a :class:`Predicate`.
 

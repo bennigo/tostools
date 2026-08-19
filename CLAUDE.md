@@ -328,6 +328,11 @@ tos fleet contact-dates --triage F # fleet-wide contact migration-date sweep
 tos search --epos                  # fleet search: attributes + devices
 tos search 'bedrock_type = igneous' --json
 tos search --no-receiver --markers-only   # e.g. fleet hygiene
+tos search --active-gps --no-receiver     # operational GNSS fleet (sugar:
+                                          #   GPS subtype + not ended +
+                                          #   not ice + continuous)
+tos search --attribute-list               # discovery: filterable codes
+tos search --attribute CODE --allowed-values
 ```
 
 Legacy flat-arg form (`tos RHOF`, `tos -s SERIAL`, `tos --fdsnxml/--sc3ml`)

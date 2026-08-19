@@ -691,3 +691,57 @@ class TestDiscoveryCli:
         )
         assert rc == 1
         assert "never observed" in out  # stderr message
+
+
+class TestActiveGpsFlag:
+    def _fleet(self):
+        def st(sid, marker, **extra_codes):
+            attrs = [
+                _attr("marker", marker),
+                _attr("name", marker),
+                _attr("subtype", "GPS stöð"),
+            ]
+            for code, val in extra_codes.items():
+                attrs.append(_attr(code, val))
+            return {"id_entity": sid, "attributes": attrs}
+
+        return [
+            st(1, "good", continuity="continuous", geological_characteristic="bedrock"),
+            st(2, "ended", continuity="continuous", date_end="2017-01-01 00:00"),
+            st(3, "ice", continuity="continuous", geological_characteristic="ice"),
+            st(
+                4,
+                "campaign",
+                continuity="campaign",
+                geological_characteristic="bedrock",
+            ),
+            st(5, "nofill", geological_characteristic="bedrock"),  # no continuity
+            st(6, "sil", continuity="continuous"),  # SIL: overwrite subtype below
+        ]
+
+    def test_flag_keeps_only_operational_gps(self, capsys):
+        fleet = self._fleet()
+        fleet[5]["attributes"][2]["value"] = "SIL stöð"  # station 6 is SIL
+        rc, out = _run_cli(["--active-gps", "--markers-only"], fleet, capsys=capsys)
+        assert rc == 0
+        assert out.split() == ["GOOD"]
+
+    def test_flag_predicates_visible_in_criteria(self, capsys):
+        rc, out = _run_cli(["--active-gps", "--json"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        payload = json.loads(out)
+        assert payload["criteria"]["attributes"] == [
+            "subtype = GPS stöð",
+            "date_end = null",
+            "geological_characteristic != ice",
+            "continuity = continuous",
+        ]
+
+    def test_flag_composes_with_expression(self, capsys):
+        fleet = self._fleet()
+        fleet[0]["attributes"].append(_attr("in_network_epos", "true"))
+        rc, out = _run_cli(
+            ["--active-gps", "--epos", "--markers-only"], fleet, capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["GOOD"]
