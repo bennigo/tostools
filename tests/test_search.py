@@ -787,6 +787,13 @@ class TestSugarFlags:
         assert rc == 0
         assert out.split() == ["ENDED", "ICE", "LIVE"]
 
+    def test_campaign(self, capsys):
+        rc, out = _run_cli(
+            ["--campaign", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["CAMP"]
+
     def test_no_ice_is_lenient(self, capsys):
         # ice drops; unrecorded geology (nofill) stays
         rc, out = _run_cli(["--no-ice", "--markers-only"], self._fleet(), capsys=capsys)

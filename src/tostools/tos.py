@@ -13945,6 +13945,7 @@ def _search_main(argv):
             "                                          # missing receivers\n"
             "  tos search --discontinued --markers-only  # ended stations\n"
             "  tos search --continuous --no-ice          # continuous bedrock\n"
+            "  tos search --campaign --markers-only       # campaign sites\n"
             "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
             "  tos search 'subtype = SIL stöð'            # non-GPS type\n"
             "  tos search 'subtype = [GPS stöð, SIL stöð]'  # multiple types\n"
@@ -14003,6 +14004,11 @@ def _search_main(argv):
             "Sugar for 'continuity = continuous' (strict: Samfella recorded "
             "AND continuous; unrecorded does not pass)."
         ),
+    )
+    p.add_argument(
+        "--campaign",
+        action="store_true",
+        help="Sugar for 'continuity = campaign'.",
     )
     p.add_argument(
         "--no-ice",
@@ -14173,6 +14179,8 @@ def _search_main(argv):
         predicates.append(search_mod.Predicate("date_end", "!=", "null"))
     if args.continuous:
         predicates.append(search_mod.Predicate("continuity", "=", "continuous"))
+    if args.campaign:
+        predicates.append(search_mod.Predicate("continuity", "=", "campaign"))
     if args.no_ice:
         predicates.append(
             search_mod.Predicate("geological_characteristic", "!=", "ice")
