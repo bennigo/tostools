@@ -88,8 +88,10 @@ present on date" (time_from ≤ date < time_to). See
 
 Verbs that should adopt these (and don't yet): the audit reporters that
 emit device tables — `tos audit fleet`, `tos audit orphans`,
-`tos audit timelines`, plus any future `tos device search` /
-`tos station list`.
+`tos audit timelines`. (`tos search` answers the former "future
+`tos station list`" gap with its own fleet-level engine in
+`tostools/search.py` — bulk attribute predicates + open-join device
+specs — rather than the per-entity filter helpers.)
 
 ### Shared filter set for attribute-period verbs
 
@@ -323,6 +325,9 @@ tos audit apply <triage_file>      # dry-run; --apply to commit
 tos fleet status                   # bulk verify oracle (exit 0/1/2)
 tos fleet triage                   # generate per-station triage files
 tos fleet contact-dates --triage F # fleet-wide contact migration-date sweep
+tos search --epos                  # fleet search: attributes + devices
+tos search 'bedrock_type = igneous' --json
+tos search --no-receiver --markers-only   # e.g. fleet hygiene
 ```
 
 Legacy flat-arg form (`tos RHOF`, `tos -s SERIAL`, `tos --fdsnxml/--sc3ml`)
@@ -740,5 +745,5 @@ Integration with VS Code Todo Tree and Neovim todo-comments.nvim available.
 
 ---
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-08-11_ (added `tos search` — fleet search by attribute + device)
 

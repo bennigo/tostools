@@ -19,6 +19,7 @@ KNOWN_SUBCOMMANDS = {
     "contact",
     "fleet",
     "visit",
+    "search",
 }
 
 
@@ -7215,14 +7216,20 @@ def _audit_reconstruct_main(args, client) -> int:
 
     archive_eras = [
         recon.ArchiveEra(
-            recon.RECEIVER, r.get("rec_type"), r.get("rec_serial"),
-            r["date_from"], r["last_seen"],
+            recon.RECEIVER,
+            r.get("rec_type"),
+            r.get("rec_serial"),
+            r["date_from"],
+            r["last_seen"],
         )
         for r in rec_tl.rows
     ] + [
         recon.ArchiveEra(
-            recon.ANTENNA, r.get("antenna_type"), r.get("ant_serial"),
-            r["date_from"], r["last_seen"],
+            recon.ANTENNA,
+            r.get("antenna_type"),
+            r.get("ant_serial"),
+            r["date_from"],
+            r["last_seen"],
         )
         for r in ant_tl.rows
     ]
@@ -7324,7 +7331,18 @@ def _audit_reconstruct_main(args, client) -> int:
             hit = recon.SerialHit(
                 bucket=_bucket_map.get(res.bucket, recon.BUCKET_INCONCLUSIVE),
                 entity_id=entity_id,
-                parent=(only.open_parent_name or (str(only.open_parent_id) if only and only.open_parent_id else None)) if only else None,
+                parent=(
+                    (
+                        only.open_parent_name
+                        or (
+                            str(only.open_parent_id)
+                            if only and only.open_parent_id
+                            else None
+                        )
+                    )
+                    if only
+                    else None
+                ),
                 summary=res.recommendation,
             )
             _lookup_cache[key] = hit
@@ -7357,39 +7375,56 @@ def _audit_reconstruct_main(args, client) -> int:
             occs = parse_station_info(si_path, marker=station)
             station_info_eras = []
             for o in occs:
-                tf_o = o.time_from.date().isoformat() if hasattr(o.time_from, "date") else str(o.time_from)[:10]
-                tt_o = (
-                    None if o.time_to is None
-                    else (o.time_to.date().isoformat() if hasattr(o.time_to, "date") else str(o.time_to)[:10])
+                tf_o = (
+                    o.time_from.date().isoformat()
+                    if hasattr(o.time_from, "date")
+                    else str(o.time_from)[:10]
                 )
-                station_info_eras.append(
-                    recon.StationInfoEra(
-                        subtype=recon.RECEIVER, model=o.receiver_type or None,
-                        serial=o.receiver_sn or None, date_from=tf_o, date_to=tt_o,
+                tt_o = (
+                    None
+                    if o.time_to is None
+                    else (
+                        o.time_to.date().isoformat()
+                        if hasattr(o.time_to, "date")
+                        else str(o.time_to)[:10]
                     )
                 )
                 station_info_eras.append(
                     recon.StationInfoEra(
-                        subtype=recon.ANTENNA, model=o.antenna_type or None,
-                        serial=o.antenna_sn or None, date_from=tf_o, date_to=tt_o,
+                        subtype=recon.RECEIVER,
+                        model=o.receiver_type or None,
+                        serial=o.receiver_sn or None,
+                        date_from=tf_o,
+                        date_to=tt_o,
+                    )
+                )
+                station_info_eras.append(
+                    recon.StationInfoEra(
+                        subtype=recon.ANTENNA,
+                        model=o.antenna_type or None,
+                        serial=o.antenna_sn or None,
+                        date_from=tf_o,
+                        date_to=tt_o,
                         composite_height=o.antenna_height or None,
                     )
                 )
         except Exception as exc:  # noqa: BLE001 — enrichment is best-effort
-            print(f"  station.info enrichment failed ({si_path}): {exc}", file=sys.stderr)
+            print(
+                f"  station.info enrichment failed ({si_path}): {exc}", file=sys.stderr
+            )
             station_info_eras = None
 
     report = recon.reconcile_eras(
-        station, archive_eras, tos_joins,
+        station,
+        archive_eras,
+        tos_joins,
         current_install=current_install,
         station_id=parent_id,
         serial_lookup=_serial_lookup,
         station_info=station_info_eras,
     )
     apply_path = args.triage or "<file>"
-    text = recon.format_triage(
-        report, apply_path=apply_path, station_info_path=si_path
-    )
+    text = recon.format_triage(report, apply_path=apply_path, station_info_path=si_path)
 
     if args.triage:
         path = Path(args.triage)
@@ -9793,7 +9828,8 @@ def _audit_constellations_main(args, client) -> int:
     # this the line claims "archive RINEX 3.04" for a set the archived header
     # never contained — the raw was decoded because the header could not answer.
     src_label = (
-        "raw SBF decode" if getattr(reading, "origin", "") == "sbf_decode"
+        "raw SBF decode"
+        if getattr(reading, "origin", "") == "sbf_decode"
         else "archive RINEX"
     )
     marker = "✗" if report.has_findings else "✓"
@@ -13826,6 +13862,302 @@ def _print_station_report(report, *, verbose: bool = False):
             print("  (run with --verbose for what this means and how to fix)")
 
 
+def _search_main(argv):
+    """Handle ``tos search`` — general fleet search by attribute + device.
+
+    One bulk fetch of every geophysical station (the TOS web UI search
+    endpoint, bodyless GET), then client-side filtering:
+
+      - attribute predicates (positional expressions + ``--epos`` sugar)
+        match the station's **currently-open** attribute period — exactly
+        the Eigindi stöðvar panel in the UI;
+      - device specs (``--receiver`` / ``--device`` / negations) match the
+        station's **currently-joined** devices — the Tæki tengd stöð panel —
+        via a per-station history walk that only touches stations surviving
+        the attribute stage.
+
+    Exit codes: 0 success (0 hits is still a valid answer), 1 fetch/walk
+    error or empty fleet, 2 usage error (bad expression / spec).
+    """
+    import json as _json
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from . import search as search_mod
+    from .api.tos_client import TOSClient
+
+    p = argparse.ArgumentParser(
+        prog="tos search",
+        description=(
+            "Search the TOS fleet by station attributes and devices.\n\n"
+            "ATTRIBUTE EXPRESSIONS (positional, repeatable, AND-ed):\n"
+            "  'code = value'    equality (case-insensitive; já/nei fold\n"
+            "                    onto true/false)\n"
+            "  'code != value'   not equal (absent value also satisfies !=)\n"
+            "  'code ~ substr'   substring match\n"
+            "  'code !~ substr'  substring non-match\n"
+            "  'code = null'     attribute absent / no open period\n"
+            "  'code != null'    attribute present\n"
+            "\n"
+            "Expressions test the currently-open attribute period — the\n"
+            "value the TOS UI's Eigindi panel shows today.\n"
+            "\n"
+            "DEVICE SPECS (currently-joined devices — the Tæki tengd stöð\n"
+            "panel):\n"
+            "  --receiver MODEL   has a receiver whose model contains MODEL\n"
+            "  --device TYPE:MODEL\n"
+            "                     has a device of TYPE (receiver, antenna,\n"
+            "                     radome, monument, modem, sim, router) with\n"
+            "                     model substring MODEL; 'any' = any model.\n"
+            "  --no-receiver / --no-device ...\n"
+            "                     negated forms (must NOT have)\n"
+            "\n"
+            "Device filters cost one history walk per surviving station\n"
+            "(~1 + N_children HTTP calls each; a fleet-wide device filter\n"
+            "takes ~30-60 s — progress is printed to stderr).\n"
+            "\n"
+            "EXAMPLES\n"
+            "  tos search --epos\n"
+            "  tos search --no-epos --markers-only\n"
+            "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
+            "  tos search 'iers_domes_number != null'\n"
+            "  tos search --epos --receiver polarx5 --show iers_domes_number\n"
+            "  tos search --device router:any --device sim:any\n"
+            "  tos search --no-receiver --markers-only   # fleet hygiene\n"
+            "  tos search --json --epos > epos.json\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
+        "expressions",
+        nargs="*",
+        metavar="EXPRESSION",
+        help=(
+            "Attribute predicate 'code OP value' (OP = != ~ !~), "
+            "repeatable, AND-ed. See examples above."
+        ),
+    )
+    p.add_argument(
+        "--epos",
+        action="store_true",
+        help="Sugar for 'in_network_epos = true'.",
+    )
+    p.add_argument(
+        "--no-epos",
+        action="store_true",
+        help="Sugar for 'in_network_epos != true' (absent also counts).",
+    )
+    p.add_argument(
+        "--receiver",
+        metavar="MODEL",
+        help="Has a receiver (gnss_receiver) whose model contains MODEL.",
+    )
+    p.add_argument(
+        "--no-receiver",
+        action="store_true",
+        help="Has no receiver among its currently-joined devices.",
+    )
+    p.add_argument(
+        "--device",
+        action="append",
+        default=None,
+        metavar="[TYPE:]MODEL",
+        help=(
+            "Has a currently-joined device matching TYPE:MODEL (substring,\n"
+            "'any' = wildcard). TYPE: receiver, antenna, radome, monument,\n"
+            "modem, sim, router. Repeatable (AND)."
+        ),
+    )
+    p.add_argument(
+        "--no-device",
+        action="append",
+        default=None,
+        metavar="[TYPE:]MODEL",
+        help="Negated --device (must NOT have). Repeatable (AND).",
+    )
+    p.add_argument(
+        "--show",
+        action="append",
+        default=None,
+        metavar="CODE",
+        help=(
+            "Extra attribute code to render as a table column "
+            "(predicate codes are always shown). Repeatable."
+        ),
+    )
+    p.add_argument(
+        "--domain",
+        default="geophysical",
+        help="Station domain to search (default: geophysical).",
+    )
+    p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a structured JSON payload instead of the table.",
+    )
+    p.add_argument(
+        "--markers-only",
+        action="store_true",
+        help="Print one 4-char marker per line (pipe/xargs friendly).",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Cap the number of results (after sorting by marker).",
+    )
+    p.add_argument(
+        "--server",
+        default="vi-api.vedur.is",
+        help="TOS API host (default: vi-api.vedur.is).",
+    )
+    p.add_argument("--port", type=int, default=443)
+    p.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Suppress the stderr device-walk progress line.",
+    )
+
+    args = p.parse_args(argv)
+
+    # ---- Build predicates ----------------------------------------------
+    predicates = []
+    try:
+        for expr in args.expressions:
+            predicates.append(search_mod.parse_expression(expr))
+    except ValueError as exc:
+        print(f"tos search: {exc}", file=sys.stderr)
+        return 2
+    if args.epos:
+        predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "=", "true"))
+    if args.no_epos:
+        predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "!=", "true"))
+
+    # ---- Build device specs ---------------------------------------------
+    device_must, device_must_not = [], []
+    try:
+        if args.receiver is not None:
+            device_must.append(
+                search_mod.parse_device_spec(f"receiver:{args.receiver}", negate=False)
+            )
+        if args.no_receiver:
+            device_must_not.append(
+                search_mod.parse_device_spec("receiver:any", negate=True)
+            )
+        for raw in args.device or []:
+            device_must.append(search_mod.parse_device_spec(raw))
+        for raw in args.no_device or []:
+            device_must_not.append(search_mod.parse_device_spec(raw, negate=True))
+    except ValueError as exc:
+        print(f"tos search: {exc}", file=sys.stderr)
+        return 2
+
+    # ---- Run pipeline ----------------------------------------------------
+    scheme = "https" if args.port == 443 else "http"
+    base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+    client = TOSClient(base_url=base_url)
+
+    progress = search_mod.stderr_progress(args.no_progress, args.json)
+    try:
+        result = search_mod.search_stations(
+            client,
+            predicates,
+            device_must=device_must,
+            device_must_not=device_must_not,
+            show_codes=args.show or [],
+            domain=args.domain,
+            progress=progress,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface any transport failure
+        print(f"tos search: fleet fetch failed: {exc}", file=sys.stderr)
+        return 1
+
+    if progress is not None:
+        sys.stderr.write("\n")  # newline after the \r progress line
+
+    stations = result.stations
+    if args.limit is not None:
+        stations = stations[: args.limit]
+
+    # ---- Render ----------------------------------------------------------
+    if args.markers_only:
+        for st in stations:
+            marker = search_mod.open_value(st, "marker")
+            print(marker.upper() if marker else st.get("id_entity"))
+        return 0
+
+    if args.json:
+        payload = {
+            "count": len(stations),
+            "criteria": {
+                "attributes": [pred.describe() for pred in result.predicates],
+                "devices": [spec.describe() for spec in result.device_must]
+                + [spec.describe() for spec in result.device_must_not],
+                "domain": args.domain,
+            },
+            "stations": [
+                {
+                    "id_entity": st.get("id_entity"),
+                    "marker": search_mod.open_value(st, "marker"),
+                    "name": search_mod.open_value(st, "name"),
+                    "attributes": {
+                        code: search_mod.open_value(st, code)
+                        for code in result.attribute_codes
+                    },
+                    "devices": (
+                        result.devices_by_id.get(st.get("id_entity"), [])
+                        if result.device_filters_active
+                        else []
+                    ),
+                }
+                for st in stations
+            ],
+        }
+        print(_json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    # Table mode (Rich, matching `tos device list` styling).
+    crit_bits = [pred.describe() for pred in result.predicates] + [
+        spec.describe() for spec in result.device_must + result.device_must_not
+    ]
+    crit = "  AND  ".join(crit_bits) if crit_bits else "(all stations)"
+    print(f"{len(stations)} station(s) match: {crit}")
+    if not stations:
+        return 0
+
+    table = Table(box=None, show_edge=False, pad_edge=False)
+    table.add_column("MARKER", no_wrap=True)
+    table.add_column("NAME", no_wrap=True)
+    for code in result.attribute_codes:
+        table.add_column(code.upper(), no_wrap=True)
+    if result.device_filters_active:
+        table.add_column("MATCHED DEVICES", no_wrap=True)
+
+    for st in stations:
+        row = [
+            (search_mod.open_value(st, "marker") or "?").upper(),
+            search_mod.open_value(st, "name") or "—",
+        ]
+        for code in result.attribute_codes:
+            row.append(search_mod.open_value(st, code) or "—")
+        if result.device_filters_active:
+            devices = result.devices_by_id.get(st.get("id_entity"), [])
+            hits = []
+            for spec in result.device_must:
+                for d in devices:
+                    if search_mod.device_spec_matches(d, spec):
+                        model = d.get("model") or d.get("subtype") or "?"
+                        hits.append(str(model))
+                        break
+            row.append(", ".join(hits) if hits else "—")
+        table.add_row(*row)
+
+    Console().print(table)
+    return 0
+
+
 def _print_top_level_help() -> None:
     """Umbrella help — lists every subcommand.
 
@@ -13932,6 +14264,15 @@ def _print_top_level_help() -> None:
         "                            change-subtype / decommission / defer.\n"
         "                            Dry-run by default.\n"
         "\n"
+        "  search     Fleet-wide station search by attribute + device criteria.\n"
+        "               search --epos               stations in EPOS\n"
+        "               search --no-epos --markers-only\n"
+        "               search 'bedrock_type = igneous'\n"
+        "               search 'iers_domes_number != null'\n"
+        "               search --receiver polarx5    device-type filters\n"
+        "             One bulk TOS fetch + client-side filtering;\n"
+        "             --json / --markers-only for scripting.\n"
+        "\n"
         "Per-subcommand help: `tos <subcommand> --help`.\n"
     )
 
@@ -13965,6 +14306,8 @@ def main(argv=None):
             return _fleet_main(rest)
         if subcmd == "visit":
             return _visit_main(rest)
+        if subcmd == "search":
+            return _search_main(rest)
     print(f"tos: unknown subcommand {argv[0]!r}\n", file=sys.stderr)
     _print_top_level_help()
     return 2

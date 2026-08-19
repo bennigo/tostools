@@ -159,6 +159,23 @@ class TOSClient:
         self.logger.info(f"Total unique stations found: {len(unique_stations)}")
         return unique_stations
 
+    def list_stations(self, domain: str = "geophysical") -> List[Dict[str, Any]]:
+        """Bulk-fetch every station entity in a domain (bodyless GET).
+
+        The same ``/entity/search/{type}/{domain}/`` endpoint as
+        :meth:`search_stations`, but without a ``code``/``value`` body —
+        the API then returns the whole domain fleet, each object carrying
+        its ``attributes`` list (the data the TOS web UI station panel
+        renders). One HTTP call for ~200 geophysical stations.
+
+        Returns ``[]`` on transport/API error (``_make_request`` None).
+        """
+        entity_type = "platform" if domain == "remote_sensing_platform" else "station"
+        result = self._make_request(f"/entity/search/{entity_type}/{domain}/")
+        if isinstance(result, dict) and "objects" in result:
+            return result["objects"] or []
+        return result if isinstance(result, list) else []
+
     def get_station_metadata(
         self, station_identifier: str, domains: str = "geophysical"
     ) -> tuple[Optional[Dict], Optional[Dict]]:
