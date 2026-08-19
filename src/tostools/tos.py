@@ -6302,6 +6302,21 @@ def _visit_main(argv):
             print(f"         completed       = {not args.no_completed}")
             print()
 
+        # The writer can only detect an unstorable reason AFTER the POST, when
+        # TOS reveals which reason rows it seeded — too late for a dry run to
+        # help. These two are already documented (MAINTENANCE_REASON_DISPLAY)
+        # as unused in the GPS fleet, and live TOS seeds no row for them, so
+        # flag them here, while the operator can still change the command.
+        _unstorable = sorted(set(args.reasons or []) & {"inspection", "other"})
+        if _unstorable and not args.json:
+            print(
+                f"⚠️  reason {', '.join(_unstorable)}: TOS seeds no attribute row "
+                f"for this on GPS station vitjanir, so it will NOT be stored "
+                f"(the vitjun itself and its work/comment text are unaffected). "
+                f"Stored reasons are: change, repairs, improvements.",
+                file=sys.stderr,
+            )
+
         # Writer validates reason codes + maintenance_type + dates;
         # surface ValueError as exit 1 with the writer's message.
         try:

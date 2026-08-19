@@ -2166,6 +2166,25 @@ class TOSWriter:
                         "value": "true" if r in reason_set else "false",
                     }
                 )
+        # TOS auto-seeds only the reason rows it actually models — today
+        # change / repairs / improvements. A reason with no seeded row cannot
+        # be written, and the loop above skips it in silence: the CLI accepted
+        # `--reason inspection`, reported the vitjun created, and the record
+        # came back with no reason at all (VMEY 5654). Say so, and name what
+        # TOS will take, rather than report a write that did not happen.
+        dropped = sorted(r for r in reason_set if f"reason_{r}" not in by_code)
+        if dropped:
+            accepted = sorted(
+                c[len("reason_") :] for c in by_code if c.startswith("reason_")
+            )
+            logger.warning(
+                "vitjun %s: reason(s) %s NOT stored — TOS seeds no attribute "
+                "row for them on this record. Reasons it accepts here: %s. "
+                "The vitjun is still created; work/comment are unaffected.",
+                new_id,
+                ", ".join(dropped),
+                ", ".join(accepted) or "(none)",
+            )
         for code, value in (
             ("work", work),
             ("comment", comment),
