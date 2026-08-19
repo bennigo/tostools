@@ -266,6 +266,74 @@ def devices_satisfy(
 
 
 # ---------------------------------------------------------------------------
+# Attribute discovery (—-attribute-list / --allowed-values)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AttributeInventory:
+    """Vocabulary discovery for one attribute code across a fleet listing.
+
+    ``values`` are the distinct observed values with the number of stations
+    carrying each (open or historical periods — the question answered is
+    'what has TOS ever accepted here', which is what an operator needs
+    before writing a predicate). ``constraint`` is TOS's own
+    ``python_constraint`` regex from the attribute metadata.
+    """
+
+    code: str
+    name_is: Optional[str] = None
+    description_en: Optional[str] = None
+    datatype: Optional[str] = None
+    constraint: Optional[str] = None
+    station_count: int = 0
+    values: List[tuple] = field(default_factory=list)
+
+
+def attribute_inventory(
+    stations: List[dict], code: Optional[str] = None
+) -> List[AttributeInventory]:
+    """Aggregate distinct attribute codes / values over a fleet listing.
+
+    ``code`` restricts the inventory to one attribute (single-element list,
+    empty when the code is never observed). Station counts are distinct
+    id_entities; per-value counts likewise count stations, not periods.
+    """
+    agg: Dict[str, Dict[str, Any]] = {}
+    for st in stations:
+        sid = st.get("id_entity")
+        for a in st.get("attributes") or []:
+            c = a.get("code")
+            if not c or (code is not None and c != code):
+                continue
+            entry = agg.setdefault(c, {"stations": set(), "values": {}, "meta": a})
+            entry["stations"].add(sid)
+            v = a.get("value")
+            if v is not None:
+                entry["values"].setdefault(str(v), set()).add(sid)
+    out: List[AttributeInventory] = []
+    for c, e in agg.items():
+        meta = e["meta"]
+        values = sorted(
+            ((v, len(ids)) for v, ids in e["values"].items()),
+            key=lambda x: (-x[1], x[0]),
+        )
+        out.append(
+            AttributeInventory(
+                code=c,
+                name_is=meta.get("name_is"),
+                description_en=meta.get("description_en"),
+                datatype=meta.get("attribute_datatype_code"),
+                constraint=meta.get("python_constraint"),
+                station_count=len(e["stations"]),
+                values=values,
+            )
+        )
+    out.sort(key=lambda i: (-i.station_count, i.code))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Fleet fetch + device walk
 # ---------------------------------------------------------------------------
 

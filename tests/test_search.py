@@ -21,6 +21,7 @@ import pytest
 from tostools.search import (
     DeviceSpec,
     Predicate,
+    attribute_inventory,
     devices_satisfy,
     filter_by_predicates,
     norm_value,
@@ -375,6 +376,77 @@ class TestDevicesSatisfy:
         assert devices_satisfy(self.DEVICES, must, [])
 
 
+def _attr_meta(code: str, value: str, **meta) -> dict:
+    """Attribute row carrying the TOS metadata fields the bulk listing has."""
+    row = _attr(code, value)
+    row.update(
+        {
+            "attribute_datatype_code": "text",
+            "name_is": {"continuity": "Samfella"}.get(code, code.title()),
+            "description_en": None,
+            "python_constraint": ".*",
+        }
+    )
+    row.update(meta)
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Attribute discovery (—-attribute-list / --allowed-values)
+# ---------------------------------------------------------------------------
+
+
+class TestAttributeInventory:
+    def _fleet(self):
+        return [
+            {
+                "id_entity": 1,
+                "attributes": [
+                    _attr_meta("continuity", "continuous"),
+                    _attr_meta("marker", "aaa"),
+                ],
+            },
+            {
+                "id_entity": 2,
+                "attributes": [
+                    _attr_meta("continuity", "continuous"),
+                    _attr_meta("continuity", "samfelld", date_to="2020-01-01T00:00:00"),
+                    _attr_meta("marker", "bbb"),
+                ],
+            },
+            {"id_entity": 3, "attributes": [_attr_meta("marker", "ccc")]},
+        ]
+
+    def test_counts_distinct_stations_per_code(self):
+        inv = attribute_inventory(self._fleet())
+        by_code = {i.code: i for i in inv}
+        assert by_code["marker"].station_count == 3
+        assert by_code["continuity"].station_count == 2
+
+    def test_values_count_stations_not_periods(self):
+        # Station 2 carries continuous (open) AND a closed samfelld — both
+        # observed; 'continuous' still counts 2 distinct stations, not 3 rows.
+        inv = attribute_inventory(self._fleet())
+        cont = next(i for i in inv if i.code == "continuity")
+        assert dict(cont.values)["continuous"] == 2
+        assert dict(cont.values)["samfelld"] == 1
+
+    def test_sorted_by_station_count_then_code(self):
+        inv = attribute_inventory(self._fleet())
+        assert [i.code for i in inv] == ["marker", "continuity"]
+
+    def test_single_code_filter(self):
+        inv = attribute_inventory(self._fleet(), code="continuity")
+        assert len(inv) == 1 and inv[0].code == "continuity"
+        assert attribute_inventory(self._fleet(), code="nope") == []
+
+    def test_metadata_carried_through(self):
+        inv = attribute_inventory(self._fleet(), code="continuity")
+        assert inv[0].name_is == "Samfella"
+        assert inv[0].datatype == "text"
+        assert inv[0].constraint == ".*"
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -466,7 +538,10 @@ def _run_cli(argv: List[str], fleet, devices=None, capsys=None):
     fake = FakeClient(fleet, devices)
     with patch("tostools.api.tos_client.TOSClient", return_value=fake):
         rc = _search_main(argv)
-    out = capsys.readouterr().out if capsys else None
+    out = ""
+    if capsys:
+        captured = capsys.readouterr()
+        out = captured.out + captured.err
     return rc, out
 
 
@@ -564,3 +639,55 @@ class TestSearchCli:
         rc, out = _run_cli(["--markers-only"], self._fleet(), capsys=capsys)
         assert rc == 0
         assert out.split() == ["KRAC", "RHOF", "VMEY"]
+
+
+class TestDiscoveryCli:
+    def _fleet(self):
+        return [
+            {
+                "id_entity": 1,
+                "attributes": [
+                    _attr_meta("marker", "aaa"),
+                    _attr_meta("continuity", "continuous"),
+                ],
+            },
+            {
+                "id_entity": 2,
+                "attributes": [
+                    _attr_meta("marker", "bbb"),
+                    _attr_meta("continuity", "campaign"),
+                ],
+            },
+        ]
+
+    def test_attribute_list(self, capsys):
+        rc, out = _run_cli(["--attribute-list"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert "marker" in out and "continuity" in out
+        assert "2 attribute code(s) observed" in out
+        # station counts rendered
+        assert "Samfella" in out
+
+    def test_allowed_values(self, capsys):
+        rc, out = _run_cli(
+            ["--attribute", "continuity", "--allowed-values"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "Samfella" in out
+        assert "continuous" in out and "campaign" in out
+        assert "constraint" in out
+
+    def test_allowed_values_without_attribute_is_usage_error(self, capsys):
+        rc, _ = _run_cli(["--allowed-values"], self._fleet(), capsys=capsys)
+        assert rc == 2
+
+    def test_unknown_attribute_is_error(self, capsys):
+        rc, out = _run_cli(
+            ["--attribute", "warpfield", "--allowed-values"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 1
+        assert "never observed" in out  # stderr message

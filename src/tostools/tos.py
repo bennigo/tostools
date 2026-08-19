@@ -13941,6 +13941,11 @@ def _search_main(argv):
             "  tos search --device router:any --device sim:any\n"
             "  tos search --no-receiver --markers-only   # fleet hygiene\n"
             "  tos search --json --epos > epos.json\n"
+            "\n"
+            "DISCOVERY (before writing a predicate):\n"
+            "  tos search --attribute-list          # what codes exist\n"
+            "  tos search --attribute continuity --allowed-values\n"
+            "                                      # what values it takes\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -14002,6 +14007,30 @@ def _search_main(argv):
         ),
     )
     p.add_argument(
+        "--attribute-list",
+        action="store_true",
+        help=(
+            "Discovery: list every attribute code observed on entities in "
+            "the domain (station counts, Icelandic label) and exit. "
+            "Answers 'what can I filter on?'"
+        ),
+    )
+    p.add_argument(
+        "--attribute",
+        metavar="CODE",
+        help="Discovery: the attribute code to inspect with --allowed-values.",
+    )
+    p.add_argument(
+        "--allowed-values",
+        action="store_true",
+        help=(
+            "Discovery: with --attribute CODE, list the distinct observed "
+            "values (per-station counts) plus TOS's own datatype / "
+            "python_constraint, and exit. Answers 'what may I compare "
+            "against?'"
+        ),
+    )
+    p.add_argument(
         "--domain",
         default="geophysical",
         help="Station domain to search (default: geophysical).",
@@ -14036,6 +14065,51 @@ def _search_main(argv):
     )
 
     args = p.parse_args(argv)
+
+    # ---- Discovery modes (no predicates needed) --------------------------
+    if args.attribute_list or args.allowed_values:
+        if args.allowed_values and not args.attribute:
+            print(
+                "tos search: --allowed-values needs --attribute CODE",
+                file=sys.stderr,
+            )
+            return 2
+        scheme = "https" if args.port == 443 else "http"
+        base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+        client = TOSClient(base_url=base_url)
+        try:
+            fleet = search_mod.fetch_fleet(client, domain=args.domain)
+        except Exception as exc:  # noqa: BLE001
+            print(f"tos search: fleet fetch failed: {exc}", file=sys.stderr)
+            return 1
+        if args.attribute_list:
+            inv = search_mod.attribute_inventory(fleet)
+            print(
+                f"{len(inv)} attribute code(s) observed on {len(fleet)} "
+                f"{args.domain} entities (filter with 'code = value' etc.):"
+            )
+            print(f"  {'CODE':32s} {'STATIONS':>8s}  LABEL")
+            for i in inv:
+                label = i.name_is or ""
+                print(f"  {i.code:32s} {i.station_count:>8d}  {label}")
+            return 0
+        inv = search_mod.attribute_inventory(fleet, code=args.attribute)
+        if not inv:
+            print(
+                f"tos search: attribute {args.attribute!r} never observed "
+                f"on {args.domain} entities — try --attribute-list",
+                file=sys.stderr,
+            )
+            return 1
+        i = inv[0]
+        print(f"{i.code} — {i.name_is or '(no Icelandic label)'}")
+        if i.description_en:
+            print(f"  description: {i.description_en}")
+        print(f"  datatype: {i.datatype or '?'}   constraint: {i.constraint or '?'}")
+        print(f"  carried by {i.station_count} station(s); observed values:")
+        for value, n in i.values:
+            print(f"    {value!r:24s} {n:>4d} station(s)")
+        return 0
 
     # ---- Build predicates ----------------------------------------------
     predicates = []
