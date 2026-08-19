@@ -40,13 +40,32 @@ class TestIsSyntheticSerial:
             "000000",  # the legacy no-serial fallback, not a sentinel
             "",
             None,
-            "antenna-eldc-2020012",  # 7-digit date: not the pattern
             "antenna-eld-20200129",  # 3-char marker: not the pattern
             "SEPCHOKE-eldc-20200129",  # not one of the three subtypes
         ],
     )
     def test_leaves_everything_else_alone(self, value):
         assert is_synthetic_serial(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "antenna-VMEY-2023011",  # the 66 VMEY headers: A20 ate one digit
+            "antenna-eldc-2020012",
+            "monument-ABCD-199912",  # 22 chars -> A20 eats two
+        ],
+    )
+    # The floor is 6 digits, the worst truncation the convention can produce
+    # (monument-, 22 chars). Anything shorter would start claiming real serials
+    # such as ``antenna-part-1234`` — asserted below.
+    def test_recognises_a_field_truncated_sentinel(self, value):
+        # Regression: this predicate used to demand exactly 8 digits, so a
+        # placeholder truncated by RINEX's A20 ``ANT # / TYPE`` field read as a
+        # REAL serial. That is how 66 VMEY headers defeated the reconstruct
+        # dup-guard — the truncated value matched no TOS device, so the verb
+        # proposed minting a duplicate antenna. Classifying a truncated
+        # placeholder as real is the more expensive of the two errors.
+        assert is_synthetic_serial(value) is True
 
     def test_agrees_with_the_minter(self):
         # If synthetic_serial's format ever changes, this catches the predicate
