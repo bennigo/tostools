@@ -345,7 +345,25 @@ def _get_corrections_from_config(
     ant_serial = antenna_cfg.get("serial", "")
     ant_type = antenna_cfg.get("type", "")
     ant_radome = antenna_cfg.get("radome", "NONE")
-    if ant_serial:
+    # Same guard the TOS branch already applies. This branch wrote whatever
+    # stations.cfg held, and `cfg sync-from-tos` mirrors antenna_serial FROM
+    # TOS — so TOS's synthetic placeholders reached cfg and then the header.
+    # 26 stations carry one today. At 21 chars `antenna-thob-20200128` does not
+    # fit the A20 field: it truncated to `antenna-thob-2020012`, filling the
+    # column exactly so the serial abuts the antenna type with no separator.
+    # Measured 2026-08-19 — 19 stations had a malformed ANT # / TYPE in their
+    # most recent daily file, and a fresh conversion on rek-d01 still produced
+    # one, because the earlier fixes guarded the metadata_provider and
+    # validator paths and never this one.
+    had_serial = bool(ant_serial)
+    if _is_placeholder_serial(ant_serial):
+        ant_serial = "0000"
+    # Emit on serial OR type, and never on neither. Gating on the serial alone
+    # would drop the antenna TYPE and RADOME along with a suppressed serial —
+    # a worse header than a blank serial field (metadata_provider makes the
+    # same call). Gating on nothing would stamp a bare "0000" onto a station
+    # with no antenna configured at all.
+    if had_serial or ant_type:
         # Format: serial (20) + type with radome (20)
         ant_type_full = f"{ant_type:<15} {ant_radome:<4}" if ant_type else ""
         corrections["ANT # / TYPE"] = [ant_serial, ant_type_full]
