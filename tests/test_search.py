@@ -745,3 +745,64 @@ class TestActiveGpsFlag:
         )
         assert rc == 0
         assert out.split() == ["GOOD"]
+
+
+class TestSugarFlags:
+    """The individual --discontinued / --continuous / --no-ice sugars."""
+
+    def _fleet(self):
+        def st(sid, marker, **extra_codes):
+            attrs = [_attr("marker", marker), _attr("name", marker)]
+            for code, val in extra_codes.items():
+                attrs.append(_attr(code, val))
+            return {"id_entity": sid, "attributes": attrs}
+
+        return [
+            st(1, "live", continuity="continuous", geological_characteristic="bedrock"),
+            st(2, "ended", continuity="continuous", date_end="2017-01-01 00:00"),
+            st(3, "ice", continuity="continuous", geological_characteristic="ice"),
+            st(4, "camp", continuity="campaign", geological_characteristic="bedrock"),
+            st(5, "nofill"),  # no continuity, no geology, no date_end
+        ]
+
+    def test_discontinued(self, capsys):
+        rc, out = _run_cli(
+            ["--discontinued", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["ENDED"]
+
+    def test_continuous_is_strict(self, capsys):
+        # only recorded-continuous passes: nofill (unrecorded) and camp drop
+        rc, out = _run_cli(
+            ["--continuous", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["ENDED", "ICE", "LIVE"]
+
+    def test_no_ice_is_lenient(self, capsys):
+        # ice drops; unrecorded geology (nofill) stays
+        rc, out = _run_cli(["--no-ice", "--markers-only"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert out.split() == ["CAMP", "ENDED", "LIVE", "NOFILL"]
+
+    def test_compose(self, capsys):
+        rc, out = _run_cli(
+            ["--continuous", "--no-ice", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["ENDED", "LIVE"]
+
+    def test_predicates_in_criteria(self, capsys):
+        rc, out = _run_cli(
+            ["--discontinued", "--continuous", "--no-ice", "--json"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        assert payload["criteria"]["attributes"] == [
+            "date_end != null",
+            "continuity = continuous",
+            "geological_characteristic != ice",
+        ]

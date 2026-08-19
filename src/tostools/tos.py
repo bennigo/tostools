@@ -13937,6 +13937,8 @@ def _search_main(argv):
             "  tos search --no-epos --markers-only\n"
             "  tos search --active-gps --no-receiver   # operational fleet\n"
             "                                          # missing receivers\n"
+            "  tos search --discontinued --markers-only  # ended stations\n"
+            "  tos search --continuous --no-ice          # continuous bedrock\n"
             "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
             "  tos search 'iers_domes_number != null'\n"
             "  tos search --epos --receiver polarx5 --show iers_domes_number\n"
@@ -13978,6 +13980,27 @@ def _search_main(argv):
             "'date_end = null' 'geological_characteristic != ice' "
             "'continuity = continuous'. Composes with every other "
             "flag/expression."
+        ),
+    )
+    p.add_argument(
+        "--discontinued",
+        action="store_true",
+        help="Sugar for 'date_end != null' (station has an end date).",
+    )
+    p.add_argument(
+        "--continuous",
+        action="store_true",
+        help=(
+            "Sugar for 'continuity = continuous' (strict: Samfella recorded "
+            "AND continuous; unrecorded does not pass)."
+        ),
+    )
+    p.add_argument(
+        "--no-ice",
+        action="store_true",
+        help=(
+            "Sugar for 'geological_characteristic != ice' (excludes glacier "
+            "sites; stations with unrecorded geology still pass)."
         ),
     )
     p.add_argument(
@@ -14137,6 +14160,14 @@ def _search_main(argv):
         predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "!=", "true"))
     if args.active_gps:
         predicates.extend(search_mod.ACTIVE_GPS_PREDICATES)
+    if args.discontinued:
+        predicates.append(search_mod.Predicate("date_end", "!=", "null"))
+    if args.continuous:
+        predicates.append(search_mod.Predicate("continuity", "=", "continuous"))
+    if args.no_ice:
+        predicates.append(
+            search_mod.Predicate("geological_characteristic", "!=", "ice")
+        )
 
     # ---- Build device specs ---------------------------------------------
     device_must, device_must_not = [], []
