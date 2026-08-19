@@ -13906,6 +13906,9 @@ def _search_main(argv):
         prog="tos search",
         description=(
             "Search the TOS fleet by station attributes and devices.\n\n"
+            "DEFAULT SCOPE: 'subtype = GPS stöð' is applied automatically.\n"
+            "Lift it with 'subtype = all', or select types explicitly with\n"
+            "'subtype = [GPS stöð, SIL stöð, ...]'.\n\n"
             "ATTRIBUTE EXPRESSIONS (positional, repeatable, AND-ed):\n"
             "  'code = value'    equality (case-insensitive; já/nei fold\n"
             "                    onto true/false)\n"
@@ -13914,6 +13917,9 @@ def _search_main(argv):
             "  'code !~ substr'  substring non-match\n"
             "  'code = null'     attribute absent / no open period\n"
             "  'code != null'    attribute present\n"
+            "  'code = [a, b]'   value is one of a, b (in-list)\n"
+            "  'code != [a, b]'  value is none of a, b\n"
+            "  'code = all'      match everything (lifts a scope filter)\n"
             "\n"
             "Expressions test the currently-open attribute period — the\n"
             "value the TOS UI's Eigindi panel shows today.\n"
@@ -13940,6 +13946,9 @@ def _search_main(argv):
             "  tos search --discontinued --markers-only  # ended stations\n"
             "  tos search --continuous --no-ice          # continuous bedrock\n"
             "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
+            "  tos search 'subtype = SIL stöð'            # non-GPS type\n"
+            "  tos search 'subtype = [GPS stöð, SIL stöð]'  # multiple types\n"
+            "  tos search 'subtype = all' --markers-only  # every type\n"
             "  tos search 'iers_domes_number != null'\n"
             "  tos search --epos --receiver polarx5 --show iers_domes_number\n"
             "  tos search --device router:any --device sim:any\n"
@@ -14168,6 +14177,12 @@ def _search_main(argv):
         predicates.append(
             search_mod.Predicate("geological_characteristic", "!=", "ice")
         )
+
+    # Default scope: GPS stations. Lifted by an explicit subtype expression
+    # ('subtype = X', 'subtype = [a, b]', 'subtype = all') or by --active-gps
+    # (whose predicate chain already pins subtype = GPS stöð).
+    if not any(p.code == "subtype" for p in predicates):
+        predicates.insert(0, search_mod.Predicate("subtype", "=", "GPS stöð"))
 
     # ---- Build device specs ---------------------------------------------
     device_must, device_must_not = [], []

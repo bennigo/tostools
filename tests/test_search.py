@@ -584,7 +584,10 @@ class TestSearchCli:
         assert rc == 0
         payload = json.loads(out)
         assert payload["count"] == 2
-        assert payload["criteria"]["attributes"] == ["in_network_epos = true"]
+        assert payload["criteria"]["attributes"] == [
+            "subtype = GPS stöð",
+            "in_network_epos = true",
+        ]
         markers = {s["marker"] for s in payload["stations"]}
         assert markers == {"VMEY", "RHOF"}
         # show codes/predicate codes surfaced per station
@@ -752,7 +755,11 @@ class TestSugarFlags:
 
     def _fleet(self):
         def st(sid, marker, **extra_codes):
-            attrs = [_attr("marker", marker), _attr("name", marker)]
+            attrs = [
+                _attr("marker", marker),
+                _attr("name", marker),
+                _attr("subtype", "GPS stöð"),
+            ]
             for code, val in extra_codes.items():
                 attrs.append(_attr(code, val))
             return {"id_entity": sid, "attributes": attrs}
@@ -802,7 +809,130 @@ class TestSugarFlags:
         assert rc == 0
         payload = json.loads(out)
         assert payload["criteria"]["attributes"] == [
+            "subtype = GPS stöð",
             "date_end != null",
             "continuity = continuous",
             "geological_characteristic != ice",
         ]
+
+
+class TestListAndAllPredicates:
+    """'code = [a, b]' list syntax and 'code = all' keyword."""
+
+    @staticmethod
+    def _st(subtype):
+        return {
+            "id_entity": 1,
+            "attributes": [_attr("marker", "a"), _attr("subtype", subtype)],
+        }
+
+    def test_parse_list_in(self):
+        pred = parse_expression("subtype = [GPS stöð, SIL stöð]")
+        assert pred.op == "in"
+        assert pred.values == ("GPS stöð", "SIL stöð")
+
+    def test_parse_list_not_in(self):
+        pred = parse_expression("subtype != [GPS stöð, SIL stöð]")
+        assert pred.op == "not in"
+        assert pred.values == ("GPS stöð", "SIL stöð")
+
+    def test_parse_empty_list_raises(self):
+        with pytest.raises(ValueError, match="empty list"):
+            parse_expression("subtype = []")
+
+    def test_list_on_substring_op_raises(self):
+        with pytest.raises(ValueError, match="only supports"):
+            parse_expression("subtype ~ [GPS stöð]")
+
+    def test_in_match(self):
+        assert predicate_matches(
+            self._st("SIL stöð"), parse_expression("subtype = [GPS stöð, SIL stöð]")
+        )
+
+    def test_in_no_match(self):
+        assert not predicate_matches(
+            self._st("DOAS"), parse_expression("subtype = [GPS stöð, SIL stöð]")
+        )
+
+    def test_not_in_match(self):
+        assert predicate_matches(
+            self._st("DOAS"), parse_expression("subtype != [GPS stöð, SIL stöð]")
+        )
+
+    def test_not_in_absent_passes(self):
+        assert predicate_matches(
+            {"id_entity": 1, "attributes": [_attr("marker", "a")]},
+            parse_expression("subtype != [GPS stöð]"),
+        )
+
+    def test_all_matches_everything(self):
+        assert predicate_matches(self._st("DOAS"), parse_expression("subtype = all"))
+
+    def test_not_all_matches_nothing(self):
+        assert not predicate_matches(
+            self._st("GPS stöð"), parse_expression("subtype != all")
+        )
+
+    def test_describe_list(self):
+        assert (
+            parse_expression("subtype = [GPS stöð, SIL stöð]").describe()
+            == "subtype in [GPS stöð, SIL stöð]"
+        )
+
+
+class TestSubtypeDefault:
+    """CLI defaults to subtype = GPS stöð unless overridden."""
+
+    def _fleet(self):
+        return [
+            {
+                "id_entity": 1,
+                "attributes": [_attr("marker", "gps1"), _attr("subtype", "GPS stöð")],
+            },
+            {
+                "id_entity": 2,
+                "attributes": [_attr("marker", "sil1"), _attr("subtype", "SIL stöð")],
+            },
+            {
+                "id_entity": 3,
+                "attributes": [_attr("marker", "gas1"), _attr("subtype", "DOAS")],
+            },
+            {
+                "id_entity": 4,
+                "attributes": [_attr("marker", "gps2"), _attr("subtype", "GPS stöð")],
+            },
+        ]
+
+    def test_default_is_gps(self, capsys):
+        rc, out = _run_cli(["--markers-only"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert out.split() == ["GPS1", "GPS2"]
+
+    def test_explicit_type(self, capsys):
+        rc, out = _run_cli(
+            ["subtype = SIL stöð", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["SIL1"]
+
+    def test_list_type(self, capsys):
+        rc, out = _run_cli(
+            ["subtype = [GPS stöð, SIL stöð]", "--markers-only"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert out.split() == ["GPS1", "GPS2", "SIL1"]
+
+    def test_all(self, capsys):
+        rc, out = _run_cli(
+            ["subtype = all", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["GAS1", "GPS1", "GPS2", "SIL1"]
+
+    def test_default_shown_in_criteria(self, capsys):
+        rc, out = _run_cli(["--json"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        payload = json.loads(out)
+        assert payload["criteria"]["attributes"] == ["subtype = GPS stöð"]

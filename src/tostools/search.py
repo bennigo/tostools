@@ -83,15 +83,22 @@ EPOS_CODE = "in_network_epos"
 class Predicate:
     """One station-attribute criterion: ``code op value``.
 
-    ``op`` is one of ``=``, ``!=``, ``~``, ``!~``. The value ``null``
-    (any casing) tests absence (``=``) or presence (``!=``) of the code.
+    ``op`` is one of ``=``, ``!=``, ``~``, ``!~``, plus the list forms
+    ``in`` / ``not in`` (``code = [a, b]``). The value ``null`` (any
+    casing) tests absence (``=``) or presence (``!=``) of the code; the
+    value ``all`` (any casing) matches everything (``=``) or nothing
+    (``!=``) — used by ``subtype = all`` to lift the default GPS scope.
     """
 
     code: str
     op: str
-    value: str
+    value: str = ""
+    values: tuple = ()
 
     def describe(self) -> str:
+        if self.op in ("in", "not in"):
+            opstr = "in" if self.op == "in" else "not in"
+            return f"{self.code} {opstr} [{', '.join(self.values)}]"
         return f"{self.code} {self.op} {self.value}"
 
 
@@ -121,7 +128,22 @@ def parse_expression(expr: str) -> Predicate:
             "= != ~ !~ (e.g. 'in_network_epos = true', 'marker ~ ve')"
         )
     code, op, value = m.groups()
-    return Predicate(code=code.lower(), op=op, value=value)
+    code = code.lower()
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        items = [v.strip() for v in stripped[1:-1].split(",") if v.strip()]
+        if not items:
+            raise ValueError(
+                f"empty list in {expr!r} — e.g. 'subtype = [GPS stöð, SIL stöð]'"
+            )
+        if op == "=":
+            return Predicate(code=code, op="in", values=tuple(items))
+        if op == "!=":
+            return Predicate(code=code, op="not in", values=tuple(items))
+        raise ValueError(
+            f"list value only supports '=' / '!=' (got {op!r} in {expr!r})"
+        )
+    return Predicate(code=code, op=op, value=value)
 
 
 def open_value(entity: dict, code: str) -> Optional[str]:
@@ -146,7 +168,19 @@ def open_value(entity: dict, code: str) -> Optional[str]:
 def predicate_matches(station: dict, pred: Predicate) -> bool:
     """Evaluate one :class:`Predicate` against a bulk-listing station dict."""
     current = open_value(station, pred.code)
+    if pred.op == "in":
+        if current is None:
+            return False
+        wanted = {norm_value(v) for v in pred.values}
+        return norm_value(current) in wanted
+    if pred.op == "not in":
+        if current is None:
+            return True  # absent is trivially "not in" the list
+        wanted = {norm_value(v) for v in pred.values}
+        return norm_value(current) not in wanted
     if pred.op in ("=", "!="):
+        if norm_value(pred.value) == "all":
+            return pred.op == "="  # '= all' → True; '!= all' → False
         if is_null_term(pred.value):
             present = current is not None
             return present if pred.op == "!=" else not present

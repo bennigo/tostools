@@ -326,6 +326,8 @@ tos fleet status                   # bulk verify oracle (exit 0/1/2)
 tos fleet triage                   # generate per-station triage files
 tos fleet contact-dates --triage F # fleet-wide contact migration-date sweep
 tos search --epos                  # fleet search: attributes + devices
+# (defaults to subtype = GPS stöð; use 'subtype = SIL stöð' /
+#  'subtype = [GPS stöð, SIL stöð]' / 'subtype = all' to override)
 tos search 'bedrock_type = igneous' --json
 tos search --no-receiver --markers-only   # e.g. fleet hygiene
 tos search --active-gps --no-receiver     # operational GNSS fleet (sugar:
