@@ -166,15 +166,28 @@ class TOSClient:
         :meth:`search_stations`, but without a ``code``/``value`` body —
         the API then returns the whole domain fleet, each object carrying
         its ``attributes`` list (the data the TOS web UI station panel
-        renders). One HTTP call for ~200 geophysical stations.
+        renders). One HTTP call for ~450 geophysical stations.
 
-        Returns ``[]`` on transport/API error (``_make_request`` None).
+        Raises ``RuntimeError`` on transport/API failure — a failed fetch
+        must NOT masquerade as an empty fleet (callers like ``tos search``
+        treat "0 stations" as a valid answer, so None→[] would silently
+        read as "nothing matches").
         """
         entity_type = "platform" if domain == "remote_sensing_platform" else "station"
         result = self._make_request(f"/entity/search/{entity_type}/{domain}/")
+        if result is None:
+            raise RuntimeError(
+                f"TOS request failed: /entity/search/{entity_type}/{domain}/ "
+                "(transport or API error — see log above)"
+            )
         if isinstance(result, dict) and "objects" in result:
             return result["objects"] or []
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        raise RuntimeError(
+            f"Unexpected TOS response shape for {domain} fleet listing: "
+            f"{type(result).__name__}"
+        )
 
     def get_station_metadata(
         self, station_identifier: str, domains: str = "geophysical"
