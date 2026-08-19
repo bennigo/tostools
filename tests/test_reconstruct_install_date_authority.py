@@ -226,6 +226,34 @@ class TestDivergenceGate:
         assert rep.join_fixes[0].archive_proven is expect_proven
 
 
+class TestACommissioningGapIsNotABackdatedJoin:
+    """Install precedes first data by design; a join a few days early is right."""
+
+    def test_a_two_day_gap_proposes_nothing(self):
+        # ISAK, live: antenna join 2026-07-30, archive first data 2026-08-01.
+        # Moving the join forward to first-data would be the error.
+        archive = [
+            ArchiveEra(ANTENNA, "TRM159900.00", "2505010005", "2026-08-01", "2026-08-18")
+        ]
+        tos = [TosJoin(21715, 29351, ANTENNA, "2505010005", "2026-07-30", None)]
+        rep = reconcile_eras(
+            "ISAK", archive, tos, current_install={ANTENNA: "2026-08-01"}
+        )
+        assert rep.join_fixes == []
+
+    def test_a_years_wide_gap_still_proposes_the_fix(self):
+        # KOSK: the join sat 13 years back, on a receiver replaced in 2019.
+        archive = [
+            ArchiveEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09")
+        ]
+        tos = [TosJoin(4835, 5937, RECEIVER, "5548R50633", "2006-11-08", None)]
+        rep = reconcile_eras(
+            "KOSK", archive, tos, current_install={RECEIVER: "2019-09-25"}
+        )
+        assert len(rep.join_fixes) == 1
+        assert rep.join_fixes[0].archive_proven is True
+
+
 class TestPlaceholderSerialsArePlacedByDate:
     @pytest.mark.parametrize(
         "value",

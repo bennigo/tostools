@@ -384,7 +384,16 @@ def reconcile_eras(
         if not install:
             continue
         for j in [j for j in tos_joins if j.subtype == subtype and j.is_open]:
-            if j.time_from[:10] < install[:10]:
+            # A join is "backdated" only when it predates the install by more
+            # than a commissioning gap. Install precedes first data by design,
+            # so a join a few days early is CORRECT and moving it to first-data
+            # would be the error. The class this fix exists for is orders of
+            # magnitude larger — KOSK's join sat 13 years back, on a receiver
+            # replaced in 2019. ISAK is the counter-example that forced the
+            # threshold: its antenna join is 2 days before first data, which is
+            # simply how a commissioning week looks.
+            gap = _days_between(j.time_from, install)
+            if j.time_from[:10] < install[:10] and gap > STATION_INFO_DIVERGENCE_TOLERANCE_DAYS:
                 report.join_fixes.append(
                     JoinFix(
                         child_id=j.child_id,
