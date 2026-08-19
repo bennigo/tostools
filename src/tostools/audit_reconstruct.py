@@ -39,11 +39,33 @@ station's known-correct answer key (KOSK is the first such fixture).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Callable, List, Optional
+
+from .device import is_synthetic_serial
 
 # Subtypes this reconstruction reasons about, in emit order.
 RECEIVER = "gnss_receiver"
 ANTENNA = "antenna"
+
+#: How far station.info's curated install date may lead the archive's first
+#: archived day before the two are treated as disagreeing rather than as a
+#: startup gap.
+#:
+#: The gap is real and expected: a unit is installed, then data starts flowing.
+#: KOSK is the calibration point at the small end — station.info 2019-09-24 vs
+#: archive 2019-09-25, one day, which must stay silent. VMEY is the calibration
+#: point at the large end — station.info claims the antenna from 2022-06-12
+#: while the archive (and TOS, and vitjun 4007) put it at 2023-01-11, 213 days
+#: later. A month is generously above any plausible commissioning delay and an
+#: order of magnitude below a curation error.
+STATION_INFO_DIVERGENCE_TOLERANCE_DAYS = 31
+
+#: Serial values that exist to fill a required field, not to identify a unit.
+#: ``0000`` is the fleet's RINEX convention for an antenna whose factory serial
+#: was never recorded; ``000000`` is GAMIT station.info's. Neither can be
+#: matched against TOS, so an era carrying one has to be placed by its dates.
+_PLACEHOLDER_SERIALS = frozenset({"UNKNOWN", "NONE", "N/A", "-"})
 
 # Serial dup-guard buckets (mirror tostools.device_find). "reopen" is the only
 # one that yields an automatic create-join; the rest need a human's eyes.
@@ -116,10 +138,17 @@ class JoinFix:
     serial: Optional[str]
     tos_time_from: str
     archive_install: str
+    #: False when the install date could not be corroborated — station.info and
+    #: the archive disagreed beyond
+    #: :data:`STATION_INFO_DIVERGENCE_TOLERANCE_DAYS`. Such a fix is emitted
+    #: COMMENTED: "uncommented" means archive-proven, and a date two authorities
+    #: contradict each other about is not proven by either.
+    archive_proven: bool = True
 
     def action_line(self) -> str:
+        prefix = "ACTION" if self.archive_proven else "#ACTION"
         return (
-            f"ACTION {self.child_id} patch-join-date "
+            f"{prefix} {self.child_id} patch-join-date "
             f"{self.id_connection} time_from {self.archive_install}"
             f"  # was {self.tos_time_from} ({self.subtype}"
             f"{'' if self.serial is None else f' sn={self.serial}'})"
@@ -173,6 +202,49 @@ def _norm_serial(s: Optional[str]) -> Optional[str]:
     return s or None
 
 
+def is_placeholder_serial(s: Optional[str]) -> bool:
+    """True when ``s`` fills a serial field without identifying a unit.
+
+    Covers the empty value, the all-zero conventions (RINEX ``0000``, GAMIT
+    ``000000``), the literal unknowns, and TOS's synthetic
+    ``<subtype>-<STID>-<YYYYMMDD>`` sentinels — including the field-truncated
+    form, which is why :func:`tostools.device.is_synthetic_serial` had to learn
+    about truncation first.
+
+    A placeholder must never be compared against a TOS serial: doing so reports
+    a device that IS recorded as missing, and invites minting a duplicate. VMEY
+    is the worked example — the archive carries ``0000`` for the same antenna
+    TOS holds as ``antenna-VMEY-20230111``.
+    """
+    ns = _norm_serial(s)
+    if ns is None:
+        return True
+    if ns in _PLACEHOLDER_SERIALS:
+        return True
+    if set(ns) == {"0"}:  # 0, 0000, 000000 — any all-zero run
+        return True
+    return is_synthetic_serial(ns)
+
+
+def _days_between(a: str, b: str) -> int:
+    """Absolute day count between two ISO dates; ``-1`` when either won't parse."""
+    try:
+        return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _unit_key(era: StationInfoEra) -> tuple:
+    """The identity of the physical unit a station.info row describes."""
+    return (_norm_serial(era.serial), (era.model or "").strip().upper() or None)
+
+
+def _join_contains(join: TosJoin, era: ArchiveEra) -> bool:
+    """Does ``join``'s window fully contain ``era``'s? Open ``time_to`` = +inf."""
+    j_to = (join.time_to or "9999-12-31")[:10]
+    return join.time_from[:10] <= era.date_from[:10] and era.date_to[:10] <= j_to
+
+
 def _overlaps(a_from: str, a_to: Optional[str], b_from: str, b_to: Optional[str]) -> bool:
     """Do two [from, to] date windows overlap? Open (None) to == +infinity."""
     a_to = a_to or "9999-12-31"
@@ -204,15 +276,35 @@ def _match_station_info(
 def _open_station_info_era(
     station_info: Optional[List[StationInfoEra]], subtype: str
 ) -> Optional[StationInfoEra]:
-    """The OPEN (current) station.info occupation for a subtype, if any.
+    """The station.info row that STARTS the current unit's occupation run.
 
-    The curated install date of the currently-installed unit — preferred over
-    the archive's first-data day for the backdated-join fix.
+    Not the last row — the *first* row of the contiguous run of rows carrying
+    the same unit for this subtype. A station.info occupation is split by ANY
+    metadata change on the line (firmware, antenna height, the *other* device),
+    so the open row's ``date_from`` is the last time something changed, which is
+    only the install date when nothing has changed since.
+
+    VMEY is why this matters. Its open row starts 2022-06-12 because the antenna
+    changed; receiver ``3018426`` runs unbroken across that boundary from
+    2017 doy 192. Reading the open row's date gave the receiver an install date
+    five years late — and since a backdated-join fix is emitted UNCOMMENTED, the
+    verb proposed corrupting a join that was already correct.
     """
     if not station_info:
         return None
-    open_eras = [s for s in station_info if s.subtype == subtype and s.date_to is None]
-    return max(open_eras, key=lambda s: s.date_from) if open_eras else None
+    same = sorted(
+        (s for s in station_info if s.subtype == subtype), key=lambda s: s.date_from
+    )
+    open_idx = next(
+        (i for i in range(len(same) - 1, -1, -1) if same[i].date_to is None), None
+    )
+    if open_idx is None:
+        return None
+    key = _unit_key(same[open_idx])
+    start = open_idx
+    while start > 0 and _unit_key(same[start - 1]) == key:
+        start -= 1
+    return same[start]
 
 
 def reconcile_eras(
@@ -252,20 +344,45 @@ def reconcile_eras(
     for subtype in joinfix_subtypes:
         archive_install = current_install.get(subtype)
         si_open = _open_station_info_era(station_info, subtype)
-        install = si_open.date_from if si_open else archive_install
+        install = archive_install
+        proven = True
+
+        if si_open:
+            si_date = si_open.date_from[:10]
+            if not archive_install:
+                install = si_date
+            else:
+                delta = _days_between(si_date, archive_install)
+                if delta == 0:
+                    pass  # authorities agree; archive value already in `install`
+                elif 0 < delta <= STATION_INFO_DIVERGENCE_TOLERANCE_DAYS:
+                    # A commissioning gap: the unit was installed, then data
+                    # started. station.info's curated date is the better one.
+                    install = si_date
+                    report.review.append(
+                        f"{subtype} install date: using station.info {si_date} "
+                        f"(archive first-data {archive_install[:10]}, {delta}d "
+                        f"apart) — attribute date_from values should match the "
+                        f"join."
+                    )
+                else:
+                    # Too far apart to be a startup gap. Fall back to the
+                    # archive — it is the only one of the two that is evidence
+                    # rather than curation — and refuse to emit an uncommented
+                    # action off a date the authorities contradict.
+                    proven = False
+                    report.review.append(
+                        f"{subtype} install date DISPUTED: station.info says "
+                        f"{si_date}, the archive {archive_install[:10]} "
+                        f"({delta}d apart — beyond the "
+                        f"{STATION_INFO_DIVERGENCE_TOLERANCE_DAYS}d startup-gap "
+                        f"tolerance). Using the archive and COMMENTING any join "
+                        f"fix below. Resolve against the vitjun record before "
+                        f"applying: station.info rows split on any metadata "
+                        f"change, so a stale one can misdate a whole era."
+                    )
         if not install:
             continue
-        if (
-            si_open
-            and archive_install
-            and si_open.date_from[:10] != archive_install[:10]
-        ):
-            report.review.append(
-                f"{subtype} install date: using station.info "
-                f"{si_open.date_from[:10]} (archive first-data "
-                f"{archive_install[:10]}) — attribute date_from values should "
-                f"match the join."
-            )
         for j in [j for j in tos_joins if j.subtype == subtype and j.is_open]:
             if j.time_from[:10] < install[:10]:
                 report.join_fixes.append(
@@ -276,6 +393,7 @@ def reconcile_eras(
                         serial=j.serial,
                         tos_time_from=j.time_from[:10],
                         archive_install=install[:10],
+                        archive_proven=proven,
                     )
                 )
 
@@ -284,11 +402,36 @@ def reconcile_eras(
     seen_missing: set = set()
     for era in archive_eras:
         ns = _norm_serial(era.serial)
-        if ns in tos_serials or ns in seen_missing:
-            continue
-        seen_missing.add(ns)
+        placeholder = is_placeholder_serial(era.serial)
 
-        hit = serial_lookup(era.serial, era.subtype) if (serial_lookup and ns) else None
+        if placeholder:
+            # No identity to compare, so place the era by its dates instead. A
+            # TOS join of the same subtype whose window CONTAINS the era already
+            # accounts for it — that is the ordinary case (VMEY's archive says
+            # `0000` for the antenna TOS holds as `antenna-VMEY-20230111`).
+            # Containment, not mere overlap: a partial overlap means the era
+            # crosses a swap boundary and a human should look.
+            if any(
+                j.subtype == era.subtype and _join_contains(j, era) for j in tos_joins
+            ):
+                continue
+            key = (era.subtype, "<placeholder>", era.date_from[:10])
+        else:
+            if ns in tos_serials:
+                continue
+            key = (era.subtype, ns)
+
+        if key in seen_missing:
+            continue
+        seen_missing.add(key)
+
+        # A placeholder tells the dup-guard nothing and costs a ~110s fleet walk
+        # per serial, so don't spend one on it.
+        hit = (
+            serial_lookup(era.serial, era.subtype)
+            if (serial_lookup and ns and not placeholder)
+            else None
+        )
         si = _match_station_info(station_info, era)
         # Prefer station.info's curated era bounds — the archive's last-data day
         # can fall short of the real removal after an end-of-life gap (KOSK:
@@ -358,9 +501,21 @@ def format_triage(
         L.append("")
         return "\n".join(L)
 
-    if report.join_fixes:
+    proven_fixes = [f for f in report.join_fixes if f.archive_proven]
+    disputed_fixes = [f for f in report.join_fixes if not f.archive_proven]
+
+    if proven_fixes:
         L.append("# --- backdated open joins (current unit predates its archive) ---")
-        for fix in report.join_fixes:
+        for fix in proven_fixes:
+            L.append(fix.action_line())
+        L.append("")
+
+    if disputed_fixes:
+        L.append("# --- DISPUTED install dates — COMMENTED, do not apply blind ---")
+        L.append("# station.info and the archive disagree by more than a startup")
+        L.append("# gap, so neither proves this date. See the REVIEW notes below,")
+        L.append("# check the vitjun record, then uncomment if the date holds.")
+        for fix in disputed_fixes:
             L.append(fix.action_line())
         L.append("")
 
