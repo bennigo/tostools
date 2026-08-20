@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ..device import is_synthetic_serial
+from ..device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 from ..utils.logging import get_logger
 
 
@@ -364,11 +364,14 @@ def _generate_antenna_section(device_sessions: List[Dict[str, Any]]) -> str:
         # minted only because TOS requires a non-empty serial_number; radomes
         # never have a factory serial and antennas frequently do not. Publishing
         # it would put its first 5 characters into SINEX worldwide -- ELDC's
-        # "antenna-eldc-20200129" becomes "anten". IGS offers no placeholder for
-        # an unknown serial, so the correct published value is an empty field.
+        # "antenna-eldc-20200129" becomes "anten".
+        #
+        # Publish "0000", NOT an empty field: M3G rejects an empty antenna serial
+        # with 422 'check the "Antenna" section'. Proved by bisection against the
+        # live API (VMEY, 2026-08-20) — see PUBLISHED_UNKNOWN_ANTENNA_SERIAL.
         serial_num = antenna.get("serial_number") or ""
         if is_synthetic_serial(serial_num):
-            serial_num = ""
+            serial_num = PUBLISHED_UNKNOWN_ANTENNA_SERIAL
         # IGS "Marker->ARP Up Ecc." is the FULL mark -> ARP height and must equal the
         # RINEX header's "ANTENNA: DELTA H". TOS stores the antenna eccentricity
         # (monument-top -> ARP) separately from the monument height (mark ->
