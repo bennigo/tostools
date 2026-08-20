@@ -1,0 +1,46 @@
+# === tos audit missing-attributes suppression file ===
+#
+# Read by `tos audit missing-attributes <STA>` (Layer 3). Each non-blank,
+# non-comment line silences one (id_entity, code) pair — the exact
+# violation the audit would otherwise report. "Missing" has no date
+# anchor, so the key is a 2-tuple, shorter than the attribute-dates
+# audit's 3-tuple.
+#
+# Line format:
+#
+#     SUPPRESS <id_entity> <code>
+#
+# - id_entity: integer; the device's TOS id_entity.
+# - code:      attribute code as stored in TOS. Catalog at
+#              data/attribute_codes.yaml lists every known code.
+#
+# Comments start with "#"; blank lines are ignored. Bypass the whole file
+# with --no-suppressions to see what it is hiding.
+#
+# A suppression is a CLAIM THAT THE GAP IS CORRECT. Justify each one — a
+# line without a reason is indistinguishable from a line that hides a
+# real defect.
+
+# --- GLONASS on GPS-only hardware -----------------------------------------
+#
+# attribute_codes.yaml marks GLO gps_required_for: [gnss_receiver] with
+# default_value: "true", so the audit demands it on EVERY receiver. The
+# TRIMBLE 4000SSI is GPS-only hardware — GLONASS tracking did not exist on
+# it — so 'true' would put a fabricated capability into the permanent
+# record.
+#
+# The archive agrees: `tos audit constellations VMEY --history` reads GPS
+# and nothing else across 4,384 files (28516: 1,197; 26093: 3,187).
+#
+# 'false' is not the answer either. The fleet records constellations
+# POSITIVELY and nothing carries an explicit false — verified on device
+# 4804 (ASHTECH UZ-12, RHOF 2002-2012, also GPS-only), which has GPS=true
+# and no GLO row at all, on a station published to M3G. Absence means
+# "not supported".
+#
+# So the gap is correct, and these two say so. Both receivers were at VMEY
+# (28516 2000-07-26→2003-11-11, 26093 2003-11-11→2013-01-01) and are now
+# in the warehouse.
+
+SUPPRESS 4824 GLO   # TRIMBLE 4000SSI 26093 — GPS-only hardware
+SUPPRESS 4828 GLO   # TRIMBLE 4000SSI 28516 — GPS-only hardware
