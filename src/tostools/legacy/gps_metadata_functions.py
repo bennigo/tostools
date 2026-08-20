@@ -19,7 +19,7 @@ from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 from tabulate import tabulate
 
-from ..device import is_synthetic_serial
+from ..device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 from ..utils.data_quality import IssueSeverity, IssueType, data_quality_manager
 from . import gps_metadata_qc as gpsqc
 
@@ -1121,8 +1121,16 @@ def site_log(
         # no placeholder for an unknown serial -- the only guidance is "if an
         # answer in an optional field is unknown, try to learn the answer for the
         # next log update" -- so the correct published value is an empty field.
+        # Publish "0000", NOT an empty field. The IGS instruction to leave an
+        # unknown optional answer empty is overridden here by the publishing
+        # target: M3G REFUSES an empty antenna serial with HTTP 422 'check the
+        # "Antenna" section'. Proved by bisecting VMEY's site log against the
+        # live API (2026-08-20) with every other field held constant — see
+        # PUBLISHED_UNKNOWN_ANTENNA_SERIAL. This is the generator `tosGPS
+        # sitelog` publishes through, so fixing only core/site_log.py would
+        # leave the published artefact unchanged.
         if is_synthetic_serial(serial_number):
-            serial_number = ""
+            serial_number = PUBLISHED_UNKNOWN_ANTENNA_SERIAL
         arp = device.get("antenna_reference_point") or "BPA"
         if arp == "DHARP":
             arp = grep_line_aslist(get_data_file_path("antenna_arp.list"), device_type)[

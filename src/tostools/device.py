@@ -295,6 +295,34 @@ _SYNTHETIC_SERIAL_RE = re.compile(
 )
 
 
+#: What a SUPPRESSED antenna serial is published as in an IGS/M3G site log.
+#:
+#: The synthetic ``<subtype>-<STID>-<YYYYMMDD>`` key must never be published —
+#: only the first 5 characters reach SINEX, so ``antenna-eldc-20200129`` would
+#: go out worldwide as ``anten``. The original fix blanked the field, following
+#: the IGS instruction that an unknown optional answer is left empty.
+#:
+#: **M3G rejects an empty antenna serial.** Measured against the live API on
+#: 2026-08-20 by bisecting VMEY's site log — every variable held constant except
+#: this one field::
+#:
+#:     M3G's own stored copy, verbatim        -> HTTP 200
+#:     …with the antenna serial emptied       -> HTTP 422  "check the Antenna section"
+#:     …with the radome changed NONE->SCIS    -> HTTP 200
+#:     our site log, blank serial             -> HTTP 422
+#:     our site log, serial "0000"            -> HTTP 200
+#:
+#: ``0000`` satisfies both constraints: non-empty for M3G, and in SINEX it reads
+#: as ``0000`` rather than a misleading word fragment. It is already the fleet's
+#: RINEX-header convention for an unknown antenna serial, and okada's GAMIT
+#: station.info carries exactly ``0000`` for this antenna — so publishing it
+#: agrees with the two artefacts the site log sits between.
+#:
+#: Receivers are deliberately NOT covered: a real receiver serial is numeric and
+#: cannot match the synthetic pattern, so that branch is defensive only.
+PUBLISHED_UNKNOWN_ANTENNA_SERIAL = "0000"
+
+
 def is_synthetic_serial(value: Optional[str]) -> bool:
     """True when ``value`` is a placeholder minted by :func:`synthetic_serial`.
 
