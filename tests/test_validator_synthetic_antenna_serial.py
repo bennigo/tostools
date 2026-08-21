@@ -17,24 +17,39 @@ i.e. the repair reproduced the damage.
 The truncated form is also why these files flag at all: ``_norm_serial``
 recognises a synthetic serial as "unknown" via ``-\\d{8}$``, and the truncated
 value has only seven digits, so it compares as a real serial against TOS.
+
+The SUPPRESSED VALUE changed from "" to ``PUBLISHED_UNKNOWN_ANTENNA_SERIAL``
+("0000") on 2026-08-21. These assertions previously read ``== ""``. The point
+they defend is unchanged — the 21-char synthetic must never be written back,
+because it truncates to the same damage — and "0000" defends it just as well
+while agreeing with the other three writers of this field (corrector.py,
+site_log.py, receivers' metadata_provider.py), which already used the constant.
+Note ``_norm_serial`` maps blank and "0000" to the same "unknown", so this change
+does NOT retroactively repair headers that already carry a blank serial; it makes
+new writes consistent.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
+from tostools.device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 from tostools.rinex.validator import compare_rinex_to_tos
 
 _SYNTHETIC = "antenna-VMEY-20230111"
 _TRUNCATED = _SYNTHETIC[:20]  # what a previous write left in the header
 
 
-def _rinex(serial: str, atype: str = "SEPCHOKE_B3E6", radome: str = "SPKE") -> Dict[str, str]:
+def _rinex(
+    serial: str, atype: str = "SEPCHOKE_B3E6", radome: str = "SPKE"
+) -> Dict[str, str]:
     # A20 serial + A20 (16-char model + 4-char radome), as read off a header.
     return {"ANT # / TYPE": f"{serial.ljust(20)[:20]}{atype:<15} {radome:<4}"}
 
 
-def _tos(serial: str, model: str = "SEPCHOKE_B3E6", radome: str = "SPKE") -> Dict[str, Any]:
+def _tos(
+    serial: str, model: str = "SEPCHOKE_B3E6", radome: str = "SPKE"
+) -> Dict[str, Any]:
     return {
         "antenna": {"serial_number": serial, "model": model},
         "radome": {"model": radome},
@@ -53,14 +68,14 @@ class TestSyntheticSerialIsSuppressed:
         # 21-char value back, which would truncate to the same damage again.
         out = compare_rinex_to_tos(_rinex(_TRUNCATED), _tos(_SYNTHETIC))
         assert _correction(out) is not None, "truncated serial must still flag"
-        assert _correction(out)[0] == ""
+        assert _correction(out)[0] == PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 
     def test_type_and_radome_survive_the_suppression(self):
         # Blanking the serial must not blank the antenna identity with it.
         out = compare_rinex_to_tos(_rinex(_TRUNCATED), _tos(_SYNTHETIC))
         serial, atype, radome = _correction(out)
         assert (atype, radome) == ("SEPCHOKE_B3E6", "SPKE")
-        assert serial == ""
+        assert serial == PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 
     def test_the_repair_converges(self):
         # After the fix is written the header carries a blank serial; comparing
@@ -89,7 +104,7 @@ class TestRealSerialsAreUntouched:
         )
         serial, atype, radome = _correction(out)
         assert (atype, radome) == ("SEPCHOKE_B3E6", "SPKE")
-        assert serial == ""
+        assert serial == PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 
     def test_a_serial_shaped_like_a_placeholder_but_not_one_is_kept(self):
         # Only the three known subtypes with a four-char id and eight digits are

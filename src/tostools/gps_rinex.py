@@ -25,6 +25,7 @@ from gtimes.timefunc import datefRinex
 # Import legacy modules (transitioning)
 from . import gps_metadata_functions as gpsf
 from . import gps_metadata_qc as gpsqc
+from .device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 from .rinex.domes import domes_or_skip
 from .rinex.reader import get_rinex_labels
 from .rinex.reader import read_rinex_file as modular_read_rinex_file
@@ -510,6 +511,15 @@ def compare_tos_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
             module_logger.debug("{}".format(TOS_antenna_attributes))
             TOS_antenna_serial = TOS_antenna_attributes["serial_number"]
             TOS_antenna_model = TOS_antenna_attributes["model"]
+            # Suppress a placeholder rather than copying it into the header.
+            # This module is a SECOND writer of ANT # / TYPE (third, counting
+            # legacy/gps_rinex.py) besides rinex/corrector.py, with its own file
+            # writers. The fleet bug of 2026-08-19 was exactly this shape:
+            # corrector.py built the field in two places, only one was guarded,
+            # and 19 stations' headers were corrupted for months. Guarding one
+            # writer is not guarding the field.
+            if is_synthetic_serial(TOS_antenna_serial):
+                TOS_antenna_serial = PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 
             if "radome" in session["device_history"]:
                 TOS_radome_model = session["device_history"]["radome"]["model"]

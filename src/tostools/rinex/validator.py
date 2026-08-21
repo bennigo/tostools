@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from .. import gps_metadata_qc as gpsqc
-from ..device import is_synthetic_serial
+from ..device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 from ..utils.logging import get_logger
 from .domes import domes_or_skip
 
@@ -183,9 +183,21 @@ def compare_rinex_to_tos(
             # suppresses it (receivers.rinex.metadata_provider); this path must
             # agree, or every freshly converted file would read back as discrepant
             # and --fix-headers would re-inject what the converter just withheld.
+            # A suppressed serial is published as "0000", NOT blank. The IGS
+            # instruction really is "leave it empty", and this line used to — but
+            # M3G rejects an empty antenna Serial Number outright (422, bisected
+            # against the live API on 2026-08-20: M3G's own stored copy with the
+            # serial emptied → 422; the same log with "0000" → 200). site_log.py
+            # and corrector.py were moved to PUBLISHED_UNKNOWN_ANTENNA_SERIAL then;
+            # this path and receivers' metadata_provider were missed, which is why
+            # 463 archived 2026 daily files still carry a blank serial field.
+            #
+            # The converter must agree with this value or every freshly converted
+            # file reads back as discrepant and --fix-headers re-injects what the
+            # converter withheld — so metadata_provider.py changes in lockstep.
             _tos_serial = str(antenna_info.get("serial_number") or "").strip()
             if is_synthetic_serial(_tos_serial):
-                _tos_serial = ""
+                _tos_serial = PUBLISHED_UNKNOWN_ANTENNA_SERIAL
             tos_ant = AntennaHeader(
                 serial=(_tos_serial or None),
                 atype=(str(antenna_info.get("model") or "").strip() or None),
