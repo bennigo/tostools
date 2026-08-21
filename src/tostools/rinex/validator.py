@@ -328,11 +328,26 @@ def compare_rinex_to_tos(
                         f"{_MAX_POSITION_CORRECTION_M:.0f} m correction bound — "
                         "this file is probably not this station's"
                     )
+                    # `rinex_info` is the OUTPUT of extract_header_info, which
+                    # stores the name under "file_name" (and the directory under
+                    # "file_path"). "rinex file" is the key on the *input* dict
+                    # read_rinex_header returns, one layer earlier — so the old
+                    # lookup always missed and every refusal printed the literal
+                    # "<file>". That made the finding unactionable from the log:
+                    # ELDC's 6 strays and NYLA's 3 had to be re-found by
+                    # rescanning the archive. Fall back through both keys so this
+                    # is right whichever dict shape arrives.
+                    _name = (
+                        rinex_info.get("file_name")
+                        or rinex_info.get("rinex file")
+                        or "<file>"
+                    )
                     logger.error(
                         "REFUSING to rewrite APPROX POSITION for %s: %.0f m from "
                         "the TOS position. A correction that large means the file "
-                        "belongs to another site — investigate, do not rewrite.",
-                        rinex_info.get("rinex file", "<file>"),
+                        "belongs to another site — investigate, do not rewrite. "
+                        "Fix with: receivers archive-sort <STATION>",
+                        _name,
                         distance,
                     )
             else:
@@ -354,9 +369,9 @@ def compare_rinex_to_tos(
         rinex_observer = v[0:20].strip()
         rinex_agency = v[20:60].strip()
         if rinex_observer == tos_observer and rinex_agency == tos_agency:
-            comparison_result["matches"]["observer_agency"] = (
-                f"{tos_observer} / {tos_agency}"
-            )
+            comparison_result["matches"][
+                "observer_agency"
+            ] = f"{tos_observer} / {tos_agency}"
         else:
             comparison_result["discrepancies"]["observer_agency"] = {
                 "rinex": f"{rinex_observer} / {rinex_agency}",
