@@ -318,9 +318,28 @@ def compare_rinex_to_tos(
                 # Beyond the bound the discrepancy is KEPT (so a blocking gate
                 # still fires) and no correction is offered — such a file needs a
                 # human, not a rewrite.
+                #
+                # And not just the position: NO field of a foreign file may be
+                # rewritten. "Correct these headers against this station's TOS
+                # record" is a meaningless operation on a file that is not this
+                # station's — the only valid outcomes are move it to the right
+                # station or remove it. Editing it is strictly worse than leaving
+                # it alone, because it destroys the evidence needed to decide
+                # which. Measured 2026-08-20: the old behaviour gated only the
+                # position, so ELDC's six SE-Alaska/UNAVCO strays had their
+                # OBSERVER rewritten from "Jeffrey Freymueller University of
+                # Alaska-Fairbanks" to IMO's, and NYLA3420.14D.Z — recorded
+                # 6,361 km away — was stamped with NYLA's own IERS DOMES.
+                # `foreign_site` is set here and every correction is dropped at
+                # the end of this function, after the later field blocks have run.
                 if distance <= _MAX_POSITION_CORRECTION_M:
                     comparison_result["corrections"]["APPROX POSITION XYZ"] = tos_xyz
                 else:
+                    comparison_result["foreign_site"] = {
+                        "distance_m": distance,
+                        "bound_m": _MAX_POSITION_CORRECTION_M,
+                        "action": "archive-sort or remove — do not rewrite",
+                    }
                     comparison_result["discrepancies"]["coordinates"][
                         "refused_correction"
                     ] = (
@@ -419,6 +438,31 @@ def compare_rinex_to_tos(
                     }
             except (ValueError, IndexError):
                 pass
+
+    # FOREIGN-SITE GATE — must be the LAST thing that touches `corrections`.
+    #
+    # The position check above runs early, but the marker / DOMES / observer /
+    # antenna blocks that follow it keep adding corrections. Dropping them at the
+    # point of refusal would therefore drop nothing. So the refusal only records
+    # `foreign_site`, and the whole correction set is discarded here.
+    #
+    # Discrepancies are deliberately KEPT: a blocking QC gate must still fire,
+    # and the operator still needs to see what does not match. What is removed is
+    # every proposal to WRITE, because there is nothing to write — the file is
+    # another station's.
+    if comparison_result.get("foreign_site"):
+        dropped = sorted(comparison_result["corrections"])
+        comparison_result["corrections"] = {}
+        comparison_result["foreign_site"]["dropped_corrections"] = dropped
+        if dropped:
+            logger.error(
+                "REFUSING all header corrections for this file (%s) — it is not "
+                "this station's, so 'correct against this station's TOS record' "
+                "is not a meaningful operation. Dropped: %s. Move it to the right "
+                "station or remove it: receivers archive-sort <STATION>",
+                comparison_result["foreign_site"]["action"],
+                ", ".join(dropped),
+            )
 
     logger.info(
         f"Comparison found {len(comparison_result['discrepancies'])} discrepancies"
