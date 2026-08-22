@@ -955,7 +955,16 @@ def site_log(
         country = raw_country  # Already ISO 3166-1 alpha-3 code
     else:
         country = country_translation.get(raw_country, "ISL")  # Default to ISL
-    tectonic_plate = station.get("tectonic_plate") or ""
+    # TOS `tectonic_plate` (authoritative since 2026-08-19) carries a human
+    # name — "North America" / "Eurasia". Map it to the IGS site-log plate name;
+    # fall back to the legacy station-plate file (EURA/NOAM codes) only when TOS
+    # has no value (or a value we do not recognise).
+    _tos_plate = (station.get("tectonic_plate") or "").strip().lower()
+    _tos_plate_names = {
+        "north america": "NORTH AMERICAN",
+        "eurasia": "EURASIAN",
+    }
+    tectonic_plate = _tos_plate_names.get(_tos_plate, "")
     if tectonic_plate == "":
         plate_name = {
             "EURA": "EURASIAN",

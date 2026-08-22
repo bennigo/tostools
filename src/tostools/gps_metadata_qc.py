@@ -739,6 +739,7 @@ def get_station_metadata(station_identifier, url_rest, loglevel=logging.WARNING)
             "bedrock_type",
             "is_near_fault_zones",
             "date_start",
+            "tectonic_plate",
         ]:
             station[attribute["code"]] = attribute["value"]
         elif attribute["code"] in ["lon", "lat", "altitude"]:
