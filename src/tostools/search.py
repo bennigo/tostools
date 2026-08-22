@@ -68,12 +68,143 @@ def is_null_term(value: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Text matching — substring (default), glob, regex
+# ---------------------------------------------------------------------------
+
+#: Opt-in prefix selecting regex semantics for a ``~`` / ``!~`` term.
+REGEX_PREFIX = "re:"
+
+#: Characters that make a ``~`` term a glob rather than a plain substring.
+_GLOB_META = ("*", "?", "[")
+
+
+def has_glob(term: str) -> bool:
+    """True when ``term`` carries glob metacharacters."""
+    return any(ch in term for ch in _GLOB_META)
+
+
+def text_matches(current: Any, term: str) -> bool:
+    """Does ``current`` satisfy a ``~`` term?
+
+    Three styles, and which one applies is decided by the term itself so
+    that nothing is ever reinterpreted behind the operator's back:
+
+    1. ``re:PATTERN`` — regex, unanchored (``.search``). Opt-in only: a
+       term is NEVER treated as a regex unless it says so, because
+       ``name ~ a.b`` must keep meaning a literal ``a.b``.
+    2. Contains ``*`` / ``?`` / ``[`` — glob, **fully anchored**
+       (``fnmatch``): ``marker ~ HVE*`` is 'starts with HVE', not
+       'contains HVE*'. Wrap in stars for substring: ``~ *vík*``.
+    3. Anything else — plain substring, exactly as before this feature.
+
+    Both sides go through :func:`norm_value` first, so the Icelandic
+    boolean folding (``já``/``nei``) and case-insensitivity that plain
+    substring matching has always had apply to patterns too.
+    """
+    if current is None:
+        return False
+    hay = norm_value(current)
+
+    if term.startswith(REGEX_PREFIX):
+        raw = term[len(REGEX_PREFIX) :]
+        if not raw:
+            raise ValueError(
+                f"empty regex after {REGEX_PREFIX!r} — e.g. 'name ~ re:veður|vega'"
+            )
+        try:
+            rx = re.compile(raw, re.IGNORECASE)
+        except re.error as exc:
+            raise ValueError(f"bad regex {raw!r}: {exc}") from exc
+        return rx.search(hay) is not None
+
+    if has_glob(term):
+        import fnmatch
+
+        return fnmatch.fnmatch(hay, norm_value(term))
+
+    return norm_value(term) in hay
+
+
+# ---------------------------------------------------------------------------
+# Selectors — 'code' (station) or 'namespace.code' (joined device)
+# ---------------------------------------------------------------------------
+
+#: Namespace meaning 'a device of any subtype'.
+ANY_DEVICE = "*"
+
+
+class UnsupportedSelector(ValueError):
+    """A selector is well-formed but not implemented yet.
+
+    Subclasses ``ValueError`` so the CLI's existing parse-error path turns
+    it into a usage error (exit 2) with the message attached.
+    """
+
+
+def parse_selector(raw: str) -> tuple:
+    """Split ``'code'`` or ``'namespace.code'`` into ``(namespace, code)``.
+
+    A bare code addresses a **station** attribute and returns namespace
+    ``None`` — unchanged from before this feature. A dotted selector
+    addresses an attribute of a currently-joined **device**::
+
+        receiver.firmware_version   the station's GNSS receiver
+        antenna.serial_number
+        *.model                     a device of any subtype
+
+    The namespace accepts the same aliases as ``--device TYPE:MODEL``, so
+    ``receiver`` and ``gnss_receiver`` are interchangeable. Raises
+    ``ValueError`` on an unknown namespace, listing the valid ones.
+    """
+    raw = raw.strip()
+    if "." not in raw:
+        return None, raw.lower()
+
+    ns, _, code = raw.partition(".")
+    ns = ns.strip().lower()
+    code = code.strip().lower()
+    if not code:
+        raise ValueError(
+            f"selector {raw!r} has no attribute after the dot — "
+            "e.g. 'receiver.firmware_version'"
+        )
+    if ns == ANY_DEVICE:
+        return ANY_DEVICE, code
+    # DEVICE_SUBTYPE_ALIASES is defined further down (device-spec section);
+    # module globals resolve at call time, so the forward reference is fine.
+    if ns not in DEVICE_SUBTYPE_ALIASES:
+        raise ValueError(
+            f"unknown device namespace {ns!r} in {raw!r} — valid: "
+            + ", ".join(sorted(set(DEVICE_SUBTYPE_ALIASES)) + [ANY_DEVICE])
+        )
+    return DEVICE_SUBTYPE_ALIASES[ns], code
+
+
+def require_station_selector(namespace: Optional[str], raw: str) -> None:
+    """Reject a device selector until the device namespace lands.
+
+    Slice 1 ships the grammar; resolving ``receiver.firmware_version``
+    needs the per-station device walk, which is the next change.
+    """
+    if namespace is not None:
+        raise UnsupportedSelector(
+            f"device selector {raw!r} is not supported yet — this release "
+            "parses the namespace but cannot resolve it. Use --receiver / "
+            "--device to filter on devices, or 'tos station show STN --all' "
+            "for one station's device attributes."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Attribute predicates
 # ---------------------------------------------------------------------------
 
 #: Operator alternation — ``!=`` / ``!~`` must precede ``=`` / ``~`` so the
 #: regex engine never bites the ``=`` half of ``!=``.
-_EXPR_RE = re.compile(r"^\s*([A-Za-z0-9_]+)\s*(!=|!~|=|~)\s*(.+?)\s*$")
+#: The code group accepts ``.`` and ``*`` so a selector namespace
+#: (``receiver.firmware_version``, ``*.model``) parses here rather than
+#: failing as an unparsable expression.
+_EXPR_RE = re.compile(r"^\s*([A-Za-z0-9_.*]+)\s*(!=|!~|=|~)\s*(.+?)\s*$")
 
 #: Sugar flag → predicate mapping.
 EPOS_CODE = "in_network_epos"
@@ -94,12 +225,18 @@ class Predicate:
     op: str
     value: str = ""
     values: tuple = ()
+    namespace: Optional[str] = None
+
+    @property
+    def selector(self) -> str:
+        """Human-facing selector: ``code`` or ``namespace.code``."""
+        return f"{self.namespace}.{self.code}" if self.namespace else self.code
 
     def describe(self) -> str:
         if self.op in ("in", "not in"):
             opstr = "in" if self.op == "in" else "not in"
-            return f"{self.code} {opstr} [{', '.join(self.values)}]"
-        return f"{self.code} {self.op} {self.value}"
+            return f"{self.selector} {opstr} [{', '.join(self.values)}]"
+        return f"{self.selector} {self.op} {self.value}"
 
 
 #: The operational IMO GNSS fleet definition — what ``--active-gps`` expands
@@ -127,8 +264,9 @@ def parse_expression(expr: str) -> Predicate:
             f"cannot parse {expr!r} — expected 'code OP value' with OP one of "
             "= != ~ !~ (e.g. 'in_network_epos = true', 'marker ~ ve')"
         )
-    code, op, value = m.groups()
-    code = code.lower()
+    raw_code, op, value = m.groups()
+    namespace, code = parse_selector(raw_code)
+    require_station_selector(namespace, raw_code)
     stripped = value.strip()
     if stripped.startswith("[") and stripped.endswith("]"):
         items = [v.strip() for v in stripped[1:-1].split(",") if v.strip()]
@@ -137,13 +275,17 @@ def parse_expression(expr: str) -> Predicate:
                 f"empty list in {expr!r} — e.g. 'subtype = [GPS stöð, SIL stöð]'"
             )
         if op == "=":
-            return Predicate(code=code, op="in", values=tuple(items))
+            return Predicate(
+                code=code, op="in", values=tuple(items), namespace=namespace
+            )
         if op == "!=":
-            return Predicate(code=code, op="not in", values=tuple(items))
+            return Predicate(
+                code=code, op="not in", values=tuple(items), namespace=namespace
+            )
         raise ValueError(
             f"list value only supports '=' / '!=' (got {op!r} in {expr!r})"
         )
-    return Predicate(code=code, op=op, value=value)
+    return Predicate(code=code, op=op, value=value, namespace=namespace)
 
 
 def open_value(entity: dict, code: str) -> Optional[str]:
@@ -166,7 +308,13 @@ def open_value(entity: dict, code: str) -> Optional[str]:
 
 
 def predicate_matches(station: dict, pred: Predicate) -> bool:
-    """Evaluate one :class:`Predicate` against a bulk-listing station dict."""
+    """Evaluate one :class:`Predicate` against a bulk-listing station dict.
+
+    Station-attribute predicates only — a device selector cannot be
+    answered from the bulk listing (it carries no devices) and is rejected
+    here as a backstop, since the CLI already refuses it at parse time.
+    """
+    require_station_selector(pred.namespace, pred.selector)
     current = open_value(station, pred.code)
     if pred.op == "in":
         if current is None:
@@ -189,10 +337,10 @@ def predicate_matches(station: dict, pred: Predicate) -> bool:
             return pred.op == "!="
         eq = norm_value(current) == norm_value(pred.value)
         return eq if pred.op == "=" else not eq
-    # Substring ops.
+    # Text ops — substring, glob (``*``/``?``), or ``re:`` regex.
     if current is None:
         return pred.op == "!~"
-    hit = norm_value(pred.value) in norm_value(current)
+    hit = text_matches(current, pred.value)
     return hit if pred.op == "~" else not hit
 
 
@@ -495,10 +643,15 @@ class SearchResult:
 
     @property
     def attribute_codes(self) -> List[str]:
-        """Codes to render as columns: predicate codes + --show codes."""
+        """Codes to render as columns: predicate codes + --show codes.
+
+        Station attributes only. Device selectors never reach here in this
+        release (the CLI refuses them at parse time), so a predicate's
+        namespace is always None and ``code`` is the column key.
+        """
         codes: List[str] = []
         for pred in self.predicates:
-            if pred.code not in codes:
+            if pred.namespace is None and pred.code not in codes:
                 codes.append(pred.code)
         for code in self.show_codes:
             if code not in codes:

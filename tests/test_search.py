@@ -19,17 +19,23 @@ from unittest.mock import patch
 import pytest
 
 from tostools.search import (
+    ANY_DEVICE,
     DeviceSpec,
     Predicate,
+    UnsupportedSelector,
     attribute_inventory,
     devices_satisfy,
     filter_by_predicates,
+    has_glob,
     norm_value,
     open_value,
     parse_device_spec,
     parse_expression,
+    parse_selector,
     predicate_matches,
+    require_station_selector,
     search_stations,
+    text_matches,
 )
 
 # ---------------------------------------------------------------------------
@@ -200,6 +206,204 @@ class TestParseExpression:
     def test_code_normalized_lower(self):
         pred = parse_expression("In_Network_EPOS = true")
         assert pred.code == "in_network_epos"
+
+
+# ---------------------------------------------------------------------------
+# Text matching — substring / glob / regex
+# ---------------------------------------------------------------------------
+
+
+class TestTextMatches:
+    """A ``~`` term picks its own semantics; nothing is reinterpreted."""
+
+    def test_plain_substring_unchanged(self):
+        assert text_matches("Reykjavík", "kjav")
+        assert not text_matches("Reykjavík", "zzz")
+
+    def test_plain_is_case_insensitive(self):
+        assert text_matches("HVEL", "hve")
+        assert text_matches("hvel", "HVE")
+
+    def test_boolean_folding_survives(self):
+        # norm_value folds já/nei onto true/false on BOTH sides — the
+        # property a raw regex .search() would have silently dropped.
+        assert text_matches("já", "true")
+        assert text_matches("true", "já")
+
+    def test_dot_stays_literal(self):
+        # The regression this design exists to prevent: '.' must not
+        # become "any character" just because it looks like regex.
+        assert text_matches("a.b", "a.b")
+        assert not text_matches("axb", "a.b")
+
+    def test_pipe_stays_literal(self):
+        assert not text_matches("vík", "vík|dal")
+        assert text_matches("vík|dal", "vík|dal")
+
+    def test_glob_is_anchored(self):
+        # 'HVE*' is starts-with, NOT contains — otherwise the glob would
+        # be indistinguishable from the plain substring path.
+        assert text_matches("HVEL", "HVE*")
+        assert not text_matches("XHVEL", "HVE*")
+
+    def test_glob_substring_needs_stars(self):
+        assert text_matches("XHVELY", "*hvel*")
+
+    def test_glob_question_mark_is_one_char(self):
+        assert text_matches("HVEL", "HVE?")
+        assert not text_matches("HVELX", "HVE?")
+
+    def test_regex_requires_prefix(self):
+        assert text_matches("vík", "re:vík|dal")
+        assert text_matches("dal", "re:vík|dal")
+        assert not text_matches("fjord", "re:vík|dal")
+
+    def test_regex_is_unanchored(self):
+        assert text_matches("Reykjavík", "re:kjav")
+
+    def test_regex_empty_raises(self):
+        with pytest.raises(ValueError, match="empty regex"):
+            text_matches("anything", "re:")
+
+    def test_regex_invalid_raises(self):
+        with pytest.raises(ValueError, match="bad regex"):
+            text_matches("anything", "re:[unclosed")
+
+    def test_none_never_matches(self):
+        assert not text_matches(None, "anything")
+
+    def test_has_glob(self):
+        assert has_glob("HVE*")
+        assert has_glob("HVE?")
+        assert has_glob("[abc]")
+        assert not has_glob("plain")
+
+
+class TestTextOpsThroughPredicates:
+    """The ~ / !~ operators route through :func:`text_matches`."""
+
+    def test_glob_filters_stations(self):
+        stations = [
+            _station(1, "HVEL", "Hvolsvöllur"),
+            _station(2, "XHVE", "Annar"),
+        ]
+        kept = filter_by_predicates(stations, [Predicate("marker", "~", "hve*")])
+        assert [open_value(s, "marker") for s in kept] == ["HVEL"]
+
+    def test_regex_filters_stations(self):
+        stations = [
+            _station(1, "HVEL", "Hvolsvöllur"),
+            _station(2, "REYK", "Reykjavík"),
+            _station(3, "AKUR", "Akureyri"),
+        ]
+        kept = filter_by_predicates(
+            stations, [Predicate("name", "~", "re:hvol|reykja")]
+        )
+        assert sorted(open_value(s, "marker") for s in kept) == ["HVEL", "REYK"]
+
+    def test_negated_glob(self):
+        stations = [_station(1, "HVEL", "A"), _station(2, "AKUR", "B")]
+        kept = filter_by_predicates(stations, [Predicate("marker", "!~", "hve*")])
+        assert [open_value(s, "marker") for s in kept] == ["AKUR"]
+
+    def test_absent_attribute_matches_only_negation(self):
+        st = _station(1, "HVEL", "A")  # no iers_domes_number
+        assert not predicate_matches(st, Predicate("iers_domes_number", "~", "1*"))
+        assert predicate_matches(st, Predicate("iers_domes_number", "!~", "1*"))
+
+
+# ---------------------------------------------------------------------------
+# Selectors — station (bare) vs device (dotted)
+# ---------------------------------------------------------------------------
+
+
+class TestParseSelector:
+    def test_bare_code_is_station(self):
+        assert parse_selector("iers_domes_number") == (None, "iers_domes_number")
+
+    def test_bare_code_lowercased(self):
+        assert parse_selector("IERS_Domes_Number") == (None, "iers_domes_number")
+
+    def test_device_namespace_canonicalized(self):
+        assert parse_selector("receiver.firmware_version") == (
+            "gnss_receiver",
+            "firmware_version",
+        )
+
+    def test_alias_and_canonical_agree(self):
+        assert parse_selector("receiver.model") == parse_selector("gnss_receiver.model")
+
+    def test_star_namespace(self):
+        assert parse_selector("*.model") == (ANY_DEVICE, "model")
+
+    def test_namespace_case_insensitive(self):
+        assert parse_selector("Receiver.Firmware_Version") == (
+            "gnss_receiver",
+            "firmware_version",
+        )
+
+    def test_unknown_namespace_raises_and_lists_valid(self):
+        with pytest.raises(ValueError, match="unknown device namespace"):
+            parse_selector("widget.model")
+
+    def test_missing_attribute_after_dot_raises(self):
+        with pytest.raises(ValueError, match="no attribute after the dot"):
+            parse_selector("receiver.")
+
+
+class TestDeviceSelectorRefused:
+    """Slice 1 parses the namespace but must refuse to resolve it."""
+
+    def test_require_station_selector_passes_for_station(self):
+        require_station_selector(None, "marker")  # no raise
+
+    def test_require_station_selector_raises_for_device(self):
+        with pytest.raises(UnsupportedSelector, match="not supported yet"):
+            require_station_selector("gnss_receiver", "receiver.firmware_version")
+
+    def test_unsupported_selector_is_a_value_error(self):
+        # The CLI turns ValueError into exit 2; the subclass must inherit
+        # that path rather than escaping as an unhandled exception.
+        assert issubclass(UnsupportedSelector, ValueError)
+
+    def test_expression_with_device_selector_raises(self):
+        with pytest.raises(UnsupportedSelector):
+            parse_expression("receiver.firmware_version = 5.7.0")
+
+    def test_expression_error_names_the_selector(self):
+        with pytest.raises(UnsupportedSelector, match="receiver.firmware_version"):
+            parse_expression("receiver.firmware_version = 5.7.0")
+
+    def test_predicate_matches_refuses_device_namespace(self):
+        # Backstop: even if a Predicate is built directly, evaluating it
+        # against the bulk listing (which has no devices) must not
+        # silently return False.
+        st = _station(1, "HVEL", "A")
+        with pytest.raises(UnsupportedSelector):
+            predicate_matches(
+                st,
+                Predicate("firmware_version", "=", "5.7.0", namespace="gnss_receiver"),
+            )
+
+    def test_station_predicate_still_evaluates(self):
+        st = _station(1, "HVEL", "A", in_epos="true")
+        assert predicate_matches(st, Predicate("in_network_epos", "=", "true"))
+
+
+class TestPredicateSelectorRendering:
+    def test_describe_bare_code(self):
+        assert Predicate("marker", "~", "ve").describe() == "marker ~ ve"
+
+    def test_describe_dotted_selector(self):
+        pred = Predicate("firmware_version", "=", "5.7.0", namespace="gnss_receiver")
+        assert pred.describe() == "gnss_receiver.firmware_version = 5.7.0"
+
+    def test_selector_property(self):
+        assert Predicate("marker", "=", "x").selector == "marker"
+        assert (
+            Predicate("model", "=", "x", namespace="antenna").selector
+            == "antenna.model"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -576,6 +780,54 @@ class TestSearchCli:
         )
         assert rc == 0
         assert out.split() == ["KRAC"]
+
+    def test_glob_expression(self, capsys):
+        rc, out = _run_cli(["marker ~ r*"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert "RHOF" in out
+        assert "KRAC" not in out  # anchored: 'r*' is starts-with
+
+    def test_regex_expression(self, capsys):
+        rc, out = _run_cli(
+            ["marker ~ re:^(vmey|krac)$", "--markers-only"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert sorted(out.split()) == ["KRAC", "VMEY"]
+
+    def test_device_selector_expression_exits_2(self, capsys):
+        rc, out = _run_cli(
+            ["receiver.firmware_version = 5.7.0"], self._fleet(), capsys=capsys
+        )
+        assert rc == 2
+        assert "not supported yet" in out
+
+    def test_device_selector_in_show_exits_2(self, capsys):
+        # --show must refuse a device selector rather than rendering "—"
+        # for every row, which would read as 'no station has one'.
+        rc, out = _run_cli(
+            ["--epos", "--show", "receiver.firmware_version"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 2
+        assert "not supported yet" in out
+
+    def test_unknown_namespace_in_show_exits_2(self, capsys):
+        rc, out = _run_cli(
+            ["--epos", "--show", "widget.model"], self._fleet(), capsys=capsys
+        )
+        assert rc == 2
+        assert "unknown device namespace" in out
+
+    def test_bare_show_code_still_works(self, capsys):
+        rc, out = _run_cli(
+            ["--epos", "--show", "iers_domes_number"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert "IERS_DOMES_NUMBER" in out
+        assert "10217M001" in out
 
     def test_expression_json(self, capsys):
         rc, out = _run_cli(

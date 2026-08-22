@@ -13913,13 +13913,28 @@ def _search_main(argv):
             "  'code = value'    equality (case-insensitive; já/nei fold\n"
             "                    onto true/false)\n"
             "  'code != value'   not equal (absent value also satisfies !=)\n"
-            "  'code ~ substr'   substring match\n"
-            "  'code !~ substr'  substring non-match\n"
+            "  'code ~ text'     text match (see PATTERNS below)\n"
+            "  'code !~ text'    negated text match\n"
             "  'code = null'     attribute absent / no open period\n"
             "  'code != null'    attribute present\n"
             "  'code = [a, b]'   value is one of a, b (in-list)\n"
             "  'code != [a, b]'  value is none of a, b\n"
             "  'code = all'      match everything (lifts a scope filter)\n"
+            "\n"
+            "PATTERNS (the ~ and !~ operators only; = stays exact):\n"
+            "  plain text        substring, as always ('marker ~ ve')\n"
+            "  * ? [ ]           glob, FULLY ANCHORED — 'marker ~ HVE*' is\n"
+            "                    starts-with, not contains. Wrap in stars\n"
+            "                    for substring: 'name ~ *vík*'\n"
+            "  re:PATTERN        regex, unanchored ('name ~ re:vík|dal')\n"
+            "A term is never treated as a regex unless it says 're:', so\n"
+            "'name ~ a.b' still means a literal a.b.\n"
+            "\n"
+            "SELECTORS: a bare code addresses a station attribute. A dotted\n"
+            "selector ('receiver.firmware_version', '*.model') addresses a\n"
+            "joined device — the grammar parses today but resolving it is\n"
+            "not implemented yet; use --receiver / --device to filter on\n"
+            "devices, or 'tos station show STN --all' for one station.\n"
             "\n"
             "Expressions test the currently-open attribute period — the\n"
             "value the TOS UI's Eigindi panel shows today.\n"
@@ -14050,10 +14065,12 @@ def _search_main(argv):
         "--show",
         action="append",
         default=None,
-        metavar="CODE",
+        metavar="SELECTOR",
         help=(
-            "Extra attribute code to render as a table column "
-            "(predicate codes are always shown). Repeatable."
+            "Extra attribute to render as a table column (predicate codes "
+            "are always shown). Repeatable. Takes the same selector grammar "
+            "as an expression's left-hand side; device selectors "
+            "('receiver.firmware_version') parse but are not resolvable yet."
         ),
     )
     p.add_argument(
@@ -14163,9 +14180,16 @@ def _search_main(argv):
 
     # ---- Build predicates ----------------------------------------------
     predicates = []
+    show_codes = []
     try:
         for expr in args.expressions:
             predicates.append(search_mod.parse_expression(expr))
+        # --show takes the same selector grammar as an expression's LHS, so
+        # a device selector fails here rather than silently rendering "—".
+        for raw in args.show or []:
+            namespace, code = search_mod.parse_selector(raw)
+            search_mod.require_station_selector(namespace, raw)
+            show_codes.append(code)
     except ValueError as exc:
         print(f"tos search: {exc}", file=sys.stderr)
         return 2
@@ -14223,7 +14247,7 @@ def _search_main(argv):
             predicates,
             device_must=device_must,
             device_must_not=device_must_not,
-            show_codes=args.show or [],
+            show_codes=show_codes,
             domain=args.domain,
             progress=progress,
         )
