@@ -1060,6 +1060,107 @@ class TestSearchCli:
                 "since",
             }
 
+    def test_cache_note_printed_on_a_warm_run(self, capsys):
+        """Staleness is reported, never inferred — this output drives writes."""
+        fleet, devices = self._fleet_with_receivers()
+        _run_cli(["--receiver", "polarx5", "--markers-only"], fleet, devices)
+        capsys.readouterr()
+        rc, out = _run_cli(
+            ["--receiver", "polarx5", "--markers-only"], fleet, devices, capsys=capsys
+        )
+        assert rc == 0
+        assert "cache:" in out and "--refresh" in out
+
+    def test_no_cache_prints_no_note(self, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        _run_cli(["--receiver", "polarx5", "--markers-only"], fleet, devices)
+        capsys.readouterr()
+        rc, out = _run_cli(
+            ["--receiver", "polarx5", "--markers-only", "--no-cache"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "cache:" not in out
+
+    def test_snapshot_roundtrip(self, tmp_path, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        snap = tmp_path / "fleet.json"
+        rc, out = _run_cli(
+            [
+                "--receiver",
+                "polarx5",
+                "--show",
+                "receiver.firmware_version",
+                "--snapshot",
+                str(snap),
+                "--markers-only",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert snap.exists()
+        assert "snapshot written" in out
+
+        # Replay against a client that would raise if touched.
+        class Exploding:
+            def list_stations(self, domain="geophysical"):
+                raise AssertionError("replay must not reach the network")
+
+            def get_entity_history(self, id_entity):
+                raise AssertionError("replay must not reach the network")
+
+        from tostools.tos import _search_main
+
+        with patch("tostools.api.tos_client.TOSClient", return_value=Exploding()):
+            rc = _search_main(
+                [
+                    "--receiver",
+                    "polarx5",
+                    "--show",
+                    "receiver.firmware_version",
+                    "--from-snapshot",
+                    str(snap),
+                    "--markers-only",
+                ]
+            )
+        replayed = capsys.readouterr()
+        assert rc == 0
+        assert "NO live TOS read" in replayed.err
+        assert "VMEY" in replayed.out
+
+    def test_snapshot_and_from_snapshot_together_exits_2(self, tmp_path, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        snap = tmp_path / "fleet.json"
+        _run_cli(["--receiver", "polarx5", "--snapshot", str(snap)], fleet, devices)
+        capsys.readouterr()
+        rc, out = _run_cli(
+            [
+                "--receiver",
+                "polarx5",
+                "--from-snapshot",
+                str(snap),
+                "--snapshot",
+                str(tmp_path / "other.json"),
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 2
+        assert "no-op" in out
+
+    def test_missing_snapshot_file_exits_2(self, tmp_path, capsys):
+        rc, out = _run_cli(
+            ["--from-snapshot", str(tmp_path / "nope.json")],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 2
+
     def test_unknown_namespace_in_show_exits_2(self, capsys):
         rc, out = _run_cli(
             ["--epos", "--show", "widget.model"], self._fleet(), capsys=capsys

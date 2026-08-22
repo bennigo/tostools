@@ -14087,6 +14087,49 @@ def _search_main(argv):
             "--show receiver.firmware_version,receiver.software_version"
         ),
     )
+    cache_grp = p.add_argument_group("caching and snapshots")
+    cache_grp.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=_cache_default_ttl(),
+        metavar="SECONDS",
+        help=(
+            "How long a cached TOS read stays fresh (default: "
+            f"{_cache_default_ttl()}). Device selectors cost one history "
+            "call per station, so an iterative session re-pays that without "
+            "the cache. Every run that serves a cache hit reports the age of "
+            "its oldest entry."
+        ),
+    )
+    cache_grp.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Bypass the read cache entirely (neither read nor write).",
+    )
+    cache_grp.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Ignore cached entries and re-fetch, refilling the cache.",
+    )
+    cache_grp.add_argument(
+        "--snapshot",
+        metavar="FILE",
+        help=(
+            "Record everything this run reads from TOS into FILE, replayable "
+            "with --from-snapshot. A dated artifact for reproducibility and "
+            "audit trails — the snapshot covers exactly what this query "
+            "walked, so take it with the widest query you intend to replay."
+        ),
+    )
+    cache_grp.add_argument(
+        "--from-snapshot",
+        metavar="FILE",
+        help=(
+            "Replay a --snapshot file instead of reading TOS. No network at "
+            "all. The snapshot's recording time is always printed. A lookup "
+            "the file does not contain is an error, not an empty result."
+        ),
+    )
     p.add_argument(
         "--attribute-list",
         action="store_true",
@@ -14256,9 +14299,32 @@ def _search_main(argv):
         return 2
 
     # ---- Run pipeline ----------------------------------------------------
+    from .api.client_cache import CachingClient, SnapshotClient, SnapshotMiss
+
     scheme = "https" if args.port == 443 else "http"
     base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
-    client = TOSClient(base_url=base_url)
+
+    # --from-snapshot replays a recording; nothing else may reach the wire.
+    replay = None
+    cached = None
+    if args.from_snapshot:
+        try:
+            replay = SnapshotClient.load(args.from_snapshot)
+        except (OSError, ValueError) as exc:
+            print(f"tos search: {exc}", file=sys.stderr)
+            return 2
+        client = replay
+    else:
+        cached = CachingClient(
+            TOSClient(base_url=base_url),
+            ttl=args.cache_ttl,
+            enabled=not args.no_cache,
+            refresh=args.refresh,
+            # Entity ids are unique only within one TOS instance — a shared
+            # cache dir would serve production rows to a test server.
+            server=f"{args.server}:{args.port}",
+        )
+        client = cached
 
     progress = search_mod.stderr_progress(args.no_progress, args.json)
     try:
@@ -14271,12 +14337,44 @@ def _search_main(argv):
             domain=args.domain,
             progress=progress,
         )
+    except SnapshotMiss as exc:
+        print(f"tos search: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # noqa: BLE001 — surface any transport failure
         print(f"tos search: fleet fetch failed: {exc}", file=sys.stderr)
         return 1
 
     if progress is not None:
         sys.stderr.write("\n")  # newline after the \r progress line
+
+    # Provenance BEFORE the results, and on stderr so it survives a pipe to
+    # --json/--markers-only without corrupting stdout. Never suppressed:
+    # this output drives live TOS writes, so its age is not optional.
+    if replay is not None:
+        print(f"  {replay.snapshot_note()}", file=sys.stderr)
+    elif cached is not None:
+        note = cached.cache_note()
+        if note:
+            print(f"  {note}", file=sys.stderr)
+
+    if args.snapshot and cached is not None:
+        try:
+            written = cached.write_snapshot(
+                args.snapshot,
+                criteria=[p.describe() for p in result.predicates],
+                domain=args.domain,
+            )
+            print(f"  snapshot written: {written}", file=sys.stderr)
+        except OSError as exc:
+            print(f"tos search: snapshot write failed: {exc}", file=sys.stderr)
+            return 1
+    elif args.snapshot and replay is not None:
+        print(
+            "tos search: --snapshot with --from-snapshot is a no-op (nothing "
+            "was read from TOS); drop one of them",
+            file=sys.stderr,
+        )
+        return 2
 
     stations = result.stations
     if args.limit is not None:
@@ -14372,6 +14470,13 @@ def _search_main(argv):
 
     Console().print(table)
     return 0
+
+
+def _cache_default_ttl() -> int:
+    """Default cache TTL — imported lazily so --help stays cheap."""
+    from .api.client_cache import DEFAULT_TTL_SECONDS
+
+    return DEFAULT_TTL_SECONDS
 
 
 def _device_summary(device: dict) -> dict:

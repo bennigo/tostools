@@ -16,6 +16,23 @@ import pytest
 TESTS_DIR = Path(__file__).resolve().parent
 
 
+@pytest.fixture(autouse=True)
+def _isolate_read_cache(tmp_path, monkeypatch):
+    """Keep every test off the developer's real TOS read cache.
+
+    ``tos search``'s cache (``api/client_cache.py``) resolves its directory
+    from ``$XDG_CACHE_HOME`` at call time. Without this, a CLI test both
+    reads a warm cache full of real fleet data — which silently supplants
+    the FakeClient's fixtures, so assertions pass or fail on whatever the
+    developer last searched — and writes test fixtures back into it.
+
+    Autouse, because the failure mode is invisible: the test still runs, it
+    just answers a different question. Caught exactly that way — CLI tests
+    started returning live markers instead of their fixtures.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+
+
 def _match_json_body(r1: Any, r2: Any) -> bool:
     """Body matcher that compares JSON payloads as parsed dicts, not bytes.
 
