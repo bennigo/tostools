@@ -13931,10 +13931,23 @@ def _search_main(argv):
             "'name ~ a.b' still means a literal a.b.\n"
             "\n"
             "SELECTORS: a bare code addresses a station attribute. A dotted\n"
-            "selector ('receiver.firmware_version', '*.model') addresses a\n"
-            "joined device — the grammar parses today but resolving it is\n"
-            "not implemented yet; use --receiver / --device to filter on\n"
-            "devices, or 'tos station show STN --all' for one station.\n"
+            "selector addresses an attribute of a currently-joined device:\n"
+            "  receiver.firmware_version   the station's GNSS receiver\n"
+            "  antenna.serial_number\n"
+            "  *.model                     a device of any subtype\n"
+            "The namespace takes the same aliases as --device TYPE:MODEL.\n"
+            "Selectors work in expressions AND in --show:\n"
+            "  tos search --receiver polarx5 \\\n"
+            "      --show receiver.firmware_version,receiver.software_version\n"
+            "  tos search 'receiver.firmware_version ~ 5.7*'\n"
+            "A device selector triggers the per-station device walk, so it\n"
+            "costs what --receiver / --device cost. Narrow with station\n"
+            "predicates first — they prune the fleet BEFORE the walk.\n"
+            "Aggregation is existential: a station matches when ANY device\n"
+            "in the namespace satisfies the predicate, so on a two-receiver\n"
+            "station 'receiver.firmware_version != 5.7.0' means 'has a\n"
+            "receiver that is not on 5.7.0'. Every device in the namespace\n"
+            "contributes to a --show cell, comma-joined.\n"
             "\n"
             "Expressions test the currently-open attribute period — the\n"
             "value the TOS UI's Eigindi panel shows today.\n"
@@ -14068,9 +14081,10 @@ def _search_main(argv):
         metavar="SELECTOR",
         help=(
             "Extra attribute to render as a table column (predicate codes "
-            "are always shown). Repeatable. Takes the same selector grammar "
-            "as an expression's left-hand side; device selectors "
-            "('receiver.firmware_version') parse but are not resolvable yet."
+            "are always shown). Repeatable, and comma-separated lists are "
+            "accepted. Takes the same selector grammar as an expression's "
+            "left-hand side, so device selectors work: "
+            "--show receiver.firmware_version,receiver.software_version"
         ),
     )
     p.add_argument(
@@ -14184,12 +14198,18 @@ def _search_main(argv):
     try:
         for expr in args.expressions:
             predicates.append(search_mod.parse_expression(expr))
-        # --show takes the same selector grammar as an expression's LHS, so
-        # a device selector fails here rather than silently rendering "—".
-        for raw in args.show or []:
-            namespace, code = search_mod.parse_selector(raw)
-            search_mod.require_station_selector(namespace, raw)
-            show_codes.append(code)
+        # --show takes the same selector grammar as an expression's LHS.
+        # Validate here so an unknown namespace is a usage error rather
+        # than an empty column.
+        for entry in args.show or []:
+            # Attribute codes never contain a comma, so splitting is safe
+            # and lets --show take a list the way the sketch wanted.
+            for raw in entry.split(","):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                namespace, code = search_mod.parse_selector(raw)
+                show_codes.append(f"{namespace}.{code}" if namespace else code)
     except ValueError as exc:
         print(f"tos search: {exc}", file=sys.stderr)
         return 2
@@ -14287,8 +14307,19 @@ def _search_main(argv):
                         code: search_mod.open_value(st, code)
                         for code in result.attribute_codes
                     },
+                    "device_attributes": {
+                        f"{ns}.{code}": search_mod.device_values(
+                            result.devices_by_id.get(st.get("id_entity"), []),
+                            ns,
+                            code,
+                        )
+                        for ns, code in result.device_columns
+                    },
                     "devices": (
-                        result.devices_by_id.get(st.get("id_entity"), [])
+                        [
+                            _device_summary(d)
+                            for d in result.devices_by_id.get(st.get("id_entity"), [])
+                        ]
                         if result.device_filters_active
                         else []
                     ),
@@ -14313,6 +14344,8 @@ def _search_main(argv):
     table.add_column("NAME", no_wrap=True)
     for code in result.attribute_codes:
         table.add_column(code.upper(), no_wrap=True)
+    for namespace, code in result.device_columns:
+        table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
     if result.device_filters_active:
         table.add_column("MATCHED DEVICES", no_wrap=True)
 
@@ -14323,6 +14356,8 @@ def _search_main(argv):
         ]
         for code in result.attribute_codes:
             row.append(search_mod.open_value(st, code) or "—")
+        for namespace, code in result.device_columns:
+            row.append(result.device_column_value(st, namespace, code))
         if result.device_filters_active:
             devices = result.devices_by_id.get(st.get("id_entity"), [])
             hits = []
@@ -14337,6 +14372,23 @@ def _search_main(argv):
 
     Console().print(table)
     return 0
+
+
+def _device_summary(device: dict) -> dict:
+    """Public JSON shape for one joined device.
+
+    Projected explicitly rather than dumping the internal dict: the walk
+    now carries the device's full ``attributes`` list so device selectors
+    can be resolved, and that is an implementation detail, not output.
+    """
+    return {
+        "id_entity": device.get("id_entity"),
+        "serial": device.get("serial"),
+        "model": device.get("model"),
+        "subtype": device.get("subtype"),
+        "status": device.get("status"),
+        "since": device.get("since"),
+    }
 
 
 def _print_top_level_help() -> None:

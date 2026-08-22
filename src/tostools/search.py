@@ -134,7 +134,7 @@ ANY_DEVICE = "*"
 
 
 class UnsupportedSelector(ValueError):
-    """A selector is well-formed but not implemented yet.
+    """A selector is well-formed but cannot be answered on this code path.
 
     Subclasses ``ValueError`` so the CLI's existing parse-error path turns
     it into a usage error (exit 2) with the message attached.
@@ -181,17 +181,19 @@ def parse_selector(raw: str) -> tuple:
 
 
 def require_station_selector(namespace: Optional[str], raw: str) -> None:
-    """Reject a device selector until the device namespace lands.
+    """Guard the station-only code paths against a device selector.
 
-    Slice 1 ships the grammar; resolving ``receiver.firmware_version``
-    needs the per-station device walk, which is the next change.
+    Device selectors ARE supported (see
+    :func:`predicate_matches_devices`), but they can only be answered from
+    the per-station device walk. The bulk station listing carries no
+    devices, so anything evaluating against it must refuse rather than
+    quietly report False.
     """
     if namespace is not None:
         raise UnsupportedSelector(
-            f"device selector {raw!r} is not supported yet — this release "
-            "parses the namespace but cannot resolve it. Use --receiver / "
-            "--device to filter on devices, or 'tos station show STN --all' "
-            "for one station's device attributes."
+            f"device selector {raw!r} cannot be resolved from the bulk "
+            "station listing — it needs the per-station device walk. This is "
+            "an internal guard; report it as a bug if you hit it from the CLI."
         )
 
 
@@ -266,7 +268,6 @@ def parse_expression(expr: str) -> Predicate:
         )
     raw_code, op, value = m.groups()
     namespace, code = parse_selector(raw_code)
-    require_station_selector(namespace, raw_code)
     stripped = value.strip()
     if stripped.startswith("[") and stripped.endswith("]"):
         items = [v.strip() for v in stripped[1:-1].split(",") if v.strip()]
@@ -443,6 +444,74 @@ def device_spec_matches(device: dict, spec: DeviceSpec) -> bool:
     return True
 
 
+def device_in_namespace(device: dict, namespace: str) -> bool:
+    """Is this joined device addressed by ``namespace``?
+
+    ``*`` (:data:`ANY_DEVICE`) matches every subtype; anything else is an
+    exact canonical-subtype match.
+    """
+    if namespace == ANY_DEVICE:
+        return True
+    return device.get("subtype") == namespace
+
+
+def device_values(devices: List[dict], namespace: str, code: str) -> List[Any]:
+    """Open values of ``code`` across every device in ``namespace``.
+
+    One entry per matching device, ``None`` where that device has no open
+    period for the code. An empty list means the station has no device of
+    that subtype at all — which is a different thing from having one whose
+    attribute is unset, and the two are deliberately NOT collapsed: a
+    station with two receivers contributes two entries, so nothing silently
+    reports one receiver's firmware as though it were the station's.
+    """
+    return [open_value(d, code) for d in devices if device_in_namespace(d, namespace)]
+
+
+def predicate_matches_devices(devices: List[dict], pred: Predicate) -> bool:
+    """Evaluate a device-selector predicate against a station's devices.
+
+    Aggregation is **existential**: the station matches when *any* device
+    in the namespace satisfies the predicate. So
+    ``receiver.firmware_version != 5.7.0`` means 'has a receiver that is
+    not on 5.7.0', which on a two-receiver station is a weaker claim than
+    'no receiver is on 5.7.0' — stated in ``--help`` rather than made
+    configurable.
+
+    Absence mirrors the station-attribute rules: with no value present,
+    only a negative operator can hold, and ``= null`` / ``!= null`` test
+    for the attribute's presence anywhere in the namespace.
+    """
+    values = device_values(devices, pred.namespace or ANY_DEVICE, pred.code)
+    present = [v for v in values if v is not None]
+
+    if pred.op in ("=", "!=") and norm_value(pred.value) == "all":
+        return pred.op == "="
+    if pred.op in ("=", "!=") and is_null_term(pred.value):
+        return bool(present) if pred.op == "!=" else not present
+
+    if not present:
+        # Nothing to match: only a negation can hold, exactly as for an
+        # absent station attribute.
+        return pred.op in ("!=", "!~", "not in")
+
+    if pred.op == "in":
+        wanted = {norm_value(v) for v in pred.values}
+        return any(norm_value(v) in wanted for v in present)
+    if pred.op == "not in":
+        wanted = {norm_value(v) for v in pred.values}
+        return any(norm_value(v) not in wanted for v in present)
+    if pred.op == "=":
+        return any(norm_value(v) == norm_value(pred.value) for v in present)
+    if pred.op == "!=":
+        return any(norm_value(v) != norm_value(pred.value) for v in present)
+    if pred.op == "~":
+        return any(text_matches(v, pred.value) for v in present)
+    if pred.op == "!~":
+        return any(not text_matches(v, pred.value) for v in present)
+    return False
+
+
 def devices_satisfy(
     devices: List[dict], must: List[DeviceSpec], must_not: List[DeviceSpec]
 ) -> bool:
@@ -566,6 +635,12 @@ def station_open_devices(client: Any, station_id: int) -> List[dict]:
                 "subtype": child.get("code_entity_subtype") or "?",
                 "status": open_value(child, "status") or "—",
                 "since": conn.get("time_from"),
+                # Raw periods, so an arbitrary device selector
+                # (receiver.firmware_version) can be resolved without a
+                # second fetch. Keyed "attributes" so open_value() works on
+                # this dict directly. The CLI renders an explicit summary
+                # rather than dumping the dict, so this never reaches JSON.
+                "attributes": child.get("attributes") or [],
             }
         )
     return devices
@@ -643,20 +718,54 @@ class SearchResult:
 
     @property
     def attribute_codes(self) -> List[str]:
-        """Codes to render as columns: predicate codes + --show codes.
+        """STATION columns: bare predicate codes + bare --show selectors.
 
-        Station attributes only. Device selectors never reach here in this
-        release (the CLI refuses them at parse time), so a predicate's
-        namespace is always None and ``code`` is the column key.
+        Dotted selectors are device columns and are excluded here — see
+        :attr:`device_columns`.
         """
         codes: List[str] = []
         for pred in self.predicates:
             if pred.namespace is None and pred.code not in codes:
                 codes.append(pred.code)
-        for code in self.show_codes:
-            if code not in codes:
-                codes.append(code)
+        for raw in self.show_codes:
+            if "." in raw:
+                continue
+            if raw not in codes:
+                codes.append(raw)
         return codes
+
+    @property
+    def device_columns(self) -> List[tuple]:
+        """DEVICE columns as ``(namespace, code)``: predicates + --show."""
+        cols: List[tuple] = []
+        for pred in self.predicates:
+            if pred.namespace is not None:
+                pair = (pred.namespace, pred.code)
+                if pair not in cols:
+                    cols.append(pair)
+        for raw in self.show_codes:
+            if "." not in raw:
+                continue
+            pair = parse_selector(raw)
+            if pair not in cols:
+                cols.append(pair)
+        return cols
+
+    @property
+    def device_selectors_active(self) -> bool:
+        return bool(self.device_columns)
+
+    def device_column_value(self, station: dict, namespace: str, code: str) -> str:
+        """Rendered cell for one device column on one station.
+
+        Every device in the namespace contributes an entry, joined by
+        ``, `` — so a station with two receivers shows both firmware
+        values rather than whichever the walk happened to return first.
+        """
+        devices = self.devices_by_id.get(station.get("id_entity"), [])
+        values = device_values(devices, namespace, code)
+        rendered = [str(v) if v is not None else "—" for v in values]
+        return ", ".join(rendered) if rendered else "—"
 
 
 def search_stations(
@@ -679,24 +788,52 @@ def search_stations(
     """
     device_must = device_must or []
     device_must_not = device_must_not or []
+    raw_show = [c.lower() for c in (show_codes or [])]
+
+    # Station predicates prune the fleet BEFORE any device walk; device
+    # predicates can only be evaluated after it.
+    station_preds = [p for p in predicates if p.namespace is None]
+    device_preds = [p for p in predicates if p.namespace is not None]
+
     fleet = fetch_fleet(client, domain=domain)
-    survivors = filter_by_predicates(fleet, predicates)
+    survivors = filter_by_predicates(fleet, station_preds)
+
+    # A device selector needs the walk even with no --device/--receiver
+    # filter — projecting receiver.firmware_version is reason enough.
+    show_needs_devices = any("." in c for c in raw_show)
+    need_devices = bool(
+        device_must or device_must_not or device_preds or show_needs_devices
+    )
 
     devices_by_id: Dict[int, List[dict]] = {}
-    if device_must or device_must_not:
+    if need_devices:
         devices_by_id = walk_devices(
             client,
             [s.get("id_entity") for s in survivors if s.get("id_entity")],
             max_workers=max_workers,
             progress=progress,
         )
-        survivors = [
-            s
-            for s in survivors
-            if devices_satisfy(
-                devices_by_id.get(s.get("id_entity"), []), device_must, device_must_not
-            )
-        ]
+        if device_must or device_must_not:
+            survivors = [
+                s
+                for s in survivors
+                if devices_satisfy(
+                    devices_by_id.get(s.get("id_entity"), []),
+                    device_must,
+                    device_must_not,
+                )
+            ]
+        if device_preds:
+            survivors = [
+                s
+                for s in survivors
+                if all(
+                    predicate_matches_devices(
+                        devices_by_id.get(s.get("id_entity"), []), p
+                    )
+                    for p in device_preds
+                )
+            ]
 
     # Sort by marker (fallback name), then apply limit upstream in the CLI.
     def _sort_key(s: dict) -> str:
@@ -707,7 +844,7 @@ def search_stations(
     return SearchResult(
         stations=survivors,
         predicates=list(predicates),
-        show_codes=[c.lower() for c in (show_codes or [])],
+        show_codes=raw_show,
         device_must=device_must,
         device_must_not=device_must_not,
         devices_by_id=devices_by_id,

@@ -24,6 +24,8 @@ from tostools.search import (
     Predicate,
     UnsupportedSelector,
     attribute_inventory,
+    device_in_namespace,
+    device_values,
     devices_satisfy,
     filter_by_predicates,
     has_glob,
@@ -33,6 +35,7 @@ from tostools.search import (
     parse_expression,
     parse_selector,
     predicate_matches,
+    predicate_matches_devices,
     require_station_selector,
     search_stations,
     text_matches,
@@ -83,6 +86,8 @@ def _device(
     subtype: str,
     model: Optional[str],
     serial: str = "123",
+    *,
+    extra: Optional[List[dict]] = None,
 ) -> dict:
     attrs: List[dict] = [
         _attr("serial_number", serial),
@@ -91,6 +96,7 @@ def _device(
     ]
     if model is not None:
         attrs.append(_attr("model", model))
+    attrs.extend(extra or [])
     return {
         "id_entity": did,
         "code_entity_subtype": subtype,
@@ -358,7 +364,7 @@ class TestDeviceSelectorRefused:
         require_station_selector(None, "marker")  # no raise
 
     def test_require_station_selector_raises_for_device(self):
-        with pytest.raises(UnsupportedSelector, match="not supported yet"):
+        with pytest.raises(UnsupportedSelector, match="bulk station listing"):
             require_station_selector("gnss_receiver", "receiver.firmware_version")
 
     def test_unsupported_selector_is_a_value_error(self):
@@ -366,13 +372,11 @@ class TestDeviceSelectorRefused:
         # that path rather than escaping as an unhandled exception.
         assert issubclass(UnsupportedSelector, ValueError)
 
-    def test_expression_with_device_selector_raises(self):
-        with pytest.raises(UnsupportedSelector):
-            parse_expression("receiver.firmware_version = 5.7.0")
-
-    def test_expression_error_names_the_selector(self):
-        with pytest.raises(UnsupportedSelector, match="receiver.firmware_version"):
-            parse_expression("receiver.firmware_version = 5.7.0")
+    def test_expression_with_device_selector_parses(self):
+        pred = parse_expression("receiver.firmware_version = 5.7.0")
+        assert pred.namespace == "gnss_receiver"
+        assert pred.code == "firmware_version"
+        assert pred.value == "5.7.0"
 
     def test_predicate_matches_refuses_device_namespace(self):
         # Backstop: even if a Predicate is built directly, evaluating it
@@ -403,6 +407,148 @@ class TestPredicateSelectorRendering:
         assert (
             Predicate("model", "=", "x", namespace="antenna").selector
             == "antenna.model"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Device selectors — resolution against joined devices
+# ---------------------------------------------------------------------------
+
+
+def _receiver(did, model="POLARX5", fw=None, sw=None, serial="123"):
+    extra = []
+    if fw is not None:
+        extra.append(_attr("firmware_version", fw))
+    if sw is not None:
+        extra.append(_attr("software_version", sw))
+    return _device(did, "gnss_receiver", model, serial, extra=extra)
+
+
+def _walked(*devices) -> List[dict]:
+    """Devices in the shape :func:`station_open_devices` returns them."""
+    return [
+        {
+            "id_entity": d["id_entity"],
+            "serial": open_value(d, "serial_number") or "?",
+            "model": open_value(d, "model"),
+            "subtype": d["code_entity_subtype"],
+            "status": open_value(d, "status") or "—",
+            "since": "2020-01-01T00:00:00",
+            "attributes": d["attributes"],
+        }
+        for d in devices
+    ]
+
+
+class TestDeviceNamespace:
+    def test_exact_subtype(self):
+        d = _walked(_receiver(1))[0]
+        assert device_in_namespace(d, "gnss_receiver")
+        assert not device_in_namespace(d, "antenna")
+
+    def test_star_matches_everything(self):
+        d = _walked(_receiver(1))[0]
+        assert device_in_namespace(d, ANY_DEVICE)
+
+
+class TestDeviceValues:
+    def test_collects_one_entry_per_matching_device(self):
+        devices = _walked(
+            _receiver(1, fw="5.7.0"),
+            _receiver(2, fw="5.6.0"),
+            _device(3, "antenna", "TRM59800.00"),
+        )
+        assert device_values(devices, "gnss_receiver", "firmware_version") == [
+            "5.7.0",
+            "5.6.0",
+        ]
+
+    def test_none_for_device_without_the_attribute(self):
+        devices = _walked(_receiver(1, fw="5.7.0"), _receiver(2))
+        assert device_values(devices, "gnss_receiver", "firmware_version") == [
+            "5.7.0",
+            None,
+        ]
+
+    def test_empty_when_no_device_of_subtype(self):
+        devices = _walked(_device(1, "antenna", "TRM59800.00"))
+        assert device_values(devices, "gnss_receiver", "firmware_version") == []
+
+
+class TestPredicateMatchesDevices:
+    def _two_receivers(self):
+        return _walked(_receiver(1, fw="5.7.0"), _receiver(2, fw="5.6.0"))
+
+    def test_equality_existential(self):
+        devices = self._two_receivers()
+        assert predicate_matches_devices(
+            devices,
+            Predicate("firmware_version", "=", "5.6.0", namespace="gnss_receiver"),
+        )
+
+    def test_equality_no_match(self):
+        devices = self._two_receivers()
+        assert not predicate_matches_devices(
+            devices,
+            Predicate("firmware_version", "=", "9.9.9", namespace="gnss_receiver"),
+        )
+
+    def test_inequality_is_existential_not_universal(self):
+        # Documented semantics: 'has a receiver that is NOT 5.7.0'. With a
+        # 5.7.0 and a 5.6.0 joined, that holds.
+        devices = self._two_receivers()
+        assert predicate_matches_devices(
+            devices,
+            Predicate("firmware_version", "!=", "5.7.0", namespace="gnss_receiver"),
+        )
+
+    def test_glob_on_device_attribute(self):
+        devices = self._two_receivers()
+        assert predicate_matches_devices(
+            devices,
+            Predicate("firmware_version", "~", "5.7*", namespace="gnss_receiver"),
+        )
+        assert not predicate_matches_devices(
+            devices,
+            Predicate("firmware_version", "~", "4.*", namespace="gnss_receiver"),
+        )
+
+    def test_null_tests_presence(self):
+        without = _walked(_receiver(1))
+        assert predicate_matches_devices(
+            without,
+            Predicate("firmware_version", "=", "null", namespace="gnss_receiver"),
+        )
+        assert not predicate_matches_devices(
+            without,
+            Predicate("firmware_version", "!=", "null", namespace="gnss_receiver"),
+        )
+
+    def test_absent_device_only_satisfies_negation(self):
+        none_joined = _walked(_device(1, "antenna", "TRM59800.00"))
+        eq = Predicate("firmware_version", "=", "5.7.0", namespace="gnss_receiver")
+        ne = Predicate("firmware_version", "!=", "5.7.0", namespace="gnss_receiver")
+        assert not predicate_matches_devices(none_joined, eq)
+        assert predicate_matches_devices(none_joined, ne)
+
+    def test_star_namespace_spans_subtypes(self):
+        devices = _walked(
+            _receiver(1, model="POLARX5"), _device(2, "antenna", "TRM59800.00")
+        )
+        assert predicate_matches_devices(
+            devices, Predicate("model", "~", "trm*", namespace=ANY_DEVICE)
+        )
+
+    def test_in_list(self):
+        devices = self._two_receivers()
+        assert predicate_matches_devices(
+            devices,
+            Predicate(
+                "firmware_version",
+                "in",
+                values=("5.6.0", "9.9.9"),
+                namespace="gnss_receiver",
+            ),
         )
 
 
@@ -796,23 +942,123 @@ class TestSearchCli:
         assert rc == 0
         assert sorted(out.split()) == ["KRAC", "VMEY"]
 
-    def test_device_selector_expression_exits_2(self, capsys):
-        rc, out = _run_cli(
-            ["receiver.firmware_version = 5.7.0"], self._fleet(), capsys=capsys
-        )
-        assert rc == 2
-        assert "not supported yet" in out
+    def _fleet_with_receivers(self):
+        """VMEY on 5.7.0, RHOF on 5.6.0, KRAC with two receivers (MOHA-like)."""
+        fleet = self._fleet()
+        devices = {
+            100: [_receiver(500, fw="5.7.0", sw="5.70", serial="3018426")],
+            101: [_receiver(501, fw="5.6.0", sw="5.60", serial="3018451")],
+            # The MOHA shape: a stale TRIMBLE join never closed alongside
+            # the live Septentrio.
+            102: [
+                _device(502, "gnss_receiver", "TRIMBLE NETRS", "4921172738"),
+                _receiver(503, fw="5.4.0", sw="5.40", serial="3070999"),
+            ],
+        }
+        return fleet, devices
 
-    def test_device_selector_in_show_exits_2(self, capsys):
-        # --show must refuse a device selector rather than rendering "—"
-        # for every row, which would read as 'no station has one'.
+    def test_device_selector_filters(self, capsys):
+        fleet, devices = self._fleet_with_receivers()
         rc, out = _run_cli(
-            ["--epos", "--show", "receiver.firmware_version"],
-            self._fleet(),
+            ["receiver.firmware_version = 5.7.0", "--markers-only"],
+            fleet,
+            devices,
             capsys=capsys,
         )
-        assert rc == 2
-        assert "not supported yet" in out
+        assert rc == 0
+        assert out.split() == ["VMEY"]
+
+    def test_device_selector_glob_filters(self, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            ["receiver.firmware_version ~ 5.7*", "--markers-only"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert out.split() == ["VMEY"]
+
+    def test_device_selector_projects_column(self, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            ["--show", "receiver.firmware_version"], fleet, devices, capsys=capsys
+        )
+        assert rc == 0
+        assert "GNSS_RECEIVER.FIRMWARE_VERSION" in out
+        assert "5.7.0" in out and "5.6.0" in out
+
+    def test_show_accepts_comma_separated_selectors(self, capsys):
+        # Asserted via --json: the table truncates headers to terminal
+        # width, which would make this assertion about Rich, not parsing.
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            [
+                "marker = VMEY",
+                "--show",
+                "receiver.firmware_version,receiver.software_version",
+                "--json",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        attrs = json.loads(out)["stations"][0]["device_attributes"]
+        assert attrs["gnss_receiver.firmware_version"] == ["5.7.0"]
+        assert attrs["gnss_receiver.software_version"] == ["5.70"]
+
+    def test_two_receivers_both_render(self, capsys):
+        """The MOHA case — a station with two open receiver joins.
+
+        Collapsing it to one value is the exact defect this feature exists
+        to prevent (the sweep script keyed by marker and silently dropped
+        one), so both serials must appear in the cell.
+        """
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            ["marker = KRAC", "--show", "receiver.serial_number"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "4921172738" in out
+        assert "3070999" in out
+
+    def test_device_selector_json_shape(self, capsys):
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            ["marker = VMEY", "--show", "receiver.firmware_version", "--json"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        st = payload["stations"][0]
+        assert st["device_attributes"]["gnss_receiver.firmware_version"] == ["5.7.0"]
+
+    def test_json_does_not_leak_raw_attribute_lists(self, capsys):
+        """The walk carries device 'attributes' internally; JSON must not."""
+        fleet, devices = self._fleet_with_receivers()
+        rc, out = _run_cli(
+            ["--receiver", "polarx5", "--json"], fleet, devices, capsys=capsys
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        emitted = [d for st in payload["stations"] for d in st["devices"]]
+        assert emitted, "expected device summaries in the payload"
+        for dev in emitted:
+            assert "attributes" not in dev
+            assert set(dev) == {
+                "id_entity",
+                "serial",
+                "model",
+                "subtype",
+                "status",
+                "since",
+            }
 
     def test_unknown_namespace_in_show_exits_2(self, capsys):
         rc, out = _run_cli(
