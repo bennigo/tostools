@@ -1,7 +1,26 @@
 """
 IGS Site Log generation and management.
 
-This module provides functions for generating IGS-standard site logs from TOS metadata.
+This module provides functions for generating IGS-standard site logs from TOS
+metadata.
+
+⚠️  ``generate_igs_site_log`` IS NOT THE LIVE RENDERER (verified 2026-08-22).
+
+Nothing in production calls it. Its only callers are
+``tests/test_site_log_v2_sections.py`` and a commented-out import in
+``tosGPS.py``. Both paths that actually publish a site log use
+:func:`tostools.legacy.gps_metadata_functions.site_log` instead:
+
+- ``tosGPS sitelog``            → ``tosGPS.py:1590,1598`` (``gpsf.site_log``)
+- receivers' M3G dissemination  → ``receivers/dissemination/sitelogs.py:201``
+
+Only :func:`export_site_log_to_file` from this module is used in anger
+(``sitelogs.py:256``) — the file writer, not the renderer.
+
+So a fix applied here changes nothing that reaches M3G. That is precisely the
+trap behind the VMEY HTTP 422 incident (2026-08-20, empty antenna serial), and
+why ``tests/test_sitelog_unknown_antenna_serial.py`` pins BOTH modules. Until
+the two are collapsed onto one renderer, every site-log fix has to land twice.
 """
 
 import logging

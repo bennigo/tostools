@@ -80,7 +80,10 @@ class TestCoreGenerator:
         assert _serial_line(_generate_antenna_section(_session(serial))) == "0000"
 
     def test_a_real_serial_is_published_unchanged(self):
-        assert _serial_line(_generate_antenna_section(_session("1441137916"))) == "1441137916"
+        assert (
+            _serial_line(_generate_antenna_section(_session("1441137916")))
+            == "1441137916"
+        )
 
     def test_the_synthetic_key_never_reaches_the_output(self):
         out = _generate_antenna_section(_session("antenna-VMEY-20230111"))
@@ -111,3 +114,65 @@ class TestBothGeneratorsAreFixed:
         src = inspect.getsource(core._generate_antenna_section)
         assert "PUBLISHED_UNKNOWN_ANTENNA_SERIAL" in src
         assert 'serial_num = ""' not in src
+
+
+# ---------------------------------------------------------------------------
+# Which renderer is actually live
+# ---------------------------------------------------------------------------
+
+
+class TestLiveRendererIsTheLegacyOne:
+    """Pin the wiring, not just the output.
+
+    Both publishing paths render through
+    ``legacy.gps_metadata_functions.site_log``;
+    ``core.site_log.generate_igs_site_log`` has no production caller. Two
+    docstrings claimed the reverse until 2026-08-22, which would send anyone
+    fixing a published-output bug to a module that reaches nothing — the
+    shape of the VMEY 422. If a future refactor swaps the wiring, that is a
+    deliberate act and this test should be updated with it, not silently.
+    """
+
+    def test_tosgps_sitelog_renders_through_legacy(self):
+        import inspect
+
+        from tostools import tosGPS
+
+        src = inspect.getsource(tosGPS)
+        assert "gpsf.site_log(" in src
+        assert "from .legacy import gps_metadata_functions as gpsf" in src
+
+    def test_receivers_dissemination_renders_through_legacy(self):
+        from pathlib import Path
+
+        sitelogs = (
+            Path(__file__).resolve().parents[2]
+            / "receivers/src/receivers/dissemination/sitelogs.py"
+        )
+        if not sitelogs.exists():  # receivers not checked out beside tostools
+            pytest.skip("receivers package not available")
+        src = sitelogs.read_text(encoding="utf-8")
+        assert "from tostools.legacy.gps_metadata_functions import site_log" in src
+        # Only the file writer may come from core.site_log.
+        assert "from tostools.core.site_log import export_site_log_to_file" in src
+        assert "core.site_log import generate_igs_site_log" not in src
+
+    def test_core_renderer_has_no_production_caller(self):
+        """Guard the claim in core/site_log.py's docstring."""
+        from pathlib import Path
+
+        src_root = Path(__file__).resolve().parents[1] / "src/tostools"
+        callers = []
+        for path in src_root.rglob("*.py"):
+            if path.name == "site_log.py" and path.parent.name == "core":
+                continue  # the definition itself
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if "generate_igs_site_log" in line and not line.lstrip().startswith(
+                    "#"
+                ):
+                    callers.append(f"{path.name}:{i}")
+        assert not callers, (
+            "core.site_log.generate_igs_site_log gained a caller: "
+            f"{callers}. If that is intentional, the module docstring and "
+            "receivers/dissemination/sitelogs.py must stop saying it is unused."
+        )
