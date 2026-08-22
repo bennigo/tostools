@@ -13,8 +13,9 @@ attribute-catalog bug `data_files` was written to fix.
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 from tostools.legacy.gps_metadata_functions import get_data_file_path
 

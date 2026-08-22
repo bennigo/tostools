@@ -17,8 +17,6 @@ composite-split review note.
 
 from __future__ import annotations
 
-import pytest
-
 from tostools.audit_reconstruct import (
     ANTENNA,
     BUCKET_ATTACHED,

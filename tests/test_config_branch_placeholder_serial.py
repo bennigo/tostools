@@ -20,9 +20,9 @@ this path was never guarded, which is why the damage continued after both
 shipped.
 """
 
-import pytest
-
 import logging
+
+import pytest
 
 from tostools.rinex.corrector import _get_corrections_from_config
 
