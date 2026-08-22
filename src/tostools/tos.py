@@ -14087,6 +14087,29 @@ def _search_main(argv):
             "--show receiver.firmware_version,receiver.software_version"
         ),
     )
+    time_grp = p.add_argument_group("time")
+    time_grp.add_argument(
+        "--at",
+        metavar="YYYY-MM-DD",
+        help=(
+            "Evaluate every selector as of this date instead of today. The "
+            "period covering the date wins, so 'who ran 5.3.0 in June 2021' "
+            "becomes answerable. Default is the open period."
+        ),
+    )
+    time_grp.add_argument(
+        "--history",
+        action="store_true",
+        help=(
+            "Expand to one row per period instead of one row per station, "
+            "with FROM/TO columns. Filters become existential over time — "
+            "'ever held this value' rather than 'holds it now'. Rows are "
+            "segmented at the union of every selected column's change "
+            "dates, so columns that move on different dates stay correct. "
+            "Mutually exclusive with --at."
+        ),
+    )
+
     cache_grp = p.add_argument_group("caching and snapshots")
     cache_grp.add_argument(
         "--cache-ttl",
@@ -14298,6 +14321,21 @@ def _search_main(argv):
         print(f"tos search: {exc}", file=sys.stderr)
         return 2
 
+    # ---- Time mode -------------------------------------------------------
+    if args.at and args.history:
+        print(
+            "tos search: --at and --history are mutually exclusive (--at picks "
+            "ONE instant, --history spans them all)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.at and not _is_iso_day(args.at):
+        print(
+            f"tos search: --at {args.at!r} is not a valid YYYY-MM-DD date",
+            file=sys.stderr,
+        )
+        return 2
+
     # ---- Run pipeline ----------------------------------------------------
     from .api.client_cache import CachingClient, SnapshotClient, SnapshotMiss
 
@@ -14336,6 +14374,8 @@ def _search_main(argv):
             show_codes=show_codes,
             domain=args.domain,
             progress=progress,
+            at=args.at,
+            history=args.history,
         )
     except SnapshotMiss as exc:
         print(f"tos search: {exc}", file=sys.stderr)
@@ -14395,6 +14435,8 @@ def _search_main(argv):
                 "devices": [spec.describe() for spec in result.device_must]
                 + [spec.describe() for spec in result.device_must_not],
                 "domain": args.domain,
+                "at": result.at,
+                "history": result.history,
             },
             "stations": [
                 {
@@ -14402,14 +14444,31 @@ def _search_main(argv):
                     "marker": search_mod.open_value(st, "marker"),
                     "name": search_mod.open_value(st, "name"),
                     "attributes": {
-                        code: search_mod.open_value(st, code)
+                        code: search_mod.value_at(st, code, result.at)
                         for code in result.attribute_codes
                     },
+                    # Raw period lists, emitted only under --history: the
+                    # table's segmented view is for reading, this is for
+                    # comparing against another record of the same chains.
+                    **(
+                        {
+                            "attribute_periods": {
+                                code: search_mod.attribute_periods(st, code)
+                                for code in result.attribute_codes
+                            },
+                            "device_periods": {
+                                f"{ns}.{code}": search_mod.device_periods(
+                                    result.station_devices(st), ns, code
+                                )
+                                for ns, code in result.device_columns
+                            },
+                        }
+                        if result.history
+                        else {}
+                    ),
                     "device_attributes": {
                         f"{ns}.{code}": search_mod.device_values(
-                            result.devices_by_id.get(st.get("id_entity"), []),
-                            ns,
-                            code,
+                            result.station_devices(st), ns, code, at=result.at
                         )
                         for ns, code in result.device_columns
                     },
@@ -14439,13 +14498,34 @@ def _search_main(argv):
 
     table = Table(box=None, show_edge=False, pad_edge=False)
     table.add_column("MARKER", no_wrap=True)
-    table.add_column("NAME", no_wrap=True)
+    if result.history:
+        # One row per period: NAME is dropped to make room for the span,
+        # which is the point of the mode.
+        table.add_column("FROM", no_wrap=True)
+        table.add_column("TO", no_wrap=True)
+    else:
+        table.add_column("NAME", no_wrap=True)
     for code in result.attribute_codes:
         table.add_column(code.upper(), no_wrap=True)
     for namespace, code in result.device_columns:
         table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
-    if result.device_filters_active:
+    if result.device_filters_active and not result.history:
         table.add_column("MATCHED DEVICES", no_wrap=True)
+
+    if result.history:
+        for st in stations:
+            marker = (search_mod.open_value(st, "marker") or "?").upper()
+            for seg_from, seg_to in result.timeline(st):
+                row = [marker, seg_from or "—", seg_to or "open"]
+                for code in result.attribute_codes:
+                    row.append(search_mod.value_at(st, code, seg_from) or "—")
+                for namespace, code in result.device_columns:
+                    row.append(
+                        result.device_column_value(st, namespace, code, at=seg_from)
+                    )
+                table.add_row(*row)
+        Console().print(table)
+        return 0
 
     for st in stations:
         row = [
@@ -14453,7 +14533,7 @@ def _search_main(argv):
             search_mod.open_value(st, "name") or "—",
         ]
         for code in result.attribute_codes:
-            row.append(search_mod.open_value(st, code) or "—")
+            row.append(search_mod.value_at(st, code, result.at) or "—")
         for namespace, code in result.device_columns:
             row.append(result.device_column_value(st, namespace, code))
         if result.device_filters_active:
@@ -14470,6 +14550,17 @@ def _search_main(argv):
 
     Console().print(table)
     return 0
+
+
+def _is_iso_day(raw: str) -> bool:
+    """Strict YYYY-MM-DD check — rejects 2026-13-45, not just bad shapes."""
+    from datetime import datetime
+
+    try:
+        datetime.strptime(raw.strip(), "%Y-%m-%d")
+    except (ValueError, AttributeError):
+        return False
+    return True
 
 
 def _cache_default_ttl() -> int:

@@ -23,12 +23,15 @@ from tostools.search import (
     DeviceSpec,
     Predicate,
     UnsupportedSelector,
+    as_day,
     attribute_inventory,
+    attribute_periods,
     device_in_namespace,
     device_values,
     devices_satisfy,
     filter_by_predicates,
     has_glob,
+    history_values,
     norm_value,
     open_value,
     parse_device_spec,
@@ -39,6 +42,7 @@ from tostools.search import (
     require_station_selector,
     search_stations,
     text_matches,
+    value_at,
 )
 
 # ---------------------------------------------------------------------------
@@ -553,6 +557,148 @@ class TestPredicateMatchesDevices:
 
 
 # ---------------------------------------------------------------------------
+# Time — --at (point in time) and --history (span)
+# ---------------------------------------------------------------------------
+
+
+def _period(code, value, date_from, date_to=None):
+    return {
+        "code": code,
+        "value": value,
+        "date_from": f"{date_from}T00:00:00",
+        "date_to": f"{date_to}T00:00:00" if date_to else None,
+    }
+
+
+def _chained_receiver(did=1, code="firmware_version"):
+    """A receiver whose chain is 5.1.2 -> 5.3.0 -> 5.6.0 (open)."""
+    return {
+        "id_entity": did,
+        "code_entity_subtype": "gnss_receiver",
+        "attributes": [
+            _period("model", "SEPT POLARX5", "2017-07-12"),
+            _period(code, "5.1.2", "2017-07-12", "2019-10-16"),
+            _period(code, "5.3.0", "2019-10-16", "2021-04-15"),
+            _period(code, "5.6.0", "2021-04-15"),
+        ],
+    }
+
+
+class TestAsDay:
+    def test_truncates_timestamp(self):
+        assert as_day("2019-10-15T00:00:00") == "2019-10-15"
+
+    def test_none_stays_none(self):
+        assert as_day(None) is None
+
+
+class TestAttributePeriods:
+    def test_sorted_oldest_first(self):
+        rx = _chained_receiver()
+        vals = [p["value"] for p in attribute_periods(rx, "firmware_version")]
+        assert vals == ["5.1.2", "5.3.0", "5.6.0"]
+
+    def test_open_period_has_none_date_to(self):
+        rx = _chained_receiver()
+        assert attribute_periods(rx, "firmware_version")[-1]["date_to"] is None
+
+
+class TestValueAt:
+    @pytest.mark.parametrize(
+        "day,expected",
+        [
+            ("2018-01-01", "5.1.2"),
+            ("2019-10-15", "5.1.2"),  # day before the boundary
+            ("2019-10-16", "5.3.0"),  # boundary belongs to the NEW period
+            ("2020-06-01", "5.3.0"),
+            ("2021-04-15", "5.6.0"),
+            ("2030-01-01", "5.6.0"),  # open period runs forever
+        ],
+    )
+    def test_period_covering_the_day(self, day, expected):
+        assert value_at(_chained_receiver(), "firmware_version", day) == expected
+
+    def test_before_the_chain_is_none(self):
+        assert value_at(_chained_receiver(), "firmware_version", "2010-01-01") is None
+
+    def test_none_means_open_period(self):
+        rx = _chained_receiver()
+        assert value_at(rx, "firmware_version") == "5.6.0"
+        assert value_at(rx, "firmware_version") == open_value(rx, "firmware_version")
+
+
+class TestHistoryValues:
+    def test_every_value_ever_held(self):
+        assert history_values(_chained_receiver(), "firmware_version") == [
+            "5.1.2",
+            "5.3.0",
+            "5.6.0",
+        ]
+
+
+class TestHistoryFiltering:
+    """The regression that motivated the whole feature.
+
+    A chain whose OPEN period agrees can still have diverged history. A
+    predicate must find it with history=True and miss it without — if
+    --history quietly evaluated the open period, this passes silently and
+    the bug returns.
+    """
+
+    def _station(self):
+        return _station(1, "HVEL", "A", extra=[])
+
+    def test_superseded_value_found_only_with_history(self):
+        devices = _walked_raw(_chained_receiver())
+        pred = Predicate("firmware_version", "=", "5.3.0", namespace="gnss_receiver")
+        assert not predicate_matches_devices(devices, pred)
+        assert predicate_matches_devices(devices, pred, history=True)
+
+    def test_current_value_found_either_way(self):
+        devices = _walked_raw(_chained_receiver())
+        pred = Predicate("firmware_version", "=", "5.6.0", namespace="gnss_receiver")
+        assert predicate_matches_devices(devices, pred)
+        assert predicate_matches_devices(devices, pred, history=True)
+
+    def test_at_selects_the_era(self):
+        devices = _walked_raw(_chained_receiver())
+        pred = Predicate("firmware_version", "=", "5.3.0", namespace="gnss_receiver")
+        assert predicate_matches_devices(devices, pred, at="2020-06-01")
+        assert not predicate_matches_devices(devices, pred, at="2018-01-01")
+
+    def test_station_attribute_history(self):
+        st = {
+            "id_entity": 1,
+            "code_entity_subtype": "geophysical",
+            "attributes": [
+                _period("marker", "HVEL", "2000-01-01"),
+                _period("status", "old", "2000-01-01", "2020-01-01"),
+                _period("status", "new", "2020-01-01"),
+            ],
+        }
+        pred = Predicate("status", "=", "old")
+        assert not predicate_matches(st, pred)
+        assert predicate_matches(st, pred, history=True)
+        assert predicate_matches(st, pred, at="2010-01-01")
+
+
+def _walked_raw(*devices) -> List[dict]:
+    """Raw device entities in walked shape, keeping full attributes."""
+    return [
+        {
+            "id_entity": d["id_entity"],
+            "serial": open_value(d, "serial_number") or "?",
+            "model": open_value(d, "model"),
+            "subtype": d["code_entity_subtype"],
+            "status": open_value(d, "status") or "—",
+            "since": "2017-07-12T00:00:00",
+            "attributes": d["attributes"],
+        }
+        for d in devices
+    ]
+
+
+# ---------------------------------------------------------------------------
 # open_value + predicate matching
 # ---------------------------------------------------------------------------
 
@@ -1059,6 +1205,120 @@ class TestSearchCli:
                 "status",
                 "since",
             }
+
+    def _fleet_with_chain(self):
+        """One station whose receiver chain is 5.1.2 -> 5.3.0 -> 5.6.0."""
+        fleet = [_station(200, "HVOL", "Láguhvolar")]
+        return fleet, {200: [_chained_receiver(600)]}
+
+    def test_history_finds_a_superseded_value(self, capsys):
+        """The done criterion in miniature: agreeing tip, diverged history."""
+        fleet, devices = self._fleet_with_chain()
+        # --no-cache on both: this test runs the CLI twice, and a warm-cache
+        # note on the second run would land in the merged capture.
+        rc, out = _run_cli(
+            ["receiver.firmware_version = 5.3.0", "--markers-only", "--no-cache"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert out.split() == [], "5.3.0 is not current — must not match today"
+
+        rc, out = _run_cli(
+            [
+                "receiver.firmware_version = 5.3.0",
+                "--history",
+                "--markers-only",
+                "--no-cache",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert out.split() == ["HVOL"], "--history must find the superseded value"
+
+    def test_at_selects_the_era(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            [
+                "marker = HVOL",
+                "--at",
+                "2020-06-01",
+                "--show",
+                "receiver.firmware_version",
+                "--json",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        st = payload["stations"][0]
+        assert st["device_attributes"]["gnss_receiver.firmware_version"] == ["5.3.0"]
+        assert payload["criteria"]["at"] == "2020-06-01"
+
+    def test_history_table_has_one_row_per_period(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            ["marker = HVOL", "--history", "--show", "receiver.firmware_version"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "FROM" in out and "TO" in out
+        for value in ("5.1.2", "5.3.0", "5.6.0"):
+            assert value in out, f"{value} missing from the timeline"
+        assert "2019-10-16" in out and "open" in out
+
+    def test_history_json_carries_raw_periods(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            [
+                "marker = HVOL",
+                "--history",
+                "--show",
+                "receiver.firmware_version",
+                "--json",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        st = json.loads(out)["stations"][0]
+        periods = st["device_periods"]["gnss_receiver.firmware_version"][0]
+        assert [p["value"] for p in periods] == ["5.1.2", "5.3.0", "5.6.0"]
+        assert periods[0]["date_from"] == "2017-07-12"
+        assert periods[-1]["date_to"] is None
+
+    def test_non_history_json_has_no_period_keys(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            ["marker = HVOL", "--show", "receiver.firmware_version", "--json"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        st = json.loads(out)["stations"][0]
+        assert "device_periods" not in st
+        assert "attribute_periods" not in st
+
+    def test_at_and_history_together_exits_2(self, capsys):
+        rc, out = _run_cli(
+            ["--at", "2020-01-01", "--history"], self._fleet(), capsys=capsys
+        )
+        assert rc == 2
+        assert "mutually exclusive" in out
+
+    def test_bad_at_date_exits_2(self, capsys):
+        rc, out = _run_cli(["--at", "2026-13-45"], self._fleet(), capsys=capsys)
+        assert rc == 2
+        assert "not a valid YYYY-MM-DD" in out
 
     def test_cache_note_printed_on_a_warm_run(self, capsys):
         """Staleness is reported, never inferred — this output drives writes."""

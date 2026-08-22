@@ -308,7 +308,121 @@ def open_value(entity: dict, code: str) -> Optional[str]:
     return None
 
 
-def predicate_matches(station: dict, pred: Predicate) -> bool:
+def values_satisfy(values: List[Optional[str]], pred: Predicate) -> bool:
+    """Does any candidate value satisfy ``pred``?
+
+    The single evaluation rule behind every predicate in this module. A
+    station attribute at one instant contributes a one-element list; a
+    two-receiver station contributes two; ``--history`` contributes every
+    period. Aggregation is **existential** throughout, so all three read
+    the same way: 'is there a value here that matches'.
+
+    Absence rules, unchanged from the original scalar form: ``= all``
+    matches everything, ``null`` tests presence, and with nothing present
+    only a negative operator can hold.
+    """
+    present = [v for v in values if v is not None]
+
+    if pred.op in ("=", "!=") and norm_value(pred.value) == "all":
+        return pred.op == "="
+    if pred.op in ("=", "!=") and is_null_term(pred.value):
+        return bool(present) if pred.op == "!=" else not present
+
+    if not present:
+        return pred.op in ("!=", "!~", "not in")
+
+    if pred.op == "in":
+        wanted = {norm_value(v) for v in pred.values}
+        return any(norm_value(v) in wanted for v in present)
+    if pred.op == "not in":
+        wanted = {norm_value(v) for v in pred.values}
+        return any(norm_value(v) not in wanted for v in present)
+    if pred.op == "=":
+        return any(norm_value(v) == norm_value(pred.value) for v in present)
+    if pred.op == "!=":
+        return any(norm_value(v) != norm_value(pred.value) for v in present)
+    if pred.op == "~":
+        return any(text_matches(v, pred.value) for v in present)
+    if pred.op == "!~":
+        return any(not text_matches(v, pred.value) for v in present)
+    return False
+
+
+def as_day(raw: Optional[str]) -> Optional[str]:
+    """``2019-10-15T00:00:00`` → ``2019-10-15``; None stays None.
+
+    TOS timestamps are ISO-8601, so day strings compare correctly with
+    ``<``/``>=`` and no date parsing is needed anywhere in this module.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s[:10] if s else None
+
+
+def attribute_periods(entity: dict, code: str) -> List[dict]:
+    """Every period recorded for ``code``, oldest first.
+
+    ``{"value", "date_from", "date_to"}`` with day-granularity strings and
+    ``date_to=None`` for the open period.
+    """
+    out = []
+    for attr in entity.get("attributes") or []:
+        if attr.get("code") != code:
+            continue
+        value = attr.get("value")
+        out.append(
+            {
+                "value": None if value is None else str(value),
+                "date_from": as_day(attr.get("date_from")),
+                "date_to": as_day(attr.get("date_to")),
+            }
+        )
+    return sorted(out, key=lambda p: p["date_from"] or "")
+
+
+def value_at(entity: dict, code: str, at: Optional[str] = None) -> Optional[str]:
+    """Value of ``code`` on the day ``at``, or of the open period.
+
+    ``at=None`` means 'now' and selects the open period — the value the
+    TOS UI's Eigindi panel shows today, which is what every caller wanted
+    before ``--at`` existed. With a day given, the covering period wins:
+    ``date_from <= at`` and (``date_to`` is open or ``at < date_to``).
+    """
+    if at is None:
+        return open_value(entity, code)
+    day = as_day(at)
+    for p in attribute_periods(entity, code):
+        start, end = p["date_from"], p["date_to"]
+        if start is not None and start > day:
+            continue
+        if end is not None and day >= end:
+            continue
+        if p["value"] is not None:
+            return p["value"]
+    return None
+
+
+def history_values(entity: dict, code: str) -> List[str]:
+    """Every non-null value ``code`` has ever held, oldest first."""
+    return [
+        p["value"] for p in attribute_periods(entity, code) if p["value"] is not None
+    ]
+
+
+def period_boundaries(entity: dict, code: str) -> List[str]:
+    """Distinct dates at which ``code`` changes — segment edges."""
+    edges = set()
+    for p in attribute_periods(entity, code):
+        for d in (p["date_from"], p["date_to"]):
+            if d:
+                edges.add(d)
+    return sorted(edges)
+
+
+def predicate_matches(
+    station: dict, pred: Predicate, *, at: Optional[str] = None, history: bool = False
+) -> bool:
     """Evaluate one :class:`Predicate` against a bulk-listing station dict.
 
     Station-attribute predicates only — a device selector cannot be
@@ -316,42 +430,27 @@ def predicate_matches(station: dict, pred: Predicate) -> bool:
     here as a backstop, since the CLI already refuses it at parse time.
     """
     require_station_selector(pred.namespace, pred.selector)
-    current = open_value(station, pred.code)
-    if pred.op == "in":
-        if current is None:
-            return False
-        wanted = {norm_value(v) for v in pred.values}
-        return norm_value(current) in wanted
-    if pred.op == "not in":
-        if current is None:
-            return True  # absent is trivially "not in" the list
-        wanted = {norm_value(v) for v in pred.values}
-        return norm_value(current) not in wanted
-    if pred.op in ("=", "!="):
-        if norm_value(pred.value) == "all":
-            return pred.op == "="  # '= all' → True; '!= all' → False
-        if is_null_term(pred.value):
-            present = current is not None
-            return present if pred.op == "!=" else not present
-        if current is None:
-            # Absent value: only an inequality can hold.
-            return pred.op == "!="
-        eq = norm_value(current) == norm_value(pred.value)
-        return eq if pred.op == "=" else not eq
-    # Text ops — substring, glob (``*``/``?``), or ``re:`` regex.
-    if current is None:
-        return pred.op == "!~"
-    hit = text_matches(current, pred.value)
-    return hit if pred.op == "~" else not hit
+    if history:
+        # 'ever held this value' — every recorded period is a candidate.
+        return values_satisfy(history_values(station, pred.code), pred)
+    return values_satisfy([value_at(station, pred.code, at)], pred)
 
 
 def filter_by_predicates(
-    stations: List[dict], predicates: List[Predicate]
+    stations: List[dict],
+    predicates: List[Predicate],
+    *,
+    at: Optional[str] = None,
+    history: bool = False,
 ) -> List[dict]:
     """Keep stations satisfying every predicate (AND)."""
     if not predicates:
         return list(stations)
-    return [s for s in stations if all(predicate_matches(s, p) for p in predicates)]
+    return [
+        s
+        for s in stations
+        if all(predicate_matches(s, p, at=at, history=history) for p in predicates)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -455,20 +554,49 @@ def device_in_namespace(device: dict, namespace: str) -> bool:
     return device.get("subtype") == namespace
 
 
-def device_values(devices: List[dict], namespace: str, code: str) -> List[Any]:
-    """Open values of ``code`` across every device in ``namespace``.
+def device_values(
+    devices: List[dict],
+    namespace: str,
+    code: str,
+    *,
+    at: Optional[str] = None,
+    history: bool = False,
+) -> List[Any]:
+    """Values of ``code`` across every device in ``namespace``.
 
-    One entry per matching device, ``None`` where that device has no open
-    period for the code. An empty list means the station has no device of
-    that subtype at all — which is a different thing from having one whose
-    attribute is unset, and the two are deliberately NOT collapsed: a
-    station with two receivers contributes two entries, so nothing silently
-    reports one receiver's firmware as though it were the station's.
+    One entry per matching device, ``None`` where that device has no value
+    at ``at``. An empty list means the station has no device of that
+    subtype at all — a different thing from having one whose attribute is
+    unset, and the two are deliberately NOT collapsed: a station with two
+    receivers contributes two entries, so nothing silently reports one
+    receiver's firmware as though it were the station's.
+
+    ``history=True`` flattens every recorded period of every matching
+    device instead, which is what ``--history`` filters on.
     """
-    return [open_value(d, code) for d in devices if device_in_namespace(d, namespace)]
+    matching = [d for d in devices if device_in_namespace(d, namespace)]
+    if history:
+        out: List[Any] = []
+        for d in matching:
+            out.extend(history_values(d, code))
+        return out
+    return [value_at(d, code, at) for d in matching]
 
 
-def predicate_matches_devices(devices: List[dict], pred: Predicate) -> bool:
+def device_periods(devices: List[dict], namespace: str, code: str) -> List[List[dict]]:
+    """Per-device period lists for ``code`` — one inner list per device."""
+    return [
+        attribute_periods(d, code) for d in devices if device_in_namespace(d, namespace)
+    ]
+
+
+def predicate_matches_devices(
+    devices: List[dict],
+    pred: Predicate,
+    *,
+    at: Optional[str] = None,
+    history: bool = False,
+) -> bool:
     """Evaluate a device-selector predicate against a station's devices.
 
     Aggregation is **existential**: the station matches when *any* device
@@ -476,40 +604,19 @@ def predicate_matches_devices(devices: List[dict], pred: Predicate) -> bool:
     ``receiver.firmware_version != 5.7.0`` means 'has a receiver that is
     not on 5.7.0', which on a two-receiver station is a weaker claim than
     'no receiver is on 5.7.0' — stated in ``--help`` rather than made
-    configurable.
+    configurable. Under ``--history`` the same rule spans periods, so the
+    predicate asks 'did any receiver ever hold this'.
 
     Absence mirrors the station-attribute rules: with no value present,
     only a negative operator can hold, and ``= null`` / ``!= null`` test
     for the attribute's presence anywhere in the namespace.
     """
-    values = device_values(devices, pred.namespace or ANY_DEVICE, pred.code)
-    present = [v for v in values if v is not None]
-
-    if pred.op in ("=", "!=") and norm_value(pred.value) == "all":
-        return pred.op == "="
-    if pred.op in ("=", "!=") and is_null_term(pred.value):
-        return bool(present) if pred.op == "!=" else not present
-
-    if not present:
-        # Nothing to match: only a negation can hold, exactly as for an
-        # absent station attribute.
-        return pred.op in ("!=", "!~", "not in")
-
-    if pred.op == "in":
-        wanted = {norm_value(v) for v in pred.values}
-        return any(norm_value(v) in wanted for v in present)
-    if pred.op == "not in":
-        wanted = {norm_value(v) for v in pred.values}
-        return any(norm_value(v) not in wanted for v in present)
-    if pred.op == "=":
-        return any(norm_value(v) == norm_value(pred.value) for v in present)
-    if pred.op == "!=":
-        return any(norm_value(v) != norm_value(pred.value) for v in present)
-    if pred.op == "~":
-        return any(text_matches(v, pred.value) for v in present)
-    if pred.op == "!~":
-        return any(not text_matches(v, pred.value) for v in present)
-    return False
+    return values_satisfy(
+        device_values(
+            devices, pred.namespace or ANY_DEVICE, pred.code, at=at, history=history
+        ),
+        pred,
+    )
 
 
 def devices_satisfy(
@@ -711,6 +818,8 @@ class SearchResult:
     device_must: List[DeviceSpec] = field(default_factory=list)
     device_must_not: List[DeviceSpec] = field(default_factory=list)
     devices_by_id: Dict[int, List[dict]] = field(default_factory=dict)
+    at: Optional[str] = None
+    history: bool = False
 
     @property
     def device_filters_active(self) -> bool:
@@ -755,17 +864,54 @@ class SearchResult:
     def device_selectors_active(self) -> bool:
         return bool(self.device_columns)
 
-    def device_column_value(self, station: dict, namespace: str, code: str) -> str:
+    def station_devices(self, station: dict) -> List[dict]:
+        return self.devices_by_id.get(station.get("id_entity"), [])
+
+    def device_column_value(
+        self, station: dict, namespace: str, code: str, *, at: Optional[str] = None
+    ) -> str:
         """Rendered cell for one device column on one station.
 
         Every device in the namespace contributes an entry, joined by
         ``, `` — so a station with two receivers shows both firmware
         values rather than whichever the walk happened to return first.
         """
-        devices = self.devices_by_id.get(station.get("id_entity"), [])
-        values = device_values(devices, namespace, code)
+        values = device_values(
+            self.station_devices(station), namespace, code, at=at or self.at
+        )
         rendered = [str(v) if v is not None else "—" for v in values]
         return ", ".join(rendered) if rendered else "—"
+
+    def timeline(self, station: dict) -> List[tuple]:
+        """Segment a station's timeline at every boundary of every column.
+
+        Returns ``[(date_from, date_to), ...]``, oldest first, where the
+        edges are the union of the change dates of all selected station
+        AND device columns. So a row is a span over which *nothing shown
+        changed*, and two columns with different boundaries (firmware
+        moving on one date, antenna on another) both stay correct without
+        a cross product.
+
+        With no boundaries at all — nothing selected, or nothing dated —
+        the result is a single open segment, which renders exactly like
+        the non-history table.
+        """
+        edges = set()
+        for code in self.attribute_codes:
+            edges.update(period_boundaries(station, code))
+        devices = self.station_devices(station)
+        for namespace, code in self.device_columns:
+            for d in devices:
+                if device_in_namespace(d, namespace):
+                    edges.update(period_boundaries(d, code))
+        starts = sorted(edges)
+        if not starts:
+            return [(None, None)]
+        segments = []
+        for i, start in enumerate(starts):
+            end = starts[i + 1] if i + 1 < len(starts) else None
+            segments.append((start, end))
+        return segments
 
 
 def search_stations(
@@ -778,6 +924,8 @@ def search_stations(
     domain: str = "geophysical",
     progress: Optional[Callable[[int, int], None]] = None,
     max_workers: int = 8,
+    at: Optional[str] = None,
+    history: bool = False,
 ) -> SearchResult:
     """Run the full pipeline: bulk fetch → attribute filter → device walk.
 
@@ -795,8 +943,9 @@ def search_stations(
     station_preds = [p for p in predicates if p.namespace is None]
     device_preds = [p for p in predicates if p.namespace is not None]
 
+    at = as_day(at)
     fleet = fetch_fleet(client, domain=domain)
-    survivors = filter_by_predicates(fleet, station_preds)
+    survivors = filter_by_predicates(fleet, station_preds, at=at, history=history)
 
     # A device selector needs the walk even with no --device/--receiver
     # filter — projecting receiver.firmware_version is reason enough.
@@ -829,7 +978,10 @@ def search_stations(
                 for s in survivors
                 if all(
                     predicate_matches_devices(
-                        devices_by_id.get(s.get("id_entity"), []), p
+                        devices_by_id.get(s.get("id_entity"), []),
+                        p,
+                        at=at,
+                        history=history,
                     )
                     for p in device_preds
                 )
@@ -848,4 +1000,6 @@ def search_stations(
         device_must=device_must,
         device_must_not=device_must_not,
         devices_by_id=devices_by_id,
+        at=at,
+        history=history,
     )
