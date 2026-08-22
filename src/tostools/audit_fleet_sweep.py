@@ -62,6 +62,34 @@ def parse_stations_cfg(path: str) -> Dict[str, Dict[str, str]]:
     return out
 
 
+def is_reference_site(cfg_entry: Dict[str, str]) -> bool:
+    """Is this stations.cfg section an external IGS reference site?
+
+    ``stations.cfg`` carries the global IGS stations the processing chain
+    references (ALIC, AMC2, ANKR, …) alongside the IMO fleet. They are not
+    IMO equipment and have no TOS entity, so every metadata audit run
+    against one is a wasted round-trip that can only report an error.
+
+    The discriminator is ``is_reference_site``, **not**
+    ``station_role = passive``. Those nearly coincide but not quite: eight
+    real IMO stations are passive without being reference sites — BJAC,
+    ELAT, FAFC, GRIC, LEBA, LISK, UNIV, VCAP — and FAFC runs a PolaRX5. A
+    ``station_role`` filter silently drops all eight, which is exactly how
+    a fleet-wide firmware sweep missed FAFC on 2026-08-22.
+    """
+    return (cfg_entry.get("is_reference_site") or "").strip().lower() == "true"
+
+
+def imo_fleet_markers(cfg: Dict[str, Dict[str, str]]) -> List[str]:
+    """Uppercase markers of the IMO fleet — cfg minus IGS reference sites.
+
+    139 of the 344 sections are reference sites, so the fleet audits go
+    from 344 stations to 205 with no loss of coverage: a sample of 12
+    reference sites resolved to no TOS entity whatsoever (2026-08-22).
+    """
+    return sorted(m.upper() for m, entry in cfg.items() if not is_reference_site(entry))
+
+
 def _synthetic(serial: Any) -> bool:
     """True when a serial is a TOS placeholder, not a real hardware serial."""
     if not serial:

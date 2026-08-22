@@ -213,15 +213,23 @@ def test_enumerate_limit_caps_post_filter():
     assert [p.name for p in out] == ["BBB", "CCC"]
 
 
-def test_enumerate_skips_passive_stations_before_resolution(tmp_path):
-    """``station_role = passive`` markers (data-source-only reference
-    stations, no TOS counterpart) are dropped BEFORE marker→id
-    resolution — zero TOS HTTP calls spent on them."""
+def test_enumerate_skips_reference_sites_before_resolution(tmp_path):
+    """``is_reference_site = true`` markers are dropped BEFORE marker→id
+    resolution — zero TOS HTTP calls spent on them.
+
+    **The discriminator is that flag, NOT ``station_role``.** This filtered
+    on the role until 2026-08-22, which silently dropped eight operated IMO
+    stations from every fleet audit (BJAC, ELAT, FAFC, GRIC, LEBA, LISK,
+    UNIV, VCAP — FAFC runs a PolaRX5, TOS device 18409). ``KELY`` below is
+    that class: passive but unflagged, so it MUST be attempted. Its absence
+    from the output then comes from failing to resolve in TOS — a different
+    and visible outcome from never being asked about.
+    """
     cfg = tmp_path / "stations.cfg"
     cfg.write_text(
         "[RHOF]\nstation_name=Raufarhöfn\n"
         "[ZIMM]\nstation_role=passive\nis_reference_site=true\n"
-        "[KELY]\nstation_role = passive # former IGS\n"
+        "[KELY]\nstation_role = passive # former IGS, NOT flagged\n"
         "[HEDI]\nstation_role=active\n"
     )
     parents = [_station(1, "RHOF"), _station(2, "HEDI")]
@@ -243,9 +251,34 @@ def test_enumerate_skips_passive_stations_before_resolution(tmp_path):
         )
 
     assert [p.name for p in out] == ["RHOF", "HEDI"]
-    # The passive markers never reached the resolver:
+    # Flagged reference site: never reached the resolver.
     assert "ZIMM" not in resolved
-    assert "KELY" not in resolved
+    # Passive but UNFLAGGED: must be attempted, not silently skipped.
+    assert "KELY" in resolved
+
+
+def test_passive_without_the_flag_is_still_audited(tmp_path):
+    """The FAFC regression, isolated: passive + real TOS entity IS fleet.
+
+    Guards against a future 'simplification' back to filtering on
+    ``station_role``, which would remove the station from every audit while
+    leaving no trace in the output.
+    """
+    cfg = tmp_path / "stations.cfg"
+    cfg.write_text("[FAFC]\nstation_role=passive\nis_reference_site=false\n")
+    parents = [_station(7, "FAFC")]
+    by_id = {p.id_entity: p for p in parents}
+
+    fake = _FakeClient(by_id)
+    with patch(
+        "tostools.fleet_ops.resolve_marker_to_entity_id",
+        side_effect=lambda _c, m: 7 if m.upper() == "FAFC" else None,
+    ):
+        out = enumerate_fleet_stations(
+            fake,  # type: ignore[arg-type]
+            station_cfg_path=str(cfg),
+        )
+    assert [p.name for p in out] == ["FAFC"]
 
 
 def test_read_station_roles_defaults_and_comments(tmp_path):

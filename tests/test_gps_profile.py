@@ -240,3 +240,70 @@ class TestProfiledDiscovery:
         assert rc == 0
         assert "no GPS-relevant attributes" in out
         assert "tos search" in out
+
+
+# ---------------------------------------------------------------------------
+# Fleet scope — IMO stations, not the IGS reference sites
+# ---------------------------------------------------------------------------
+
+
+class TestImoFleetMarkers:
+    """`stations.cfg` mixes the IMO fleet with global IGS reference sites.
+
+    The reference sites have no TOS entity, so auditing one is a round-trip
+    that can only report an error. The discriminator is `is_reference_site`
+    — NOT `station_role = passive`, which nearly coincides but silently
+    drops eight real IMO stations.
+    """
+
+    CFG = {
+        "VMEY": {"station_id": "VMEY"},
+        "FAFC": {"station_role": "passive", "is_reference_site": "false"},
+        "ALIC": {"station_role": "passive", "is_reference_site": "true"},
+        "AMC2": {"is_reference_site": "TRUE"},
+    }
+
+    def test_reference_sites_excluded(self):
+        from tostools.audit_fleet_sweep import imo_fleet_markers
+
+        assert imo_fleet_markers(self.CFG) == ["FAFC", "VMEY"]
+
+    def test_passive_but_real_station_is_kept(self):
+        """FAFC is passive AND runs a PolaRX5 — it must survive."""
+        from tostools.audit_fleet_sweep import imo_fleet_markers
+
+        assert "FAFC" in imo_fleet_markers(self.CFG)
+
+    def test_flag_is_case_insensitive(self):
+        from tostools.audit_fleet_sweep import is_reference_site
+
+        assert is_reference_site({"is_reference_site": "TRUE"})
+        assert is_reference_site({"is_reference_site": " true "})
+        assert not is_reference_site({"is_reference_site": "false"})
+
+    def test_absent_flag_means_imo(self):
+        from tostools.audit_fleet_sweep import is_reference_site
+
+        assert not is_reference_site({})
+
+    def test_station_role_is_not_the_discriminator(self):
+        """Guard against a future 'simplification' back to station_role."""
+        from tostools.audit_fleet_sweep import is_reference_site
+
+        assert not is_reference_site({"station_role": "passive"})
+
+    def test_markers_are_uppercased_and_sorted(self):
+        from tostools.audit_fleet_sweep import imo_fleet_markers
+
+        assert imo_fleet_markers({"vmey": {}, "akur": {}}) == ["AKUR", "VMEY"]
+
+
+class TestFleetDelegation:
+    def test_fleet_is_delegated_with_NO_profile(self):
+        import tostools.tos as tos_mod
+        import tostools.tosGPS as tosgps
+
+        with patch.object(tos_mod, "_fleet_main", return_value=0) as spy:
+            with patch.object(tosgps.sys, "argv", ["tosGPS", "fleet", "status"]):
+                assert tosgps.main() == 0
+        spy.assert_called_once_with(["status"])
