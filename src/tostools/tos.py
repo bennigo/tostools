@@ -14153,6 +14153,33 @@ def _search_main(argv):
             "the file does not contain is an error, not an empty result."
         ),
     )
+    disc_grp = p.add_argument_group("selector discovery")
+    disc_grp.add_argument(
+        "--selectors",
+        nargs="?",
+        const="",
+        metavar="WHAT",
+        help=(
+            "List usable selectors and exit — the vocabulary for expressions "
+            "and --show. Ask for ONE thing at a time: 'station' (station "
+            "attributes), 'subtypes' (device namespaces), a subtype name "
+            "(receiver, antenna, radome, monument, modem, sim, router) for "
+            "that subtype's attributes, or 'all'. Bare --selectors prints "
+            "the index. Every line starts with the selector exactly as "
+            "tos search expects it, so output pastes into the next command; "
+            "--json emits a bare array."
+        ),
+    )
+    disc_grp.add_argument(
+        "--observed",
+        action="store_true",
+        help=(
+            "With --selectors: also read what the live fleet actually "
+            "carries, not just what the catalog classifies. Costs a device "
+            "walk (cached), and is the ONLY source for modem/sim/router, "
+            "which the catalog says nothing about."
+        ),
+    )
     p.add_argument(
         "--attribute-list",
         action="store_true",
@@ -14212,6 +14239,10 @@ def _search_main(argv):
     )
 
     args = p.parse_args(argv)
+
+    # ---- Selector discovery (catalog-driven; no fetch unless --observed) --
+    if args.selectors is not None:
+        return _selectors_main(args)
 
     # ---- Discovery modes (no predicates needed) --------------------------
     if args.attribute_list or args.allowed_values:
@@ -14596,6 +14627,160 @@ def _search_main(argv):
         table.add_row(*row)
 
     Console().print(table)
+    return 0
+
+
+def _selectors_main(args) -> int:
+    """``tos search --selectors [WHAT]`` — the selector vocabulary.
+
+    Catalog-driven and instant by default. ``--observed`` additionally
+    walks the fleet, which is the only way to see modem/sim/router
+    attributes since the catalog classifies none.
+    """
+    import json as _json
+
+    from . import search as search_mod
+    from . import search_selectors as sel
+
+    try:
+        topic = sel.resolve_topic(args.selectors)
+    except ValueError as exc:
+        print(f"tos search: {exc}", file=sys.stderr)
+        return 2
+
+    # Index: no topic given. Deliberately does NOT dump everything — the
+    # whole point of the flag is asking for one thing at a time.
+    if topic is None:
+        print("tos search --selectors WHAT — ask for one of:\n")
+        print(f"  {'station':<12} station attributes (use bare)")
+        print(f"  {'subtypes':<12} device subtypes (the namespace before the dot)")
+        for subtype in sel.canonical_subtypes():
+            alias = sel.aliases_for(subtype)[0]
+            print(f"  {alias:<12} {subtype} attributes (use as '{alias}.<code>')")
+        print(f"  {'all':<12} every group above, in sections")
+        print("\nAdd --observed to include what the live fleet carries.")
+        print("Add --json for a bare array of selectors.")
+        return 0
+
+    observed_stations = observed_devices = None
+    if args.observed:
+        from .api.client_cache import CachingClient
+        from .api.tos_client import TOSClient
+
+        scheme = "https" if args.port == 443 else "http"
+        base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+        client = CachingClient(
+            TOSClient(base_url=base_url),
+            ttl=args.cache_ttl,
+            enabled=not args.no_cache,
+            refresh=args.refresh,
+            server=f"{args.server}:{args.port}",
+        )
+        progress = search_mod.stderr_progress(args.no_progress, args.json)
+        try:
+            fleet = search_mod.fetch_fleet(client, domain=args.domain)
+            observed_stations = sel.observed_station_codes(fleet)
+            if topic != sel.TOPIC_STATION:
+                walked = search_mod.walk_devices(
+                    client,
+                    [s.get("id_entity") for s in fleet if s.get("id_entity")],
+                    progress=progress,
+                )
+                observed_devices = walked
+        except Exception as exc:  # noqa: BLE001
+            print(f"tos search: observed sweep failed: {exc}", file=sys.stderr)
+            return 1
+        if progress is not None:
+            sys.stderr.write("\n")
+        note = client.cache_note()
+        if note:
+            print(f"  {note}", file=sys.stderr)
+
+    catalog = None
+    try:
+        catalog = sel._catalog()
+    except (OSError, ValueError) as exc:
+        # Observed-only still works; the catalog is an enrichment.
+        print(f"tos search: attribute catalog unavailable ({exc})", file=sys.stderr)
+        catalog = {"stations": {}, "devices": {}}
+
+    groups = []
+    if topic in (sel.TOPIC_STATION, sel.TOPIC_ALL):
+        groups.append(sel.station_group(catalog, observed_stations))
+    if topic in (sel.TOPIC_SUBTYPES, sel.TOPIC_ALL):
+        groups.append(
+            sel.subtypes_group(
+                sel.observed_subtypes(observed_devices) if observed_devices else None
+            )
+        )
+    if topic == sel.TOPIC_ALL:
+        for subtype in sel.canonical_subtypes():
+            groups.append(
+                sel.device_group(
+                    subtype,
+                    catalog,
+                    (
+                        sel.observed_device_codes(observed_devices, subtype)
+                        if observed_devices
+                        else None
+                    ),
+                )
+            )
+    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES):
+        groups.append(
+            sel.device_group(
+                topic,
+                catalog,
+                (
+                    sel.observed_device_codes(observed_devices, topic)
+                    if observed_devices
+                    else None
+                ),
+            )
+        )
+
+    if args.json:
+        print(
+            _json.dumps(
+                {
+                    "topic": topic,
+                    "observed": bool(args.observed),
+                    "groups": [
+                        {
+                            "title": g.title,
+                            "selectors": [e.selector for e in g.entries],
+                            "entries": [
+                                {
+                                    "selector": e.selector,
+                                    "label": e.label,
+                                    "sources": list(e.sources),
+                                }
+                                for e in g.entries
+                            ],
+                        }
+                        for g in groups
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    for i, group in enumerate(groups):
+        if i:
+            print()
+        print(f"# {group.title}")
+        width = max((len(e.selector) for e in group.entries), default=0)
+        for e in group.entries:
+            bits = [f"  {e.selector:<{width}}"]
+            if e.label:
+                bits.append(e.label)
+            if args.observed and e.sources:
+                bits.append(f"[{e.source_note()}]")
+            print("  ".join(bits).rstrip())
+        if group.note:
+            print(f"  ({group.note})")
     return 0
 
 
