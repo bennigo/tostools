@@ -3175,6 +3175,17 @@ def _station_main(argv):
         action="store_true",
         help="Print the triage file to stdout instead of writing to disk.",
     )
+    p_tri.add_argument(
+        "--include-closed",
+        action="store_true",
+        help=(
+            "Also audit CLOSED-join (historical / decommissioned) devices, "
+            "not just the currently-open ones. A retired receiver or antenna "
+            "still appears in IGS site-log sections and in every RINEX header "
+            "recorded while it was installed, so its missing attributes matter "
+            "too. Applies to the missing-attributes audit."
+        ),
+    )
     _add_archive_arguments(p_tri)
     _add_coverage_arguments(p_tri)
 
@@ -3235,6 +3246,17 @@ def _station_main(argv):
         help=(
             "Pass --verbose through to the per-audit pretty-printers "
             "(SUPPRESS hints, anchor sources, silenced entries)."
+        ),
+    )
+    p_ver.add_argument(
+        "--include-closed",
+        action="store_true",
+        help=(
+            "Also audit CLOSED-join (historical / decommissioned) devices, "
+            "not just the currently-open ones. A retired receiver or antenna "
+            "still appears in IGS site-log sections and in every RINEX header "
+            "recorded while it was installed, so its missing attributes matter "
+            "too. Applies to the missing-attributes audit."
         ),
     )
     _add_archive_arguments(p_ver)
@@ -3517,6 +3539,7 @@ def _station_triage_main(args) -> int:
         with_coverage=getattr(args, "with_coverage", False),
         coverage_since=getattr(args, "coverage_since", None),
         coverage_window_days=getattr(args, "coverage_window_days", 7),
+        include_closed=getattr(args, "include_closed", False),
     )
     rendered = format_station_triage(report)
 
@@ -3632,6 +3655,7 @@ def _station_verify_main(args) -> int:
         with_coverage=getattr(args, "with_coverage", False),
         coverage_since=getattr(args, "coverage_since", None),
         coverage_window_days=getattr(args, "coverage_window_days", 7),
+        include_closed=getattr(args, "include_closed", False),
     )
 
     # Status + exit code from the canonical oracle definitions —

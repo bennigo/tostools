@@ -200,6 +200,7 @@ def generate_station_triage(
     with_coverage: bool = False,
     coverage_since: Optional[str] = None,
     coverage_window_days: int = 7,
+    include_closed: bool = False,
 ) -> StationTriageReport:
     """Run all audits on ``station`` and aggregate into a single report.
 
@@ -256,7 +257,7 @@ def generate_station_triage(
     missing_report: Optional[StationMissingAttributesReport]
     try:
         missing_report = audit_station_missing_attributes(
-            client, name=station, **audit_kwargs
+            client, name=station, include_closed=include_closed, **audit_kwargs
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("missing-attributes audit failed on %s: %s", station, exc)
