@@ -1207,9 +1207,24 @@ class TestSearchCli:
             }
 
     def _fleet_with_chain(self):
-        """One station whose receiver chain is 5.1.2 -> 5.3.0 -> 5.6.0."""
-        fleet = [_station(200, "HVOL", "Láguhvolar")]
-        return fleet, {200: [_chained_receiver(600)]}
+        """One station whose receiver chain is 5.1.2 -> 5.3.0 -> 5.6.0.
+
+        The station's own attributes are dated from well BEFORE the receiver
+        chain, as a real station is — the marker predates the hardware. A
+        fixture with the marker starting mid-chain would make
+        ``marker = HVOL`` fail on the early segments and wrongly look like a
+        discriminating mark.
+        """
+        station = {
+            "id_entity": 200,
+            "code_entity_subtype": "geophysical",
+            "attributes": [
+                _period("marker", "HVOL", "1999-10-19"),
+                _period("name", "Láguhvolar", "1999-10-19"),
+                _period("subtype", "GPS stöð", "1999-10-19"),
+            ],
+        }
+        return [station], {200: [_chained_receiver(600)]}
 
     def test_history_finds_a_superseded_value(self, capsys):
         """The done criterion in miniature: agreeing tip, diverged history."""
@@ -1307,6 +1322,75 @@ class TestSearchCli:
         st = json.loads(out)["stations"][0]
         assert "device_periods" not in st
         assert "attribute_periods" not in st
+
+    def test_marker_predicate_does_not_duplicate_the_column(self, capsys):
+        """'marker = X' used to render MARKER twice — fixed and raw."""
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            ["marker = HVOL", "--history", "--show", "receiver.firmware_version"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        header = next(ln for ln in out.splitlines() if "MARKER" in ln)
+        assert header.count("MARKER") == 1
+
+    def test_name_predicate_does_not_duplicate_the_column(self, capsys):
+        rc, out = _run_cli(["name ~ Vest"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        header = next(ln for ln in out.splitlines() if "MARKER" in ln)
+        assert header.count("NAME") == 1
+
+    def test_history_marks_the_matching_period(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            [
+                "receiver.firmware_version = 5.3.0",
+                "--history",
+                "--show",
+                "receiver.firmware_version",
+            ],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "●" in out
+        marked = [ln for ln in out.splitlines() if ln.rstrip().endswith("●")]
+        assert len(marked) == 1, "exactly the 5.3.0 period should be marked"
+        assert "5.3.0" in marked[0]
+
+    def test_mark_column_suppressed_when_it_would_not_discriminate(self, capsys):
+        """A column of solid dots is noise — 'marker = X' holds everywhere."""
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            ["marker = HVOL", "--history", "--show", "receiver.firmware_version"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "●" not in out
+
+    def test_at_is_stated_in_the_criteria_line(self, capsys):
+        """'0 station(s) match' means something different as-of a date."""
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(
+            ["--at", "2018-01-01", "receiver.firmware_version = 5.7.0"],
+            fleet,
+            devices,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "0 station(s) match" in out
+        assert "[as of 2018-01-01]" in out
+
+    def test_history_is_stated_in_the_criteria_line(self, capsys):
+        fleet, devices = self._fleet_with_chain()
+        rc, out = _run_cli(["--history"], fleet, devices, capsys=capsys)
+        assert rc == 0
+        assert "[any period, ever]" in out
 
     def test_at_and_history_together_exits_2(self, capsys):
         rc, out = _run_cli(

@@ -14492,9 +14492,21 @@ def _search_main(argv):
         spec.describe() for spec in result.device_must + result.device_must_not
     ]
     crit = "  AND  ".join(crit_bits) if crit_bits else "(all stations)"
+    # State the time mode: '0 station(s) match' is a very different claim
+    # as-of 2021 than it is today, and the reader cannot see --at otherwise.
+    if result.at:
+        crit += f"   [as of {result.at}]"
+    elif result.history:
+        crit += "   [any period, ever]"
     print(f"{len(stations)} station(s) match: {crit}")
     if not stations:
         return 0
+
+    # MARKER (and NAME outside history mode) are already fixed columns, so a
+    # predicate on them must not add a second one — 'marker = HVOL' used to
+    # render MARKER twice, once uppercased and once raw.
+    fixed = {"marker"} if result.history else {"marker", "name"}
+    attr_cols = [c for c in result.attribute_codes if c not in fixed]
 
     table = Table(box=None, show_edge=False, pad_edge=False)
     table.add_column("MARKER", no_wrap=True)
@@ -14505,7 +14517,7 @@ def _search_main(argv):
         table.add_column("TO", no_wrap=True)
     else:
         table.add_column("NAME", no_wrap=True)
-    for code in result.attribute_codes:
+    for code in attr_cols:
         table.add_column(code.upper(), no_wrap=True)
     for namespace, code in result.device_columns:
         table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
@@ -14513,18 +14525,53 @@ def _search_main(argv):
         table.add_column("MATCHED DEVICES", no_wrap=True)
 
     if result.history:
+        # The predicates select STATIONS; every period of a selected station
+        # is then shown, which is the useful view but leaves "which period
+        # did the filter actually match?" invisible. So mark the satisfying
+        # segments — but only when the mark DISCRIMINATES. 'marker = HVOL'
+        # holds on every row, and a column of solid dots is noise; the
+        # column is therefore added only if the marks come out mixed.
+        marking = [p for p in result.predicates if p.code != "subtype"]
+        rows, marks = [], []
         for st in stations:
             marker = (search_mod.open_value(st, "marker") or "?").upper()
+            devices = result.station_devices(st)
             for seg_from, seg_to in result.timeline(st):
                 row = [marker, seg_from or "—", seg_to or "open"]
-                for code in result.attribute_codes:
+                for code in attr_cols:
                     row.append(search_mod.value_at(st, code, seg_from) or "—")
                 for namespace, code in result.device_columns:
                     row.append(
                         result.device_column_value(st, namespace, code, at=seg_from)
                     )
-                table.add_row(*row)
+                rows.append(row)
+                marks.append(
+                    all(
+                        (
+                            search_mod.predicate_matches_devices(
+                                devices, p, at=seg_from
+                            )
+                            if p.namespace
+                            else search_mod.predicate_matches(st, p, at=seg_from)
+                        )
+                        for p in marking
+                    )
+                    if marking
+                    else False
+                )
+
+        discriminating = marking and len(set(marks)) > 1
+        if discriminating:
+            table.add_column("✓", no_wrap=True)
+        for row, hit in zip(rows, marks):
+            table.add_row(*(row + ["●" if hit else ""] if discriminating else row))
         Console().print(table)
+        if discriminating:
+            print(
+                "  ● = period satisfying "
+                + "  AND  ".join(p.describe() for p in marking),
+                file=sys.stderr,
+            )
         return 0
 
     for st in stations:
@@ -14532,7 +14579,7 @@ def _search_main(argv):
             (search_mod.open_value(st, "marker") or "?").upper(),
             search_mod.open_value(st, "name") or "—",
         ]
-        for code in result.attribute_codes:
+        for code in attr_cols:
             row.append(search_mod.value_at(st, code, result.at) or "—")
         for namespace, code in result.device_columns:
             row.append(result.device_column_value(st, namespace, code))
