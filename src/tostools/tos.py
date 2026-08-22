@@ -13877,8 +13877,13 @@ def _print_station_report(report, *, verbose: bool = False):
             print("  (run with --verbose for what this means and how to fix)")
 
 
-def _search_main(argv):
+def _search_main(argv, profile=None):
     """Handle ``tos search`` — general fleet search by attribute + device.
+
+    ``profile`` (a :class:`search_selectors.Profile`) narrows the command to
+    one discipline: the station subtype is pinned and any selector the
+    profile does not curate is refused. This is what makes ``tosGPS search``
+    a different tool from ``tos search`` rather than an alias.
 
     One bulk fetch of every geophysical station (the TOS web UI search
     endpoint, bodyless GET), then client-side filtering:
@@ -13902,8 +13907,12 @@ def _search_main(argv):
     from . import search as search_mod
     from .api.tos_client import TOSClient
 
+    # Diagnostics must name the command the user actually typed — a
+    # 'tos search:' prefix under tosGPS sends them to the wrong --help.
+    _prog = f"tos{profile.name}" if profile else "tos"
+
     p = argparse.ArgumentParser(
-        prog="tos search",
+        prog=f"{_prog} search",
         description=(
             "Search the TOS fleet by station attributes and devices.\n\n"
             "DEFAULT SCOPE: 'subtype = GPS stöð' is applied automatically.\n"
@@ -14242,13 +14251,13 @@ def _search_main(argv):
 
     # ---- Selector discovery (catalog-driven; no fetch unless --observed) --
     if args.selectors is not None:
-        return _selectors_main(args)
+        return _selectors_main(args, profile=profile)
 
     # ---- Discovery modes (no predicates needed) --------------------------
     if args.attribute_list or args.allowed_values:
         if args.allowed_values and not args.attribute:
             print(
-                "tos search: --allowed-values needs --attribute CODE",
+                f"{_prog} search: --allowed-values needs --attribute CODE",
                 file=sys.stderr,
             )
             return 2
@@ -14258,7 +14267,7 @@ def _search_main(argv):
         try:
             fleet = search_mod.fetch_fleet(client, domain=args.domain)
         except Exception as exc:  # noqa: BLE001
-            print(f"tos search: fleet fetch failed: {exc}", file=sys.stderr)
+            print(f"{_prog} search: fleet fetch failed: {exc}", file=sys.stderr)
             return 1
         if args.attribute_list:
             inv = search_mod.attribute_inventory(fleet)
@@ -14274,7 +14283,7 @@ def _search_main(argv):
         inv = search_mod.attribute_inventory(fleet, code=args.attribute)
         if not inv:
             print(
-                f"tos search: attribute {args.attribute!r} never observed "
+                f"{_prog} search: attribute {args.attribute!r} never observed "
                 f"on {args.domain} entities — try --attribute-list",
                 file=sys.stderr,
             )
@@ -14308,8 +14317,31 @@ def _search_main(argv):
                 namespace, code = search_mod.parse_selector(raw)
                 show_codes.append(f"{namespace}.{code}" if namespace else code)
     except ValueError as exc:
-        print(f"tos search: {exc}", file=sys.stderr)
+        print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
+
+    # ---- Profile gate -----------------------------------------------------
+    # Refuse anything the discipline does not curate, rather than silently
+    # answering a question about a field nobody maintains for it.
+    if profile is not None:
+        offenders = [
+            (p.namespace, p.code, p.selector)
+            for p in predicates
+            if not profile.allows(p.namespace, p.code)
+        ] + [
+            (ns, code, raw)
+            for raw in show_codes
+            for ns, code in [search_mod.parse_selector(raw)]
+            if not profile.allows(ns, code)
+        ]
+        if offenders:
+            for ns, code, raw in offenders:
+                print(
+                    f"{_prog} search: {_profile_reject(profile, ns, code, raw)}",
+                    file=sys.stderr,
+                )
+            return 2
+
     if args.epos:
         predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "=", "true"))
     if args.no_epos:
@@ -14330,7 +14362,29 @@ def _search_main(argv):
     # Default scope: GPS stations. Lifted by an explicit subtype expression
     # ('subtype = X', 'subtype = [a, b]', 'subtype = all') or by --active-gps
     # (whose predicate chain already pins subtype = GPS stöð).
-    if not any(p.code == "subtype" for p in predicates):
+    if profile is not None:
+        # A profile PINS the subtype: 'tosGPS search' answering about SIL
+        # stations would make the tool's name a lie. An explicit subtype
+        # expression is refused rather than quietly overridden.
+        explicit = [p for p in predicates if p.code == "subtype"]
+        conflicting = [
+            p
+            for p in explicit
+            if search_mod.norm_value(p.value) != search_mod.norm_value(profile.subtype)
+            or p.op != "="
+        ]
+        if conflicting:
+            print(
+                f"{_prog} search: tos{profile.name} is pinned to "
+                f"'subtype = {profile.subtype}' — drop "
+                f"{conflicting[0].describe()!r}, or use plain 'tos search' "
+                "to query other station types.",
+                file=sys.stderr,
+            )
+            return 2
+        if not explicit:
+            predicates.insert(0, search_mod.Predicate("subtype", "=", profile.subtype))
+    elif not any(p.code == "subtype" for p in predicates):
         predicates.insert(0, search_mod.Predicate("subtype", "=", "GPS stöð"))
 
     # ---- Build device specs ---------------------------------------------
@@ -14349,20 +14403,20 @@ def _search_main(argv):
         for raw in args.no_device or []:
             device_must_not.append(search_mod.parse_device_spec(raw, negate=True))
     except ValueError as exc:
-        print(f"tos search: {exc}", file=sys.stderr)
+        print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
 
     # ---- Time mode -------------------------------------------------------
     if args.at and args.history:
         print(
-            "tos search: --at and --history are mutually exclusive (--at picks "
+            f"{_prog} search: --at and --history are mutually exclusive (--at picks "
             "ONE instant, --history spans them all)",
             file=sys.stderr,
         )
         return 2
     if args.at and not _is_iso_day(args.at):
         print(
-            f"tos search: --at {args.at!r} is not a valid YYYY-MM-DD date",
+            f"{_prog} search: --at {args.at!r} is not a valid YYYY-MM-DD date",
             file=sys.stderr,
         )
         return 2
@@ -14380,7 +14434,7 @@ def _search_main(argv):
         try:
             replay = SnapshotClient.load(args.from_snapshot)
         except (OSError, ValueError) as exc:
-            print(f"tos search: {exc}", file=sys.stderr)
+            print(f"{_prog} search: {exc}", file=sys.stderr)
             return 2
         client = replay
     else:
@@ -14409,10 +14463,10 @@ def _search_main(argv):
             history=args.history,
         )
     except SnapshotMiss as exc:
-        print(f"tos search: {exc}", file=sys.stderr)
+        print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:  # noqa: BLE001 — surface any transport failure
-        print(f"tos search: fleet fetch failed: {exc}", file=sys.stderr)
+        print(f"{_prog} search: fleet fetch failed: {exc}", file=sys.stderr)
         return 1
 
     if progress is not None:
@@ -14437,11 +14491,11 @@ def _search_main(argv):
             )
             print(f"  snapshot written: {written}", file=sys.stderr)
         except OSError as exc:
-            print(f"tos search: snapshot write failed: {exc}", file=sys.stderr)
+            print(f"{_prog} search: snapshot write failed: {exc}", file=sys.stderr)
             return 1
     elif args.snapshot and replay is not None:
         print(
-            "tos search: --snapshot with --from-snapshot is a no-op (nothing "
+            f"{_prog} search: --snapshot with --from-snapshot is a no-op (nothing "
             "was read from TOS); drop one of them",
             file=sys.stderr,
         )
@@ -14630,22 +14684,42 @@ def _search_main(argv):
     return 0
 
 
-def _selectors_main(args) -> int:
+def _profile_reject(profile, namespace, code, raw) -> str:
+    """Message for a selector the active profile does not curate."""
+    from .search_selectors import aliases_for
+
+    if namespace is None:
+        topic = "station"
+    else:
+        # Suggest the SHORT alias — that is what the user types.
+        topic = aliases_for(namespace)[0]
+    return (
+        f"{raw!r} is not a {profile.name} attribute ({topic} scope). "
+        f"tos{profile.name} exposes only what the catalog marks "
+        f"gps_relevance=yes — list them with '--selectors {topic}'. "
+        f"Use plain 'tos search' for the unconstrained vocabulary."
+    )
+
+
+def _selectors_main(args, profile=None) -> int:
     """``tos search --selectors [WHAT]`` — the selector vocabulary.
 
     Catalog-driven and instant by default. ``--observed`` additionally
     walks the fleet, which is the only way to see modem/sim/router
-    attributes since the catalog classifies none.
+    attributes since the catalog classifies none. With a ``profile``, only
+    that discipline's attributes are listed, mandatory ones first.
     """
     import json as _json
 
     from . import search as search_mod
     from . import search_selectors as sel
 
+    _prog = f"tos{profile.name}" if profile else "tos"
+
     try:
         topic = sel.resolve_topic(args.selectors)
     except ValueError as exc:
-        print(f"tos search: {exc}", file=sys.stderr)
+        print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
 
     # Index: no topic given. Deliberately does NOT dump everything — the
@@ -14688,7 +14762,7 @@ def _selectors_main(args) -> int:
                 )
                 observed_devices = walked
         except Exception as exc:  # noqa: BLE001
-            print(f"tos search: observed sweep failed: {exc}", file=sys.stderr)
+            print(f"{_prog} search: observed sweep failed: {exc}", file=sys.stderr)
             return 1
         if progress is not None:
             sys.stderr.write("\n")
@@ -14701,12 +14775,12 @@ def _selectors_main(args) -> int:
         catalog = sel._catalog()
     except (OSError, ValueError) as exc:
         # Observed-only still works; the catalog is an enrichment.
-        print(f"tos search: attribute catalog unavailable ({exc})", file=sys.stderr)
+        print(f"{_prog} search: attribute catalog unavailable ({exc})", file=sys.stderr)
         catalog = {"stations": {}, "devices": {}}
 
     groups = []
     if topic in (sel.TOPIC_STATION, sel.TOPIC_ALL):
-        groups.append(sel.station_group(catalog, observed_stations))
+        groups.append(sel.station_group(catalog, observed_stations, profile=profile))
     if topic in (sel.TOPIC_SUBTYPES, sel.TOPIC_ALL):
         groups.append(
             sel.subtypes_group(
@@ -14714,7 +14788,8 @@ def _selectors_main(args) -> int:
             )
         )
     if topic == sel.TOPIC_ALL:
-        for subtype in sel.canonical_subtypes():
+        # Under a profile, only the subtypes it actually curates.
+        for subtype in profile.subtypes() if profile else sel.canonical_subtypes():
             groups.append(
                 sel.device_group(
                     subtype,
@@ -14724,6 +14799,7 @@ def _selectors_main(args) -> int:
                         if observed_devices
                         else None
                     ),
+                    profile=profile,
                 )
             )
     elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES):
@@ -14736,6 +14812,7 @@ def _selectors_main(args) -> int:
                     if observed_devices
                     else None
                 ),
+                profile=profile,
             )
         )
 
@@ -14754,6 +14831,7 @@ def _selectors_main(args) -> int:
                                     "selector": e.selector,
                                     "label": e.label,
                                     "sources": list(e.sources),
+                                    "mandatory": e.mandatory,
                                 }
                                 for e in g.entries
                             ],
@@ -14772,8 +14850,11 @@ def _selectors_main(args) -> int:
             print()
         print(f"# {group.title}")
         width = max((len(e.selector) for e in group.entries), default=0)
+        any_mandatory = any(e.mandatory for e in group.entries)
         for e in group.entries:
             bits = [f"  {e.selector:<{width}}"]
+            if any_mandatory:
+                bits.append("MANDATORY" if e.mandatory else "optional ")
             if e.label:
                 bits.append(e.label)
             if args.observed and e.sources:

@@ -47,6 +47,7 @@ class SelectorEntry:
     selector: str
     label: Optional[str] = None
     sources: tuple = ()
+    mandatory: bool = False
 
     def source_note(self) -> str:
         return "+".join(self.sources) if self.sources else ""
@@ -59,6 +60,81 @@ class SelectorGroup:
     title: str
     entries: List[SelectorEntry] = field(default_factory=list)
     note: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Profile:
+    """A discipline's slice of the TOS vocabulary.
+
+    ``tos`` is unconstrained; a profile narrows it to one station subtype
+    and to the attributes that discipline actually curates, so ``tosGPS``
+    cannot silently answer a question about a field nobody maintains for
+    GPS. Built from the catalog's own ``gps_relevance`` / ``gps_required_for``
+    columns rather than a second hand-kept list.
+    """
+
+    name: str
+    subtype: str
+    station: Dict[str, bool] = field(default_factory=dict)
+    devices: Dict[str, Dict[str, bool]] = field(default_factory=dict)
+
+    def allows_station(self, code: str) -> bool:
+        return code in self.station
+
+    def allows_device(self, subtype: str, code: str) -> bool:
+        if subtype == ANY_DEVICE:
+            return any(code in codes for codes in self.devices.values())
+        return code in self.devices.get(subtype, {})
+
+    def allows(self, namespace: Optional[str], code: str) -> bool:
+        if namespace is None:
+            return self.allows_station(code)
+        return self.allows_device(namespace, code)
+
+    def mandatory(self, namespace: Optional[str], code: str) -> bool:
+        if namespace is None:
+            return bool(self.station.get(code))
+        if namespace == ANY_DEVICE:
+            return any(codes.get(code) for codes in self.devices.values())
+        return bool(self.devices.get(namespace, {}).get(code))
+
+    def subtypes(self) -> List[str]:
+        """Device subtypes this profile curates anything for."""
+        return sorted(s for s, codes in self.devices.items() if codes)
+
+
+def gps_profile(catalog=None) -> Profile:
+    """The GPS discipline's profile, read off the attribute catalog.
+
+    Membership is ``gps_relevance == 'yes'``. Mandatory is a non-empty
+    ``gps_required_for`` — which on a station names the entity scope
+    (``geophysical``) and on a device names the subtypes the attribute is
+    required for, so a code can be mandatory on a receiver and optional on
+    an antenna. Verified against the catalog: ``gps_required_for`` never
+    appears without ``gps_relevance: yes``, so membership is a superset.
+    """
+    cat = catalog if catalog is not None else _catalog()
+
+    station: Dict[str, bool] = {}
+    for code, entry in (cat.get("stations") or {}).items():
+        entry = entry or {}
+        if entry.get("gps_relevance") == "yes":
+            station[code] = bool(entry.get("gps_required_for"))
+
+    devices: Dict[str, Dict[str, bool]] = {
+        subtype: {} for subtype in set(DEVICE_SUBTYPE_ALIASES.values())
+    }
+    for code, entry in (cat.get("devices") or {}).items():
+        entry = entry or {}
+        if entry.get("gps_relevance") != "yes":
+            continue
+        required = set(entry.get("gps_required_for") or [])
+        applies = entry.get("applies_to") or entry.get("subtypes_observed") or []
+        for subtype in applies:
+            if subtype in devices:
+                devices[subtype][code] = subtype in required
+
+    return Profile(name="GPS", subtype="GPS stöð", station=station, devices=devices)
 
 
 def canonical_subtypes() -> List[str]:
@@ -201,13 +277,50 @@ def _merge(
     return entries
 
 
+def _apply_profile(
+    entries: List[SelectorEntry],
+    profile: Optional[Profile],
+    namespace: Optional[str],
+) -> List[SelectorEntry]:
+    """Drop out-of-profile entries and mark the mandatory ones.
+
+    Mandatory first, then alphabetical — the required set is what you check
+    when onboarding a station, so it should not be hunted for in a list.
+    """
+    if profile is None:
+        return entries
+    kept = []
+    for e in entries:
+        code = e.selector.split(".", 1)[1] if namespace else e.selector
+        if not profile.allows(namespace, code):
+            continue
+        if profile.mandatory(namespace, code):
+            e = SelectorEntry(
+                selector=e.selector,
+                label=e.label,
+                sources=e.sources,
+                mandatory=True,
+            )
+        kept.append(e)
+    kept.sort(key=lambda e: (not e.mandatory, e.selector))
+    return kept
+
+
 def station_group(
-    catalog=None, observed: Optional[Dict[str, int]] = None
+    catalog=None,
+    observed: Optional[Dict[str, int]] = None,
+    profile: Optional[Profile] = None,
 ) -> SelectorGroup:
-    return SelectorGroup(
-        title="station attributes — use bare, e.g. 'iers_domes_number != null'",
-        entries=_merge(catalog_station_codes(catalog), observed),
+    entries = _apply_profile(
+        _merge(catalog_station_codes(catalog), observed), profile, None
     )
+    title = "station attributes — use bare, e.g. 'iers_domes_number != null'"
+    if profile:
+        title = (
+            f"station attributes — {profile.name}-relevant only "
+            f"({len(entries)} of {len(catalog_station_codes(catalog))})"
+        )
+    return SelectorGroup(title=title, entries=entries)
 
 
 def subtypes_group(observed: Optional[Dict[str, int]] = None) -> SelectorGroup:
@@ -235,16 +348,31 @@ def device_group(
     subtype: str,
     catalog=None,
     observed: Optional[Dict[str, int]] = None,
+    profile: Optional[Profile] = None,
 ) -> SelectorGroup:
     alias = aliases_for(subtype)[0]
     cat_codes = catalog_device_codes(subtype, catalog)
-    group = SelectorGroup(
-        title=f"{subtype} attributes — use as '{alias}.<code>'",
-        entries=_merge(cat_codes, observed, prefix=f"{alias}."),
-    )
-    if not cat_codes and not observed:
-        group.note = (
-            f"the catalog classifies no attributes for {subtype} — "
-            "re-run with --observed to read them off the live fleet"
+    all_entries = _merge(cat_codes, observed, prefix=f"{alias}.")
+    entries = _apply_profile(all_entries, profile, subtype)
+    title = f"{subtype} attributes — use as '{alias}.<code>'"
+    if profile:
+        title = (
+            f"{subtype} attributes — {profile.name}-relevant only "
+            f"({len(entries)} of {len(all_entries)}), use as '{alias}.<code>'"
         )
+    group = SelectorGroup(title=title, entries=entries)
+    if not entries:
+        if profile:
+            # --observed cannot help here: it can only add codes, and the
+            # profile would filter every one of them out again. Say the
+            # real reason instead of sending the reader down that path.
+            group.note = (
+                f"{subtype} carries no {profile.name}-relevant attributes — "
+                f"use plain 'tos search' for the unconstrained vocabulary"
+            )
+        elif not cat_codes and not observed:
+            group.note = (
+                f"the catalog classifies no attributes for {subtype} — "
+                "re-run with --observed to read them off the live fleet"
+            )
     return group

@@ -358,6 +358,20 @@ def main():
     quering metadata from tos and comparing to relevant rinex files
     """
 
+    # `search` delegates to the shared engine under the GPS profile, and is
+    # intercepted BEFORE the argparse below: that setup (station list,
+    # server url, log level) exists for the product subcommands and does
+    # not apply to a fleet query, which owns its own parser.
+    #
+    # tosGPS search = tos search narrowed to one discipline — subtype pinned
+    # to 'GPS stöð', and only attributes the catalog marks
+    # gps_relevance=yes accepted. See search_selectors.gps_profile().
+    if sys.argv[1:2] == ["search"]:
+        from .search_selectors import gps_profile
+        from .tos import _search_main
+
+        return _search_main(sys.argv[2:], profile=gps_profile())
+
     # print(module_logger.getEffectiveLevel())
 
     parser = argparse.ArgumentParser(

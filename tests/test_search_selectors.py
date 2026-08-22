@@ -239,6 +239,28 @@ class TestSelectorsCli:
         assert rc == 0
         assert "receiver.firmware_version" in out
 
+    def test_profile_filters_and_marks_mandatory(self, capsys):
+        from tostools.search_selectors import gps_profile
+        from tostools.tos import _search_main
+
+        _search_main(["--selectors", "receiver", "--json"], profile=gps_profile())
+        payload = json.loads(capsys.readouterr().out)
+        entries = payload["groups"][0]["entries"]
+        codes = {e["selector"] for e in entries}
+        assert "receiver.firmware_version" in codes
+        assert "receiver.access_taeki_id" not in codes, "gps_relevance=no must go"
+        fw = next(e for e in entries if e["selector"] == "receiver.firmware_version")
+        assert fw["mandatory"] is True
+
+    def test_profile_lists_mandatory_first(self, capsys):
+        from tostools.search_selectors import gps_profile
+        from tostools.tos import _search_main
+
+        _search_main(["--selectors", "receiver", "--json"], profile=gps_profile())
+        entries = json.loads(capsys.readouterr().out)["groups"][0]["entries"]
+        flags = [e["mandatory"] for e in entries]
+        assert flags == sorted(flags, reverse=True), "mandatory block must lead"
+
     def test_output_first_token_is_a_usable_selector(self, capsys):
         """Copy-paste contract: line 1 token parses, labels never lead."""
         rc, out = _run(["--selectors", "receiver"], capsys)
