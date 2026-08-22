@@ -159,6 +159,68 @@ class TestSubtypePin:
         assert "subtype = GPS stöð" in crit
 
 
+class TestTosGpsDelegation:
+    """What `tosGPS` forwards to the shared engine, and how.
+
+    Asymmetric on purpose: `search` is profiled because `tos search` is
+    unconstrained, while `audit` is a plain alias because the audit is
+    already GPS-only by construction (audit_missing_attributes skips every
+    gps_relevance != 'yes' code). Applying a profile there would be
+    redundant, and `tos audit` must stay byte-identical — gps-tos-corrections
+    records 270 `tos audit apply` invocations as procedure.
+    """
+
+    def _main(self, argv):
+        import tostools.tosGPS as tosgps
+
+        with patch.object(tosgps.sys, "argv", ["tosGPS", *argv]):
+            return tosgps.main()
+
+    def test_search_is_delegated_with_the_gps_profile(self):
+        import tostools.tos as tos_mod
+
+        with patch.object(tos_mod, "_search_main", return_value=0) as spy:
+            assert self._main(["search", "--markers-only"]) == 0
+        argv, kwargs = spy.call_args
+        assert argv[0] == ["--markers-only"]
+        assert kwargs["profile"].name == "GPS"
+
+    def test_audit_is_delegated_with_NO_profile(self):
+        import tostools.tos as tos_mod
+
+        with patch.object(tos_mod, "_audit_main", return_value=0) as spy:
+            assert self._main(["audit", "timeline", "16156"]) == 0
+        spy.assert_called_once_with(["timeline", "16156"])
+
+    def test_audit_delegates_to_the_very_same_function(self):
+        """Alias, not a reimplementation — one function, one behaviour."""
+        import tostools.tos as tos_mod
+
+        seen = {}
+
+        def _record(argv):
+            seen["argv"] = argv
+            return 7
+
+        with patch.object(tos_mod, "_audit_main", _record):
+            rc = self._main(["audit", "--help"])
+        assert rc == 7, "tosGPS must return the exit code tos audit produced"
+        assert seen["argv"] == ["--help"]
+
+    def test_product_subcommands_are_not_intercepted(self):
+        """PrintTOS/rinex/sitelog/... still reach tosGPS's own parser."""
+        import tostools.tos as tos_mod
+
+        with (
+            patch.object(tos_mod, "_audit_main") as audit,
+            patch.object(tos_mod, "_search_main") as search,
+        ):
+            with pytest.raises(SystemExit):
+                self._main(["nonsense-verb"])
+        audit.assert_not_called()
+        search.assert_not_called()
+
+
 class TestProfiledDiscovery:
     def test_station_topic_is_narrowed(self, capsys, profile):
         rc, out = _run(["--selectors", "station"], capsys, profile)

@@ -358,19 +358,34 @@ def main():
     quering metadata from tos and comparing to relevant rinex files
     """
 
-    # `search` delegates to the shared engine under the GPS profile, and is
-    # intercepted BEFORE the argparse below: that setup (station list,
-    # server url, log level) exists for the product subcommands and does
-    # not apply to a fleet query, which owns its own parser.
+    # Verbs shared with `tos`, intercepted BEFORE the argparse below: that
+    # setup (station list, server url, log level) exists for the product
+    # subcommands and does not apply to these, which own their own parsers.
     #
-    # tosGPS search = tos search narrowed to one discipline — subtype pinned
-    # to 'GPS stöð', and only attributes the catalog marks
-    # gps_relevance=yes accepted. See search_selectors.gps_profile().
-    if sys.argv[1:2] == ["search"]:
+    # The two are deliberately NOT symmetric:
+    #
+    #   search — PROFILED. `tos search` is unconstrained, so tosGPS narrows
+    #            it: subtype pinned to 'GPS stöð', and only attributes the
+    #            catalog marks gps_relevance=yes accepted.
+    #
+    #   audit  — PLAIN ALIAS, byte-identical to `tos audit`. The audit is
+    #            already GPS-only BY CONSTRUCTION: audit_missing_attributes
+    #            skips every code whose gps_relevance != 'yes' and grades
+    #            the rest with gps_required_for (same in station.py). There
+    #            is no unconstrained behaviour to narrow, so a profile here
+    #            would be redundant machinery. `tos audit` must also keep
+    #            working verbatim — gps-tos-corrections records 270
+    #            'tos audit apply' invocations as operational procedure.
+    verb = sys.argv[1:2]
+    if verb == ["search"]:
         from .search_selectors import gps_profile
         from .tos import _search_main
 
         return _search_main(sys.argv[2:], profile=gps_profile())
+    if verb == ["audit"]:
+        from .tos import _audit_main
+
+        return _audit_main(sys.argv[2:])
 
     # print(module_logger.getEffectiveLevel())
 
