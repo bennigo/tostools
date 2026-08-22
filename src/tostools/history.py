@@ -264,6 +264,38 @@ def read_station_roles(cfg_path: str) -> Dict[str, str]:
     }
 
 
+def read_reference_sites(cfg_path: str) -> set:
+    """Markers flagged ``is_reference_site = true`` in stations.cfg.
+
+    These are the external IGS stations the processing chain references
+    (ALIC, AMC2, ANKR, …) — 139 of the 344 sections. IMO does not operate
+    them and they have no TOS entity, so fleet enumeration must skip them
+    BEFORE marker→TOS resolution, or every run burns a futile HTTP call per
+    site (GLOBAL_SITES_investigation.md §4.4).
+
+    **This, not ``station_role``, is the discriminator.**
+    :func:`read_station_roles` states the same intent, but ``passive`` does
+    not mean the same thing: eight stations are passive while being real
+    IMO equipment with real TOS entities — BJAC, ELAT, FAFC, GRIC, LEBA,
+    LISK, UNIV, VCAP — and FAFC runs a PolaRX5 (TOS device 18409).
+    Filtering the fleet on ``station_role`` silently drops all eight from
+    every audit.
+
+    Fail-open, like the role parser: a missing or unreadable cfg, or any
+    value other than ``true``, yields "not a reference site", so a typo can
+    never hide an operated station from the fleet audits.
+    """
+    cfg = configparser.ConfigParser()
+    cfg.read(cfg_path)
+    return {
+        s.upper()
+        for s in cfg.sections()
+        if s
+        and s.isupper()
+        and cfg.get(s, "is_reference_site", fallback="").strip().lower() == "true"
+    }
+
+
 def resolve_marker_to_entity_id(client: TOSClient, marker: str) -> Optional[int]:
     """Resolve a 4-letter station marker to its TOS ``id_entity``.
 

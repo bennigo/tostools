@@ -386,6 +386,14 @@ def main():
         from .tos import _audit_main
 
         return _audit_main(sys.argv[2:])
+    if verb == ["fleet"]:
+        # Also a plain alias, for audit's reason plus one more: fleet
+        # enumerates stations.cfg — the IMO GPS network's own config, minus
+        # the IGS reference sites — and runs the GPS-hardcoded audits over
+        # it. GPS-only at both ends, so there is nothing to narrow.
+        from .tos import _fleet_main
+
+        return _fleet_main(sys.argv[2:])
 
     # print(module_logger.getEffectiveLevel())
 

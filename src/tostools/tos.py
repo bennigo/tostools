@@ -9195,7 +9195,10 @@ def _audit_main(argv):
 
         markers = list(args.markers or []) + list(args.stations or [])
         if not markers:
-            markers = list(cfg)
+            # Whole-cfg default: IMO fleet only, excluding the IGS reference
+            # sites (no TOS entity, so nothing to audit). An EXPLICIT marker
+            # is still honoured — asking for one by name overrides the scope.
+            markers = sweep_mod.imo_fleet_markers(cfg)
         markers = [m.upper() for m in markers]
 
         # Read-only verb, but find_station_by_marker is a TOSWriter method
@@ -13005,9 +13008,14 @@ def _run_missing_attributes_fleet(client, args) -> int:
         print(f"Could not read stations.cfg ({cfg_path}): {e}", file=sys.stderr)
         return 2
 
-    markers = sorted(m.upper() for m in cfg)
+    # IMO fleet only — stations.cfg also carries the global IGS reference
+    # sites the processing chain points at. They have no TOS entity, so
+    # auditing one is a round-trip that can only report an error.
+    markers = sweep_mod.imo_fleet_markers(cfg)
+    skipped = len(cfg) - len(markers)
     total = len(markers)
-    print(f"surveying {total} station(s) from {cfg_path}", file=sys.stderr)
+    note = f" ({skipped} IGS reference site(s) skipped)" if skipped else ""
+    print(f"surveying {total} station(s) from {cfg_path}{note}", file=sys.stderr)
 
     rows = []
     by_code: Dict[str, int] = {}

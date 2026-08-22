@@ -41,8 +41,8 @@ from tostools.audit_contact_dates import (
 from tostools.history import (
     ParentEntity,
     default_station_cfg_path,
+    read_reference_sites,
     read_station_markers,
-    read_station_roles,
     resolve_marker_to_entity_id,
 )
 from tostools.station_triage import (
@@ -201,27 +201,33 @@ def enumerate_fleet_stations(
         )
 
     markers = read_station_markers(cfg_path)
-    # Passive (data-source-only) stations have no TOS counterpart — drop
-    # them BEFORE marker→id resolution so they cost zero HTTP calls
-    # (same pre-resolution rationale as include/exclude).
-    roles = read_station_roles(cfg_path)
+    # External IGS reference sites have no TOS counterpart — drop them
+    # BEFORE marker→id resolution so they cost zero HTTP calls (same
+    # pre-resolution rationale as include/exclude).
+    #
+    # The flag is `is_reference_site`, NOT `station_role = passive`. This
+    # filtered on the role until 2026-08-22, which silently dropped eight
+    # OPERATED IMO stations from every fleet audit — BJAC, ELAT, FAFC,
+    # GRIC, LEBA, LISK, UNIV, VCAP — because they are passive without
+    # being reference sites. FAFC runs a PolaRX5 (TOS device 18409), so it
+    # had a full metadata record that nothing was ever checking.
+    reference_sites = read_reference_sites(cfg_path)
     candidates: List[str] = []
-    passive_skipped = 0
+    reference_skipped = 0
     for m in markers:
         upper = m.upper()
-        if roles.get(upper, "active") == "passive":
-            passive_skipped += 1
+        if upper in reference_sites:
+            reference_skipped += 1
             continue
         if include_set is not None and upper not in include_set:
             continue
         if upper in exclude_set:
             continue
         candidates.append(m)
-    if passive_skipped:
+    if reference_skipped:
         logger.info(
-            "enumerate_fleet_stations: skipped %d passive "
-            "(data-source-only) stations",
-            passive_skipped,
+            "enumerate_fleet_stations: skipped %d external IGS reference site(s)",
+            reference_skipped,
         )
     if limit is not None:
         candidates = candidates[:limit]
