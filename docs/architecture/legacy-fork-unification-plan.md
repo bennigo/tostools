@@ -1,7 +1,8 @@
 # Unifying the `legacy/` fork — scope and order
 
-**Status**: scoped, not started. Written 2026-08-23 after the redundancy sweep
-that deleted `legacy/gps_rinex.py` and the abandoned `tostools/cli/` package.
+**Status**: F1 steps 1-3 done (2026-08-23); F1 step 4 blocked on F2; F2 not
+started. Written 2026-08-23 after the redundancy sweep that deleted
+`legacy/gps_rinex.py` and the abandoned `tostools/cli/` package.
 
 > **Overlaps an untracked doc.** `docs/security-streamlining-remediation-plan.md`
 > (untracked at time of writing) covers the same F1 ordering under its §T1. It
@@ -44,7 +45,8 @@ prose consistently drifts toward the prettier module.
 |---|---|---|
 | `core/site_log.py:117` | **legacy** | — |
 | `tosGPS.py` | **legacy** (`gpsf`, line 24) | **top-level** (`gpsqc`, line 15) |
-| `api/tos_client.py:307,651` | — | **legacy** |
+| `api/tos_client.py:307,651` | — | ~~legacy~~ → **top-level** (F1 steps 1-2) |
+| `legacy/gps_metadata_functions.py:24` | — | **legacy** ← blocks step 4 |
 | `__init__.py:21,22` | top-level | top-level |
 
 Two consequences worth stating plainly:
@@ -93,6 +95,9 @@ Check the call path, not the diff, before acting on any of these:
 
   The merge job here is therefore to collapse the mirrored list onto
   `devices.SITELOG_GPS_ATTRIBUTE_CODES`, not to "restore missing attributes".
+  **Done in step 2** — and the write-up above understated it in one respect:
+  the list was hardcoded in *three* places, not two (both forks plus the
+  constant), which is why "change them together" had already failed.
 - **`get_contacts`** (+37/−7) — top-level adds a hardcoded IMO fallback used
   when TOS returns no owners, including `"phone_primary": "5226000"` **without
   the `+354` prefix**. `gps-config-data/agencies.yaml` was corrected to
@@ -103,7 +108,12 @@ Check the call path, not the diff, before acting on any of these:
   with two named bugs; legacy is the same chain without the warning. Neither is
   the successor: `gps_metadata_via_devices` is.
 
-### The F1 trap, traced 2026-08-23 — read before touching `tos_client.py`
+### The F1 trap, traced 2026-08-23 — resolved 2026-08-23, kept as the record
+
+> **Resolved by step 2** (`d467807` + `5977574`). The import below now points at
+> the top-level module, which is safe only because the attribute list was
+> collapsed onto one definition first. Kept in full because the trap explains
+> the ordering, and because the same shape recurs in F2.
 
 `api/tos_client.py:651` is **on the site-log publishing path**:
 
@@ -135,14 +145,47 @@ is the `get_logger` shim, so that one is a safe swap.
    `tests/test_f1_device_structure_unified.py`, whose guards are
    mutation-tested — and which also asserts step 2 has **not** been done by
    analogy.
-2. For `device_attribute_history`, do **not** swap. First collapse the attribute
+2. ~~For `device_attribute_history`, do **not** swap. First collapse the attribute
    list onto `devices.SITELOG_GPS_ATTRIBUTE_CODES` (which already carries the
    constellations and `azimuth`, and whose comment says it mirrors this very
-   `key_list`), so one definition feeds both. Only then repoint the import.
-3. Pin the result with a test that a generated site log still populates §3.3 and
-   §4 for a station with non-GPS constellations — the regression this order
-   exists to prevent must be caught by something other than review.
-4. Delete `legacy/gps_metadata_qc.py` once importer-free.
+   `key_list`), so one definition feeds both. Only then repoint the import.~~
+   **DONE 2026-08-23** (`d467807` collapse, `5977574` repoint — two branches,
+   in that order). Both copies now take `codes=` and **default** to
+   `SITELOG_GPS_ATTRIBUTE_CODES`. The default placement was deliberate: passing
+   the wide list from the call site instead would have left the trap armed for
+   the next caller. The constant is element-for-element the legacy `key_list`
+   minus the two bookkeeping keys the kernel appends itself.
+3. ~~Pin the result with a test that a generated site log still populates §3.3 and
+   §4 for a station with non-GPS constellations.~~ **DONE** —
+   `tests/test_f1_device_attribute_history_unified.py`.
+
+   Two things that test had to get right, both of which a plausible-looking
+   test gets wrong:
+
+   - It drives the **real** chain (TOS attribute rows → `get_device_sessions`
+     → `site_log`), stubbing only `_make_request`. The renderer's
+     `device_sessions=` injection seam — which the other offline site-log tests
+     use — bypasses `device_attribute_history` entirely, so a fixture built on
+     it passes identically with the narrow key list restored.
+   - It asserts on the extracted **subsection**, never on the whole log. Every
+     section ends with an instruction block whose §3.x placeholder text is
+     literally `(GPS+GLO+GAL+BDS+QZSS+IRNSS+SBAS)`, so `"GPS+GLO+GAL" in log`
+     is true even when the real subsection has fallen back to a bare `GPS`.
+
+   Verified by mutation both before and after the repoint (restoring the narrow
+   list turns §3.3/§4 red on whichever copy is live at the time), and by
+   byte-identity: the full 267-line rendered log matches one produced from a
+   worktree at `848cca4`.
+4. Delete `legacy/gps_metadata_qc.py` once importer-free. **Not yet reachable —
+   and it is not blocked on step 2.** `api/tos_client.py` no longer imports it,
+   but `legacy/gps_metadata_functions.py:24` still does, at module level, and
+   that module is the **live site-log renderer**. It uses five other symbols
+   from the legacy copy — `search_station`, `get_station_metadata`,
+   `URL_REST_TOS`, `wgs84toitrf08`, `get_device_sessions` — every one of which
+   also exists in the top-level module. So step 4 is **coupled to F2**, not
+   free-standing: the deletion lands when the renderer migrates, not before.
+   The only other importers are the transitional differential tests, which are
+   meant to die with the file.
 
 Steps 1-2 are separate branches; do not bundle them.
 
@@ -180,8 +223,15 @@ session and are the only guard on the synthetic-serial and `0000` rules:
 
 `tests/test_device_attribute_history_none_date.py` already imports **both**
 implementations (`dah_current` + `dah_legacy`) — the divergence was noticed and
-pinned rather than resolved. It is the natural place to assert the merged
-behaviour.
+pinned rather than resolved. Its parametrization over both copies still holds
+and is left alone; the merged-behaviour assertion went into the new
+`tests/test_f1_device_attribute_history_unified.py` instead, so the DYNC
+regression test keeps stating one thing.
+
+Both `test_f1_*_unified.py` files carry a `TestTheTwoCopiesStillAgree` class
+that is **transitional by design** — it exists only while both copies do, and
+should be deleted along with `legacy/gps_metadata_qc.py` in step 4 rather than
+migrated.
 
 ## Smaller items found in the same sweep
 
