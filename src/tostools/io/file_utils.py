@@ -81,7 +81,9 @@ def read_zzipped_file(
             logger.info(f"Opened (zcat fallback): {file_path}")
             return proc.stdout
         except (subprocess.CalledProcessError, FileNotFoundError) as zerr:
-            logger.error(f"Error decompressing file {file_path}: {e}; zcat fallback failed: {zerr}")
+            logger.error(
+                f"Error decompressing file {file_path}: {e}; zcat fallback failed: {zerr}"
+            )
             return None
 
 
