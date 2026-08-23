@@ -114,6 +114,27 @@ Check the call path, not the diff, before acting on any of these:
 > the top-level module, which is safe only because the attribute list was
 > collapsed onto one definition first. Kept in full because the trap explains
 > the ordering, and because the same shape recurs in F2.
+>
+> **One claim below is overstated — corrected 2026-08-23 by tracing the callers.**
+> A naive repoint would NOT have dropped §3.3/§4 "out of every published site
+> log". Those sections are composed by `devices.device_sessions`
+> (→ `slice_attributes_by_window`), which never calls `device_attribute_history`:
+> `site_log` builds its own sessions whenever `device_sessions=` is not passed,
+> and **no production caller passes it** — `core.site_log.build_site_log`, the
+> single entry point for both `tos sitelog` and receivers' EPOS dissemination,
+> never does.
+>
+> What the repointed chain actually feeds: §11/§12/§13 agency resolution
+> (`build_site_log` calls `get_complete_station_metadata` for that alone),
+> `_build_history_from_connections`, and every receivers consumer of
+> `get_complete_station_metadata` — `cfg reconcile`, `tos_adapter`, `tos_push`,
+> `stream_scheduler`, `streaming/skeleton`, `dissemination/tos_access`.
+>
+> The ordering was still right and the hazard still real — a dropped attribute in
+> those station-metadata dicts is exactly as invisible as one in a site log, and
+> lands in config reconciliation instead. But the blast radius named below is
+> wrong, and F2 will inherit this map, so: **verify the renderer's input path
+> before trusting any claim in this document about what reaches a published log.**
 
 `api/tos_client.py:651` is **on the site-log publishing path**:
 
@@ -173,9 +194,26 @@ is the `get_logger` shim, so that one is a safe swap.
      is true even when the real subsection has fallen back to a bare `GPS`.
 
    Verified by mutation both before and after the repoint (restoring the narrow
-   list turns §3.3/§4 red on whichever copy is live at the time), and by
+   list turns the guards red on whichever copy is live at the time), and by
    byte-identity: the full 267-line rendered log matches one produced from a
    worktree at `848cca4`.
+
+   **Both of those render through `site_log(device_sessions=…)`, which no
+   production caller uses** (see the corrected trap note above). The guard on
+   the path production DOES take asserts on `get_device_sessions` output
+   directly — `TestDeviceSessionsKeepConstellationsAndAzimuth`. The site-log
+   assertions were written to the overstated claim and are kept, relabelled, as
+   a check that the two session producers stay interchangeable at the renderer's
+   input.
+
+   One measured behaviour worth carrying into F2: `codes` is not just a filter.
+   It gates `if item["code"] in key_list`, so a widened list lets more attribute
+   rows move `date_from`/`date_to`. On a device with a GAL toggle starting
+   mid-tenure the session start moves ONTO the toggle date and the pre-GAL
+   period vanishes — this kernel's documented Bug 1
+   (`synthesis-legacy-divergence.md`), pre-existing on the legacy copy and the
+   reason the renderer uses the newer slicer. Pinned by
+   `test_widening_the_codes_moves_period_boundaries_not_just_keys`.
 4. Delete `legacy/gps_metadata_qc.py` once importer-free. **Not yet reachable —
    and it is not blocked on step 2.** `api/tos_client.py` no longer imports it,
    but `legacy/gps_metadata_functions.py:24` still does, at module level, and

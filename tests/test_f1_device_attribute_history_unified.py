@@ -7,16 +7,22 @@ top-level one stopped at GPS/GLO. A third copy of the same list lived in
 `devices.SITELOG_GPS_ATTRIBUTE_CODES`, whose comment said it mirrored the legacy
 one. See `docs/architecture/legacy-fork-unification-plan.md`.
 
-That mattered because this chain feeds every published site log:
+That mattered because of this chain:
 
     core/site_log.py:127 -> get_complete_station_metadata
       -> get_device_sessions -> _get_device_attribute_history
         -> device_attribute_history
 
-so the short list reaching it would drop §3.3 Satellite System back to the
-"GPS" fleet-baseline fallback and §4 Alignment from True N to 0.0 — a loss that
-reads as a TOS metadata gap rather than a code change, and would therefore be
-chased on the wrong side for a long time.
+**Where that chain actually goes, verified rather than inherited from the plan:**
+it feeds §11/§12/§13 agency resolution, `_build_history_from_connections`, and
+every receivers consumer of `get_complete_station_metadata` (`cfg reconcile`,
+`tos_adapter`, `tos_push`, `stream_scheduler`, `skeleton`, dissemination
+metadata). It does **not** feed §3.3/§4 of a published site log: no production
+caller passes `device_sessions=`, so `site_log` composes its own via
+`devices.device_sessions` — a different kernel that never calls this function.
+The plan says a naive repoint would have dropped §3.3/§4 "out of every published
+site log"; that was overstated. The real exposure was the station-metadata dicts
+receivers reads, where a dropped attribute is equally invisible.
 
 Step 2 collapses the list onto the shared constant and makes the
 site-log-complete set the DEFAULT, so a caller cannot lose §3.3/§4 by failing to
@@ -177,11 +183,57 @@ def _field(section: list[str], name: str) -> str:
     raise AssertionError(f"field {name!r} not found in:\n" + "\n".join(section))
 
 
-class TestSiteLogKeepsConstellationsAndAzimuth:
-    """The regression this whole ordering exists to prevent.
+class TestDeviceSessionsKeepConstellationsAndAzimuth:
+    """The contract of the repointed chain, asserted where production reads it.
 
-    Mutation-tested: restoring the narrow hardcoded `key_list` on the top-level
-    copy turns both of these red.
+    `get_device_sessions` is the seam every consumer of
+    `get_complete_station_metadata` sits behind — receivers' `cfg reconcile`,
+    `tos_adapter`, `stream_scheduler`, `skeleton`, and the dissemination
+    metadata lookups. If the narrow key list comes back, these session dicts
+    lose the constellations and `azimuth` silently.
+
+    Mutation-tested: restoring the narrow `key_list` on whichever copy is live
+    turns these red.
+    """
+
+    def test_receiver_session_carries_every_tracked_constellation(self):
+        receiver = next(
+            s["device"]
+            for s in _sessions()
+            if s["device"]["code_entity_subtype"] == "gnss_receiver"
+        )
+        assert receiver["GAL"] == "true"
+        assert receiver["GPS"] == receiver["GLO"] == "true"
+        # Present-but-unset, not absent — absent is what the narrow list gave.
+        for code in ("BDS", "QZSS", "SBAS", "IRN"):
+            assert code in receiver
+
+    def test_antenna_session_carries_azimuth(self):
+        antenna = next(
+            s["device"]
+            for s in _sessions()
+            if s["device"]["code_entity_subtype"] == "antenna"
+        )
+        assert antenna["azimuth"] == "45"
+
+
+class TestSiteLogKeepsConstellationsAndAzimuth:
+    """§3.3 / §4 survive when sessions from this chain are handed to the renderer.
+
+    Scope, stated precisely because the plan overstated it and this test was
+    written to that overstatement: `site_log(device_sessions=...)` is a real
+    public entry point, but **no production caller passes it**. `build_site_log`
+    never does, so `site_log` builds its own sessions internally via
+    `devices.device_sessions(codes=SITELOG_GPS_ATTRIBUTE_CODES)` — a different
+    kernel (`slice_attributes_by_window`), which never reaches
+    `device_attribute_history`.
+
+    So this class does NOT guard §3.3/§4 of published logs; those were never at
+    risk from the F1 repoint. What it does guard is that the two session
+    producers stay interchangeable at the renderer's input — which is what makes
+    the injection API safe to use and would be the first thing to break if the
+    kernels diverge again. `TestDeviceSessionsKeepConstellationsAndAzimuth`
+    above is the guard on the production path.
     """
 
     def test_satellite_system_renders_all_tracked_constellations(self):
@@ -221,6 +273,58 @@ class TestOneDefinitionFeedsEveryCaller:
         for code in SITELOG_GPS_ATTRIBUTE_CODES:
             assert code in rows[0], f"{code} missing from the synthesised session"
 
+    def test_widening_the_codes_moves_period_boundaries_not_just_keys(self):
+        """`codes` is not only a filter — it decides which attribute rows are
+        seen at all (`if item["code"] in key_list`), and a row that enters the
+        loop can move `date_from`/`date_to`. Widening the default therefore
+        changes PERIODS, not merely the keys on existing ones.
+
+        Pinned because the collapse commit claimed the deprecated
+        `--use-legacy-synthesis` chain's sub-session splits "can get finer"
+        without having verified the shape. Measured here, the effect on a
+        single-period device is sharper and in the other direction: a GAL toggle
+        starting mid-tenure moves the session's `date_from` onto the toggle date
+        and the pre-GAL period disappears rather than splitting off.
+
+        That is this kernel's documented Bug 1 — `set(zip(dates_from, dates_to))`
+        dedup collapsing a misaligned sub-window
+        (docs/architecture/synthesis-legacy-divergence.md). It is NOT introduced
+        by F1: the legacy copy always carried the wide list, so the tos_client
+        path has always behaved this way, and it is exactly why the site-log
+        renderer composes sessions with `devices.slice_attributes_by_window`
+        instead. Asserted so the property is stated as a measured fact rather
+        than assumed away, and so a future fix to Bug 1 fails here loudly.
+        """
+        from tostools.gps_metadata_qc import device_attribute_history
+
+        # Built inline, not from `_receiver()`: GAL must be enabled ONLY from
+        # 2022 — appending to the shared fixture would leave two concurrently
+        # OPEN GAL periods, which TOS cannot hold, and the measurement would
+        # then be of malformed input.
+        dev = {
+            "id_entity": 1001,
+            "code_entity_subtype": "gnss_receiver",
+            "attributes": [
+                _attr("serial_number", "3018434"),
+                _attr("model", "SEPT POLARX5"),
+                _attr("firmware_version", "5.7.0"),
+                _attr("GPS", "true"),
+                _attr("GLO", "true"),
+                # The toggle that shares a boundary with nothing else.
+                _attr("GAL", "true", "2022-03-07T00:00:00"),
+            ],
+        }
+
+        narrow = device_attribute_history(
+            dev, FROM, None, logging.CRITICAL, codes=LEGACY_GPS_ATTRIBUTE_CODES
+        )
+        wide = device_attribute_history(dev, FROM, None, logging.CRITICAL)
+
+        assert [(r["date_from"], r["date_to"]) for r in narrow] == [(FROM, None)]
+        assert [(r["date_from"], r["date_to"]) for r in wide] == [
+            ("2022-03-07T00:00:00", None)
+        ]
+
     def test_narrow_list_is_still_reachable_explicitly(self):
         """`codes=` keeps the historical key list available — the slicer oracle
         in test_devices.py depends on it."""
@@ -235,7 +339,13 @@ class TestOneDefinitionFeedsEveryCaller:
 
     def test_no_hardcoded_key_list_remains_in_either_copy(self):
         """Belt and braces: the divergence was two hardcoded lists, so assert
-        neither module rebuilt one."""
+        neither module rebuilt one.
+
+        The literal checked is `"serial_number",` — the first element of BOTH
+        the wide and the narrow list. An earlier version of this test looked for
+        `"QZSS",`, which the narrow list never contained: it would have passed
+        through the exact regression it claimed to catch.
+        """
         import pathlib
 
         import tostools.gps_metadata_qc as current
@@ -247,7 +357,7 @@ class TestOneDefinitionFeedsEveryCaller:
                 "SITELOG_GPS_ATTRIBUTE_CODES" in src
             ), f"{mod.__name__} no longer reads the shared constant"
             assert (
-                '"QZSS",' not in src
+                '"serial_number",' not in src
             ), f"{mod.__name__} appears to have re-hardcoded an attribute list"
 
 
