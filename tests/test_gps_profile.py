@@ -191,6 +191,11 @@ class TestTosGpsDelegation:
             ("audit", "_audit_main"),
             ("fleet", "_fleet_main"),
             ("station", "_station_main"),
+            ("device", "_device_main"),
+            ("location", "_location_main"),
+            ("visit", "_visit_main"),
+            ("contact", "_contact_main"),
+            ("owners", "_owners_main"),
         ],
     )
     def test_plain_aliases_delegate_unprofiled(self, verb, handler):
@@ -200,6 +205,19 @@ class TestTosGpsDelegation:
         with patch.object(tos_mod, handler, return_value=0) as spy:
             assert self._main([verb, "--help"]) == 0
         spy.assert_called_once_with(["--help"])
+
+    def test_the_table_covers_every_tos_verb_except_search(self):
+        """tosGPS exposes the whole `tos` surface, and nothing is silently
+        missing: a verb added to tos.py must be aliased or deliberately
+        profiled, never forgotten."""
+        from tostools.tos import KNOWN_SUBCOMMANDS
+        from tostools.tosGPS import _PLAIN_ALIASES
+
+        missing = set(KNOWN_SUBCOMMANDS) - set(_PLAIN_ALIASES) - {"search"}
+        assert not missing, (
+            f"tos verb(s) neither aliased by tosGPS nor profiled: {missing}. "
+            "Add to _PLAIN_ALIASES, or profile it like search and exempt it."
+        )
 
     def test_the_alias_table_excludes_search(self):
         """search is the one verb WITH unconstrained behaviour to narrow."""
