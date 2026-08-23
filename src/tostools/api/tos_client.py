@@ -654,18 +654,27 @@ class TOSClient:
         """
         Extract device attribute history for a specific time period.
 
-        This should use the legacy device_attribute_history function for exact compatibility.
-        For now, return the device as-is with time stamps added.
-        """
-        from ..legacy.gps_metadata_qc import device_attribute_history
+        F1 step 2 (docs/architecture/legacy-fork-unification-plan.md): this
+        import was the last one holding the `gps_metadata_qc` fork open. It
+        could not move with its `device_structure` sibling in step 1 — the two
+        copies of THIS function carried different attribute key lists, the
+        legacy one alone fetching the GNSS constellation toggles and `azimuth`,
+        and this call chain feeds every published site log.
 
-        # Use legacy function to process the device properly
+        Both copies now read `devices.SITELOG_GPS_ATTRIBUTE_CODES`, so the
+        swap is behaviour-preserving. What proves it is not review but
+        `tests/test_f1_device_attribute_history_unified.py`, which renders a
+        site log through this method and asserts §3.3 Satellite System and §4
+        Alignment from True N survive.
+        """
+        from ..gps_metadata_qc import device_attribute_history
+
         try:
             return device_attribute_history(
                 device, session_start, session_end, logging.CRITICAL
             )
         except Exception as e:
-            self.logger.warning(f"Legacy device_attribute_history failed: {e}")
+            self.logger.warning(f"device_attribute_history failed: {e}")
             # Build a schema-correct dict that device_structure() can consume.
             # Sort attributes by date_from so later values overwrite earlier ones.
             result: Dict[str, Any] = {
