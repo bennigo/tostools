@@ -313,6 +313,17 @@ def _configure_logging(args):
             handler.setLevel(console_level)
 
 
+#: `tos` verbs tosGPS re-exposes UNPROFILED, verb -> tos.py handler. They are
+#: already GPS-only by construction, so the alias is exact: same function,
+#: same arguments, same exit code. `search` is deliberately absent — it is the
+#: one verb with unconstrained behaviour to narrow (see main()).
+_PLAIN_ALIASES = {
+    "audit": "_audit_main",
+    "fleet": "_fleet_main",
+    "station": "_station_main",
+}
+
+
 def main():
     """
     quering metadata from tos and comparing to relevant rinex files
@@ -322,38 +333,39 @@ def main():
     # setup (station list, server url, log level) exists for the product
     # subcommands and does not apply to these, which own their own parsers.
     #
-    # The two are deliberately NOT symmetric:
+    # Only ONE of them is profiled, and the asymmetry is the point:
     #
-    #   search — PROFILED. `tos search` is unconstrained, so tosGPS narrows
-    #            it: subtype pinned to 'GPS stöð', and only attributes the
-    #            catalog marks gps_relevance=yes accepted.
+    #   search  PROFILED. `tos search` is genuinely unconstrained, so tosGPS
+    #           narrows it — subtype pinned to 'GPS stöð' and only attributes
+    #           the catalog marks gps_relevance=yes accepted.
     #
-    #   audit  — PLAIN ALIAS, byte-identical to `tos audit`. The audit is
-    #            already GPS-only BY CONSTRUCTION: audit_missing_attributes
-    #            skips every code whose gps_relevance != 'yes' and grades
-    #            the rest with gps_required_for (same in station.py). There
-    #            is no unconstrained behaviour to narrow, so a profile here
-    #            would be redundant machinery. `tos audit` must also keep
-    #            working verbatim — gps-tos-corrections records 270
-    #            'tos audit apply' invocations as operational procedure.
+    #   audit   PLAIN ALIAS. Already GPS-only BY CONSTRUCTION:
+    #   fleet   audit_missing_attributes skips every code whose
+    #   station  gps_relevance != 'yes' and grades the rest with
+    #           gps_required_for (station.py likewise); fleet enumerates
+    #           stations.cfg — the GPS network's own config, minus the IGS
+    #           reference sites; station verify/triage route through those
+    #           same audits, station receivers reconstructs from the RINEX
+    #           archive, and station add already defaults subtype to
+    #           'GPS stöð'. There is no unconstrained behaviour to narrow,
+    #           so a profile would be redundant machinery pretending to add
+    #           a constraint that is already welded in.
+    #
+    # These must also stay byte-identical to their `tos` forms:
+    # gps-tos-corrections records 270 `tos audit apply` invocations as
+    # operational procedure, and `tos station` appears ~150 times across the
+    # docs. Every external reference is prose or help text — neither verb has
+    # a programmatic caller outside tostools (checked 2026-08-23).
     verb = sys.argv[1:2]
     if verb == ["search"]:
         from .search_selectors import gps_profile
         from .tos import _search_main
 
         return _search_main(sys.argv[2:], profile=gps_profile())
-    if verb == ["audit"]:
-        from .tos import _audit_main
+    if verb and verb[0] in _PLAIN_ALIASES:
+        from . import tos as _tos
 
-        return _audit_main(sys.argv[2:])
-    if verb == ["fleet"]:
-        # Also a plain alias, for audit's reason plus one more: fleet
-        # enumerates stations.cfg — the IMO GPS network's own config, minus
-        # the IGS reference sites — and runs the GPS-hardcoded audits over
-        # it. GPS-only at both ends, so there is nothing to narrow.
-        from .tos import _fleet_main
-
-        return _fleet_main(sys.argv[2:])
+        return getattr(_tos, _PLAIN_ALIASES[verb[0]])(sys.argv[2:])
 
     # print(module_logger.getEffectiveLevel())
 

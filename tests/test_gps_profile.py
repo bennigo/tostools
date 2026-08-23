@@ -185,6 +185,38 @@ class TestTosGpsDelegation:
         assert argv[0] == ["--markers-only"]
         assert kwargs["profile"].name == "GPS"
 
+    @pytest.mark.parametrize(
+        "verb,handler",
+        [
+            ("audit", "_audit_main"),
+            ("fleet", "_fleet_main"),
+            ("station", "_station_main"),
+        ],
+    )
+    def test_plain_aliases_delegate_unprofiled(self, verb, handler):
+        """Every table entry forwards verbatim — no profile, exact argv."""
+        import tostools.tos as tos_mod
+
+        with patch.object(tos_mod, handler, return_value=0) as spy:
+            assert self._main([verb, "--help"]) == 0
+        spy.assert_called_once_with(["--help"])
+
+    def test_the_alias_table_excludes_search(self):
+        """search is the one verb WITH unconstrained behaviour to narrow."""
+        from tostools.tosGPS import _PLAIN_ALIASES
+
+        assert "search" not in _PLAIN_ALIASES
+
+    def test_every_alias_target_exists_on_tos(self):
+        """A typo in the table would surface as AttributeError at runtime."""
+        import tostools.tos as tos_mod
+        from tostools.tosGPS import _PLAIN_ALIASES
+
+        for verb, handler in _PLAIN_ALIASES.items():
+            assert callable(
+                getattr(tos_mod, handler, None)
+            ), f"{verb} -> {handler} is not a callable on tos.py"
+
     def test_audit_is_delegated_with_NO_profile(self):
         import tostools.tos as tos_mod
 
