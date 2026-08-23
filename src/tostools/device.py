@@ -657,3 +657,43 @@ def iter_optional_attributes(
         if value:
             pairs.append((code, value))
     return pairs
+
+
+def firmware_to_software(firmware: str) -> tuple:
+    """Convert a Septentrio firmware version to the TOS ``software_version`` form.
+
+    TOS carries the SAME physical quantity on two attribute codes:
+    ``firmware_version`` (Útgáfa fastbúnaðar) and ``software_version``
+    (Útgáfa hugbúnaðar). The software chain uses a legacy 2-decimal form —
+    the firmware with the patch dot removed: ``5.7.0`` → ``5.70``,
+    ``5.3.2`` → ``5.32``. A trailing ``-patch1`` / ``-beta2`` is dropped
+    (``5.4.0-patch1`` → ``5.40``).
+
+    Settled from the fleet's own pre-existing values, not from reasoning:
+    BUDH and GRVM carry ``5.12`` for ``5.1.2``, GFUM ``5.32`` for ``5.3.2``.
+    A 2026-08-19 attempt to read the form as "drop the patch component"
+    (``5.1.2`` → ``5.10``) was wrong and put the fleet's only ``5.10`` on
+    VMEY; corrected in the 2026-08-22 sweep.
+
+    Returns ``(software_version, warning_or_None)``. Anything that is not a
+    clean ``MAJOR.MINOR.PATCH`` passes through unchanged with a warning, so
+    a Trimble string — where the two codes are genuinely DIFFERENT
+    quantities, not two spellings of one — is never silently mangled.
+
+    Lives here rather than in receivers because both a writer
+    (``receivers cfg``) and a reader (:mod:`tostools.audit_version_chains`)
+    need it, and tostools cannot import receivers.
+    """
+    base = firmware.strip()
+    for sep in ("-", "_"):
+        if sep in base:
+            base = base.split(sep, 1)[0]
+    parts = base.split(".")
+    if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
+        return parts[0] + "." + "".join(parts[1:]), None
+    return (
+        firmware,
+        f"firmware {firmware!r} is not a clean X.Y.Z version — passing it "
+        f"through to software_version unchanged; override with the actual "
+        f"value if the receiver uses a different software string.",
+    )
