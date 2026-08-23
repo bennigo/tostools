@@ -71,8 +71,11 @@ long retrofit cannot be interrupted cleanly at those points, and genuine bugs ar
 masked as data problems.
 
 `gps_metadata_qc.py:859`, `gps_metadata_functions.py:167,544,550`,
-`tosGPS.py:4590`, `legacy/owner.py:27`, `legacy/gps_metadata_qc.py:777`,
-`legacy/gps_metadata_functions.py:203`, + 4 more (`grep -rn "except:" src/`).
+`tosGPS.py:4590`, ~~`legacy/owner.py:27`~~ (gone with S3),
+`legacy/gps_metadata_qc.py:777`, `legacy/gps_metadata_functions.py:203`,
++ 4 more (`grep -rn "except:" src/`). **11 remain**, and the count will drop
+again with T1 — three of them sit in `legacy/` modules slated for deletion, so
+do S2 *after* T1(1-2) rather than fixing sites about to disappear.
 
 Separately, 8 sites are `except Exception: … pass`. Each needs a one-line reason
 or a narrower type.
@@ -93,6 +96,20 @@ It appears to be an unported script fragment: no import of it exists anywhere
 so this file is one careless `from ..legacy import owner` away from being armed.
 
 **Fix:** delete the file. Confirm zero importers first.
+
+**DONE 2026-08-23.** Deleted. Importer-free confirmed across the whole
+`gpslibrary` tree, not just `src/` — the only remaining mentions are in this doc
+and the graphify reports of it. `legacy/__init__.py` is a docstring only, so the
+module was never pulled in by importing the package; it needed an explicit
+`from ..legacy import owner`. Verified `tostools`, `tostools.tos`,
+`tostools.tosGPS` and `tostools.legacy` all still import, and the suite is
+unchanged at 2101 passed / 2 skipped.
+
+Worth recording what it actually was, since "network call at import" undersells
+it: the file is not a module at all but a **loose script** — module-scope
+`requests.get()` against a hardcoded production URL with no timeout, a hardcoded
+`id_entity_parent`, a bare `except:`, and a `print()` of the result. Importing it
+would have done production I/O and could hang forever.
 
 ---
 
@@ -175,9 +192,17 @@ this will too.
 
 ## Execution order
 
-S3 → S2 → S1 → T1(1-2) → T3(measure) → T1(3) → T2.
+~~S3 → S2 → S1~~ → **S1 → T1(1-2) → S2 → T3(measure) → T1(3) → T2**.
+*(S3 done 2026-08-23. S2 moved after T1(1-2) — see below.)*
 
 S3 first because it is a single file deletion that also shrinks T1's surface.
+
+**S2 moved after T1(1-2)**: three of its remaining 11 bare-except sites live in
+`legacy/gps_metadata_qc.py` and `legacy/gps_metadata_functions.py`, which T1
+deletes. Fixing a site that is about to disappear costs a review and a merge
+conflict for nothing — and, worse, editing both forks of one function is how the
+divergence T1 exists to remove got there. S1 keeps its place: it has production
+consequence and is independent of the fork work.
 S1 is the one with production consequence, but it wants the `receivers`
 process-group convention settled first so both repos land the same fix.
 
@@ -194,7 +219,7 @@ everything.
 |---|---|
 | S1 subprocess timeouts | not started |
 | S2 bare excepts | not started |
-| S3 `legacy/owner.py` | not started |
+| S3 `legacy/owner.py` | **done** 2026-08-23 (deleted) |
 | T1 legacy dedup | **partly done** — `legacy/gps_rinex.py` + `tostools/cli/` deleted 2026-08-23; the two live forks are owned by [`architecture/legacy-fork-unification-plan.md`](architecture/legacy-fork-unification-plan.md) |
 | T2 `tos.py` split | not started (now 15,327 lines) |
 | T3 audit scaffold | not measured |
