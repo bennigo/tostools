@@ -278,11 +278,30 @@ def _device_display_label(history: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+#: Antennas installed on/after this date are assumed true-north aligned
+#: (azimuth 0.0), so a closed-join antenna's missing azimuth can safely default
+#: to 0.0. Before this, campaign setups were oriented arbitrarily and cannot be
+#: reconstructed after the fact.
+_AZIMUTH_NORTH_ASSUMABLE_SINCE = "2012-01-01"
+
+
+def _azimuth_assumable_north(
+    code: str, entity_subtype: str, install_date: Optional[str]
+) -> bool:
+    """True when a closed-join antenna's missing ``azimuth`` is safely 0.0."""
+    if code != "azimuth" or entity_subtype != "antenna":
+        return False
+    if not install_date:
+        return False
+    return _date_only(str(install_date)) >= _AZIMUTH_NORTH_ASSUMABLE_SINCE
+
+
 def _required_codes_in_scope(
     scope_rules: Dict[str, Dict[str, Any]],
     entity_subtype: str,
     *,
     installed: bool = True,
+    install_date: Optional[str] = None,
 ) -> List[Tuple[str, Dict[str, Any], str]]:
     """Return ``[(code, entry, severity)]`` for rules that apply to
     ``entity_subtype``, where ``severity`` is:
@@ -314,9 +333,13 @@ def _required_codes_in_scope(
         if entity_subtype in required:
             out.append((code, entry, "required"))
         elif entity_subtype in when_installed:
-            if installed:
+            if installed or _azimuth_assumable_north(
+                code, entity_subtype, install_date
+            ):
                 out.append((code, entry, "required"))
-            # Not installed → not asked for at all. Deliberately not demoted to
+            # Not installed → not asked for at all, except antenna azimuth
+            # installed after the true-north cutoff (see
+            # _azimuth_assumable_north). Deliberately not demoted to
             # "recommended": a reminder nobody can act on is the same noise in
             # a quieter voice.
         elif entity_subtype in recommended:
@@ -650,7 +673,10 @@ def _audit_entity(
     # An occupation with an end date is finished, so the device is not
     # installed here now — that is what gates gps_required_when_installed.
     for code, entry, severity in _required_codes_in_scope(
-        scope_rules, entity_subtype, installed=suggested_date_to is None
+        scope_rules,
+        entity_subtype,
+        installed=suggested_date_to is None,
+        install_date=suggested_date_from,
     ):
         if _open_attribute_value(history, code) is not None:
             continue
