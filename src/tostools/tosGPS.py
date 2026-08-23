@@ -16,6 +16,7 @@ from . import gps_metadata_qc as gpsqc
 
 # Import new modular components
 from .api.tos_client import TOSClient
+from .core.site_log import build_site_log
 from .legacy import gps_metadata_functions as gpsf
 
 # Use the comprehensive legacy site log generator
@@ -63,39 +64,6 @@ def _select_synthesizer(args):
     if getattr(args, "use_legacy_synthesis", False):
         return gpsqc.gps_metadata
     return gpsqc.gps_metadata_via_devices
-
-
-def _sitelog_agencies(station: str, loglevel: int):
-    """Role-guided §11/§12/§13 agency data, or None to fall back.
-
-    Without this, ``tosGPS sitelog`` rendered its agency block from the
-    renderer's legacy TOS-contact path while receivers' M3G dissemination
-    passed ``agencies=`` — same renderer, different inputs, so the two
-    disagreed on §11 (single-line vs IGS continuation-line mailing address,
-    among others). Both now resolve through
-    :func:`tostools.core.agencies.resolve_sitelog_agencies`.
-
-    Best-effort: agency data is enrichment, so any failure returns None and
-    the renderer falls back exactly as it did before. A site log that renders
-    with a legacy §11 beats no site log.
-    """
-    from .api.tos_client import TOSClient
-    from .core.agencies import resolve_sitelog_agencies
-
-    try:
-        client = TOSClient()
-        meta = client.get_complete_station_metadata(station.upper())
-        if not meta:
-            return None
-        return resolve_sitelog_agencies(client, meta)
-    except Exception as exc:  # noqa: BLE001 - enrichment, never fatal
-        logging.getLogger(__name__).warning(
-            "site log: agency resolution failed for %s (%s) — falling back to "
-            "the legacy TOS-contact rendering",
-            station,
-            exc,
-        )
-        return None
 
 
 def generate_igs_sitelog_filename(
@@ -1628,20 +1596,15 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                         args.modified_sections if args.modified_sections else "1"
                     )
 
-                    output_content = gpsf.site_log(
+                    output_content = build_site_log(
                         station,
                         loglevel=log_level.value,
                         report_type=report_type,
                         previous_log=previous_log,
                         modified_sections=modified_sections,
-                        agencies=_sitelog_agencies(station, log_level.value),
                     )
                 else:
-                    output_content = gpsf.site_log(
-                        station,
-                        loglevel=log_level.value,
-                        agencies=_sitelog_agencies(station, log_level.value),
-                    )
+                    output_content = build_site_log(station, loglevel=log_level.value)
 
             # Output handling - file, auto-filename, or stdout
             output_file = None

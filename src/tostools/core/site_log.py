@@ -648,3 +648,85 @@ def export_site_log_to_file(
     except Exception as e:
         logger.error(f"Failed to export site log: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# The single site-log entry point
+# ---------------------------------------------------------------------------
+
+
+def build_site_log(
+    station: str,
+    *,
+    client: Any = None,
+    agencies: Optional[Dict[str, Any]] = None,
+    previous_log: str = "",
+    report_type: Optional[str] = None,
+    modified_sections: str = "1",
+    monument_number: str = "00",
+    country_code: str = "ISL",
+    loglevel: int = logging.WARNING,
+) -> str:
+    """Render a station's IGS site log — the ONE way to do it.
+
+    Both callers go through here so they cannot drift:
+
+    - ``tosGPS sitelog``
+    - receivers' M3G dissemination (``epos-disseminate --sitelog``)
+
+    They used to call the renderer directly with *different* argument sets,
+    and agreed only because the omitted arguments happened to share defaults:
+    receivers passed ``monument_number`` / ``country_code`` and never
+    ``report_type``; tosGPS did the reverse. Byte-identical output today,
+    silently divergent the first time a non-default reached one of them.
+
+    ``report_type`` defaults to the M3G convention — ``NEW`` for the first log
+    in a dated series, ``UPDATE`` once a previous one exists — rather than
+    being each caller's own guess.
+
+    ``agencies=None`` resolves §11/§12/§13 from TOS roles + agencies.yaml via
+    :func:`tostools.core.agencies.resolve_sitelog_agencies`. Resolution is
+    best-effort: on any failure the renderer falls back to its legacy
+    TOS-contact rendering, which produces a *different* §11, so a warning is
+    logged rather than the difference passing unnoticed.
+
+    NOTE the renderer is ``legacy.gps_metadata_functions.site_log``, not
+    :func:`generate_igs_site_log` above — see this module's docstring.
+    """
+    from ..legacy.gps_metadata_functions import site_log as _render
+
+    sid = station.upper()
+
+    if agencies is None:
+        try:
+            if client is None:
+                from ..api.tos_client import TOSClient
+
+                client = TOSClient()
+            meta = client.get_complete_station_metadata(sid)
+            if meta:
+                from .agencies import resolve_sitelog_agencies
+
+                agencies = resolve_sitelog_agencies(client, meta)
+        except Exception as exc:  # noqa: BLE001 - enrichment, never fatal
+            get_logger(__name__, loglevel).warning(
+                "site log %s: agency resolution failed (%s) — falling back to "
+                "the legacy TOS-contact rendering, which yields a different §11",
+                sid,
+                exc,
+            )
+            agencies = None
+
+    if report_type is None:
+        report_type = "UPDATE" if previous_log else "NEW"
+
+    return _render(
+        sid,
+        loglevel=loglevel,
+        report_type=report_type,
+        previous_log=previous_log,
+        modified_sections=modified_sections,
+        agencies=agencies,
+        monument_number=monument_number,
+        country_code=country_code.upper(),
+    )
