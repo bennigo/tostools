@@ -89,8 +89,9 @@ def systems_from_header(header_text: str) -> ConstellationReading:
     RINEX 3: collect the leading system letter of every ``SYS / # / OBS TYPES``
     line (continuation lines have a blank first column and are skipped).
     RINEX 2: no per-system list exists in the header → ``reliable=False`` and a
-    best-effort set from the single satellite-system char (``G``/``R``; ``M`` =
-    mixed → empty, since the exact set isn't in the header).
+    best-effort set from the single satellite-system char. ``G`` → GPS, ``R`` →
+    GLO; ``M`` (mixed) → GPS + GLO, the two systems RINEX 2 carries (still a
+    lower bound — R2 cannot express e.g. GPS+SBAS).
     """
     version: Optional[float] = None
     systems: set = set()
@@ -120,6 +121,10 @@ def systems_from_header(header_text: str) -> ConstellationReading:
     best_effort: set = set()
     if sat_system_char in RINEX3_SYS_TO_CODE:
         best_effort.add(RINEX3_SYS_TO_CODE[sat_system_char])
+    elif sat_system_char == "M":
+        # RINEX 2.11 "M" = mixed = GPS + GLONASS (the two systems R2 carries).
+        # Still a lower bound (reliable=False) — it cannot express GPS+SBAS etc.
+        best_effort.update(("GPS", "GLO"))
     return ConstellationReading(
         version=version, systems=frozenset(best_effort), reliable=False
     )

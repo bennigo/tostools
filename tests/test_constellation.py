@@ -54,12 +54,13 @@ def test_r3_continuation_line_not_double_counted():
 
 
 def test_r2_mixed_is_unreliable_and_underreports():
-    """R2 'M (MIXED)' can't enumerate the set from the header → unreliable,
-    empty best-effort (the caller must confirm vs raw / live receiver)."""
+    """R2 'M (MIXED)' = GPS+GLONASS (the two systems R2 carries) — best-effort,
+    but still unreliable (R2 cannot express e.g. GPS+SBAS, so absence of a
+    system must still be confirmed vs raw / live receiver)."""
     r = systems_from_header(R2_MIXED_HEADER)
     assert r.version == 2.11
     assert r.reliable is False
-    assert r.systems == frozenset()
+    assert r.systems == frozenset({"GPS", "GLO"})
 
 
 def test_r2_gps_only_best_effort():
