@@ -512,9 +512,11 @@ def compare_tos_to_rinex(rinex_dict, session, loglevel=logging.WARNING):
             TOS_antenna_serial = TOS_antenna_attributes["serial_number"]
             TOS_antenna_model = TOS_antenna_attributes["model"]
             # Suppress a placeholder rather than copying it into the header.
-            # This module is a SECOND writer of ANT # / TYPE (third, counting
-            # legacy/gps_rinex.py) besides rinex/corrector.py, with its own file
-            # writers. The fleet bug of 2026-08-19 was exactly this shape:
+            # This module is the SECOND writer of ANT # / TYPE besides
+            # rinex/corrector.py, with its own file writers. (A third copy lived
+            # in legacy/gps_rinex.py until it was proven importer-free and
+            # deleted; it had gone stale, missing both domes_or_skip and the
+            # version comparator.) The fleet bug of 2026-08-19 was this shape:
             # corrector.py built the field in two places, only one was guarded,
             # and 19 stations' headers were corrupted for months. Guarding one
             # writer is not guarding the field.

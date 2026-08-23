@@ -20,6 +20,8 @@ re-injects what the converter withheld.
 
 from __future__ import annotations
 
+import pathlib
+
 from tostools.device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 
 SYNTHETIC = "antenna-eldc-20200129"
@@ -57,20 +59,39 @@ class TestWritersAgree:
         )
 
     def test_gps_rinex_writers_are_guarded(self):
-        # These are the SECOND and THIRD writers of ANT # / TYPE, with their own
-        # file-writing functions. The 2026-08-19 fleet bug was one guarded and one
-        # unguarded builder of this exact field.
+        # This is the SECOND writer of ANT # / TYPE, with its own file-writing
+        # functions. The 2026-08-19 fleet bug was one guarded and one unguarded
+        # builder of this exact field.
+        #
+        # This loop used to also cover `tostools.legacy.gps_rinex`, a third copy
+        # of the writer. That module was deleted once proven importer-free: it
+        # had no production caller, and had gone stale — missing domes_or_skip
+        # (the MARKER NUMBER / IERS DOMES policy) and the receiver version
+        # comparator, both of which shipped only to the module below. The rule
+        # is unchanged; there is simply one fewer writer to hold to it.
         import inspect
 
         from tostools import gps_rinex
-        from tostools.legacy import gps_rinex as legacy_gps_rinex
 
-        for mod in (gps_rinex, legacy_gps_rinex):
+        for mod in (gps_rinex,):
             src = inspect.getsource(mod)
             assert (
                 "is_synthetic_serial(TOS_antenna_serial)" in src
             ), f"{mod.__name__} writes ANT # / TYPE unguarded"
             assert "PUBLISHED_UNKNOWN_ANTENNA_SERIAL" in src
+
+    def test_no_second_copy_of_the_rinex_writer_reappears(self):
+        # The deleted legacy/gps_rinex.py is exactly how the field got a stale,
+        # unguarded third writer in the first place. Pin its absence so a future
+        # "keep a copy during the transition" cannot quietly restore it.
+        import tostools.legacy as legacy_pkg
+
+        legacy_dir = pathlib.Path(legacy_pkg.__file__).parent
+        assert not (legacy_dir / "gps_rinex.py").exists(), (
+            "legacy/gps_rinex.py is back — it is a stale duplicate writer of "
+            "ANT # / TYPE and of the RINEX header generally; fold any needed "
+            "change into tostools.gps_rinex instead"
+        )
 
 
 class TestSuppressionStillTriggers:
