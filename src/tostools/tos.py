@@ -8356,6 +8356,34 @@ def _audit_main(argv):
     )
     p_attr.add_argument("--port", type=int, default=443)
 
+    p_chains = sub.add_parser(
+        "version-chains",
+        help="Flag a software_version chain that has drifted from firmware.",
+        description=(
+            "On a Septentrio, TOS carries ONE physical quantity on two "
+            "attribute codes — firmware_version and software_version. Every "
+            "writer except `cfg add-receiver` touches firmware only, so "
+            "software drifts, and nothing compared them until this verb: "
+            "`tos station verify` reported clean on a chain years stale. It "
+            "is not cosmetic — software_version[:6] is the SwVer column of "
+            "GAMIT station.info.\n\n"
+            "The comparison is PERIOD-AWARE. Comparing only the open period "
+            "misses a chain whose history diverged while its tip happens to "
+            "agree — that is exactly how six stations were called clean in "
+            "the 2026-08-22 sweep (HVEL, ISAK, KALT, NYLA, SENG, THNA).\n\n"
+            "Septentrio only: on Trimble the two codes are genuinely "
+            "different quantities, so those receivers are reported as "
+            "skipped rather than silently dropped.\n\n"
+            "Exit 0 clean, 1 divergence found."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_chains.add_argument("name", nargs="?", help="Station marker, e.g. VMEY.")
+    p_chains.add_argument("--id", type=int, dest="id_entity", help="Station id.")
+    p_chains.add_argument("--json", action="store_true", help="JSON output.")
+    p_chains.add_argument("--server", default="vi-api.vedur.is")
+    p_chains.add_argument("--port", type=int, default=443)
+
     p_missing = sub.add_parser(
         "missing-attributes",
         help="Flag required TOS attributes that have no open period.",
@@ -9399,6 +9427,52 @@ def _audit_main(argv):
         else:
             _print_attribute_date_report(report, verbose=args.verbose)
         return 1 if report.has_violations else 0
+
+    if args.kind == "version-chains":
+        from . import audit_version_chains as avc_mod
+
+        if not args.name and not args.id_entity:
+            print("tos audit version-chains: give a station", file=sys.stderr)
+            return 2
+        report = avc_mod.audit_station_version_chains(
+            client, name=args.name, id_entity=args.id_entity
+        )
+        if args.json:
+            print(
+                _json.dumps(
+                    {
+                        "station": report.station,
+                        "station_id": report.station_id,
+                        "violations": report.violations,
+                        "receivers": [
+                            {
+                                "id_entity": rx.id_entity,
+                                "serial": rx.serial,
+                                "model": rx.model,
+                                "skipped": rx.skipped,
+                                "divergences": [
+                                    {
+                                        "date_from": d.date_from,
+                                        "date_to": d.date_to,
+                                        "firmware": d.firmware,
+                                        "software": d.software,
+                                        "expected": d.expected,
+                                        "reason": d.reason,
+                                    }
+                                    for d in rx.divergences
+                                ],
+                            }
+                            for rx in report.receivers
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(f"VERSION CHAINS {report.station} (id_entity={report.station_id})")
+            print(avc_mod.format_report(report))
+        return 1 if report.violations else 0
 
     if args.kind == "missing-attributes":
         from . import audit_missing_attributes as ama_mod  # noqa: F401
