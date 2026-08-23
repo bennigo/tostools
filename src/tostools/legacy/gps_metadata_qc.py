@@ -191,12 +191,19 @@ def search_station(
     return stations
 
 
-def device_attribute_history(device, session_start, session_end, loglevel=logging.INFO):
+def device_attribute_history(
+    device, session_start, session_end, loglevel=logging.INFO, *, codes=None
+):
     """
     sort out history within device
+
+    See the top-level ``gps_metadata_qc.device_attribute_history``. This copy is
+    scheduled for deletion in F1 step 4 and now reads the SAME attribute-code
+    constant, so the two cannot drift apart again in the interim.
     """
 
     # Use new centralized logging system instead of legacy one
+    from ..devices import SITELOG_GPS_ATTRIBUTE_CODES
     from ..utils.logging import get_logger
 
     module_logger = get_logger(__name__, loglevel)
@@ -216,28 +223,10 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
         "device['attributes']:\n%s\n", gpsf.json_print(device["attributes"])
     )
 
-    key_list = [
-        "serial_number",
-        "model",
-        "date_start",
-        # GNSS constellation toggles — the site log §3.3 Satellite System is
-        # composed from those set 'true' (tos audit constellations populates them).
-        "GPS",
-        "GLO",
-        "GAL",
-        "BDS",
-        "QZSS",
-        "SBAS",
-        "IRN",
-        "firmware_version",
-        "software_version",
-        "antenna_height",
-        "monument_height",
-        "antenna_offset_north",
-        "antenna_offset_east",
-        "antenna_reference_point",
-        "azimuth",  # antenna orientation → §4 Alignment from True N
-        "date_from",  # add keys above this point
+    # `date_from` / `date_to` are the function's own bookkeeping keys and must
+    # stay last — `key_list[:-2]` below relies on it.
+    key_list = list(codes if codes is not None else SITELOG_GPS_ATTRIBUTE_CODES) + [
+        "date_from",
         "date_to",
     ]
     collection = dict.fromkeys(key_list[:-2])
