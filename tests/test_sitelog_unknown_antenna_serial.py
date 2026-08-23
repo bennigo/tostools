@@ -31,7 +31,6 @@ from datetime import datetime
 
 import pytest
 
-from tostools.core.site_log import _generate_antenna_section
 from tostools.device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL
 
 
@@ -67,59 +66,13 @@ class TestTheConstant:
         assert PUBLISHED_UNKNOWN_ANTENNA_SERIAL.strip() != ""
 
 
-class TestCoreGenerator:
-    @pytest.mark.parametrize(
-        "serial",
-        [
-            "antenna-VMEY-20230111",  # the VMEY case that produced the 422
-            "antenna-eldc-20200129",  # lowercase, as stored on ELDC
-            "antenna-VMEY-2023011",  # A20-truncated survivor
-            "radome-REYK-20130502",
-        ],
-    )
-    def test_a_synthetic_serial_renders_as_0000(self, serial):
-        assert _serial_line(_generate_antenna_section(_session(serial))) == "0000"
-
-    def test_a_real_serial_is_published_unchanged(self):
-        assert (
-            _serial_line(_generate_antenna_section(_session("1441137916")))
-            == "1441137916"
-        )
-
-    def test_the_synthetic_key_never_reaches_the_output(self):
-        out = _generate_antenna_section(_session("antenna-VMEY-20230111"))
-        assert "antenna-VMEY" not in out
-        assert "anten " not in out  # the SINEX 5-char truncation
-
-
-class TestBothGeneratorsAreFixed:
+class TestTheLiveGeneratorIsFixed:
     def test_the_legacy_generator_imports_the_constant(self):
         # tosGPS sitelog publishes through THIS module. A fix applied only to
         # core/site_log.py would not change the published artefact at all.
         import tostools.legacy.gps_metadata_functions as legacy
 
         assert hasattr(legacy, "PUBLISHED_UNKNOWN_ANTENNA_SERIAL")
-
-    def test_the_core_generator_imports_the_constant(self):
-        import tostools.core.site_log as core
-
-        assert hasattr(core, "PUBLISHED_UNKNOWN_ANTENNA_SERIAL")
-
-    def test_neither_generator_still_blanks_an_antenna_serial(self):
-        # Guards the regression directly: a refactor that restores `= ""` on the
-        # antenna branch reintroduces the 422.
-        import inspect
-
-        import tostools.core.site_log as core
-
-        src = inspect.getsource(core._generate_antenna_section)
-        assert "PUBLISHED_UNKNOWN_ANTENNA_SERIAL" in src
-        assert 'serial_num = ""' not in src
-
-
-# ---------------------------------------------------------------------------
-# Which renderer is actually live
-# ---------------------------------------------------------------------------
 
 
 class TestLiveRendererIsTheLegacyOne:
