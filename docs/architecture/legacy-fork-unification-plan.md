@@ -126,8 +126,15 @@ is the `get_logger` shim, so that one is a safe swap.
 
 **Order**:
 
-1. Swap `device_structure` to the top-level copy — behaviour-identical, verify by
-   diff.
+1. ~~Swap `device_structure` to the top-level copy — behaviour-identical, verify
+   by diff.~~ **DONE 2026-08-23** (`6b8657c`). The two bodies differed only in
+   how the module logger is built, and the function calls nothing that itself
+   diverges. Differential-tested across all 8 `code_entity_subtype` branches ×
+   4 numeric inputs (including `""`, so the `float()` failure mode is compared
+   too): 32/32 identical, exceptions included. Pinned by
+   `tests/test_f1_device_structure_unified.py`, whose guards are
+   mutation-tested — and which also asserts step 2 has **not** been done by
+   analogy.
 2. For `device_attribute_history`, do **not** swap. First collapse the attribute
    list onto `devices.SITELOG_GPS_ATTRIBUTE_CODES` (which already carries the
    constellations and `azimuth`, and whose comment says it mirrors this very
