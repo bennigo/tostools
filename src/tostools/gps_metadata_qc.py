@@ -199,10 +199,29 @@ def search_station(
     return stations
 
 
-def device_attribute_history(device, session_start, session_end, loglevel=logging.INFO):
+def device_attribute_history(
+    device, session_start, session_end, loglevel=logging.INFO, *, codes=None
+):
     """
     sort out history within device
+
+    ``codes`` is the list of TOS attribute codes to carry through onto each
+    synthesised sub-session; anything else in the device's attributes is
+    ignored. It defaults to :data:`tostools.devices.SITELOG_GPS_ATTRIBUTE_CODES`
+    — the full set the IGS site log needs, including the GNSS constellation
+    toggles (§3.3 Satellite System) and ``azimuth`` (§4 Alignment from True N).
+
+    F1 step 2 (docs/architecture/legacy-fork-unification-plan.md): that list
+    used to be hardcoded here AND mirrored in ``devices``, and the two forks of
+    this module carried different versions of it — this copy was short the
+    constellations, which is why the site-log path had to keep importing the
+    legacy copy. One definition now feeds every caller, and the site-log-complete
+    set is the DEFAULT so a caller cannot lose §3.3/§4 by forgetting to ask.
+    Pass ``codes=devices.LEGACY_GPS_ATTRIBUTE_CODES`` for the narrower historical
+    key list (the slicer oracle in ``tests/test_devices.py`` does).
     """
+
+    from .devices import SITELOG_GPS_ATTRIBUTE_CODES
 
     module_logger = get_logger(__name__, loglevel)
     tmp_connections = []
@@ -221,20 +240,10 @@ def device_attribute_history(device, session_start, session_end, loglevel=loggin
         "device['attributes']:\n%s\n", gpsf.json_print(device["attributes"])
     )
 
-    key_list = [
-        "serial_number",
-        "model",
-        "date_start",
-        "GPS",
-        "GLO",
-        "firmware_version",
-        "software_version",
-        "antenna_height",
-        "monument_height",
-        "antenna_offset_north",
-        "antenna_offset_east",
-        "antenna_reference_point",
-        "date_from",  # add keys above this point
+    # `date_from` / `date_to` are the function's own bookkeeping keys and must
+    # stay last — `key_list[:-2]` below relies on it.
+    key_list = list(codes if codes is not None else SITELOG_GPS_ATTRIBUTE_CODES) + [
+        "date_from",
         "date_to",
     ]
     collection = dict.fromkeys(key_list[:-2])

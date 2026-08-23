@@ -642,9 +642,12 @@ LEGACY_GPS_ATTRIBUTE_CODES: List[str] = [
 ]
 
 
-# The full attribute set the IGS **site log** needs. Mirrors the legacy
-# ``gps_metadata_qc.device_attribute_history`` ``key_list`` (minus the
-# ``date_from`` / ``date_to`` bookkeeping keys the slicer adds itself).
+# The full attribute set the IGS **site log** needs, and the DEFAULT ``codes``
+# for ``gps_metadata_qc.device_attribute_history`` — which used to hardcode its
+# own ``key_list`` and merely mirror this one, in two forks that had already
+# drifted apart (F1 step 2, docs/architecture/legacy-fork-unification-plan.md).
+# This is now the single definition; the synthesis kernel appends only the
+# ``date_from`` / ``date_to`` bookkeeping keys.
 # Superset of :data:`LEGACY_GPS_ATTRIBUTE_CODES` — it additionally carries
 # the higher GNSS constellations (``GAL``/``BDS``/``QZSS``/``SBAS``/``IRN``,
 # rendered into §3.3 "Satellite System") and ``azimuth`` (§4 "Alignment from

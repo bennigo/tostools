@@ -489,13 +489,24 @@ def _legacy_oracle(
 
     Imported inside the helper so the module-level import cost of
     ``gps_metadata_qc`` doesn't slow non-slice tests.
+
+    ``codes`` is passed explicitly. The kernel's default is the wider
+    ``SITELOG_GPS_ATTRIBUTE_CODES`` (F1 step 2 collapsed its hardcoded key list
+    onto the shared constant), while what these tests lock is the slicer's
+    equivalence against the NARROW historical key list — so the oracle is asked
+    for that list by name instead of inheriting whatever the default happens to
+    be.
     """
     import logging as _logging
 
     from tostools.gps_metadata_qc import device_attribute_history
 
     return device_attribute_history(
-        device, window_start, window_end, loglevel=_logging.CRITICAL
+        device,
+        window_start,
+        window_end,
+        loglevel=_logging.CRITICAL,
+        codes=LEGACY_GPS_ATTRIBUTE_CODES,
     )
 
 
