@@ -304,7 +304,16 @@ class TOSClient:
         """
         from datetime import datetime
 
-        from ..legacy.gps_metadata_qc import device_structure
+        # F1 step 1 (docs/architecture/legacy-fork-unification-plan.md):
+        # `device_structure` exists in both gps_metadata_qc forks and the two
+        # bodies are identical apart from how the module logger is built, so
+        # this side moves to the surviving module with no behaviour change.
+        #
+        # The sibling import in `_get_device_attribute_history` must NOT be
+        # moved the same way: that copy differs in substance (the legacy one
+        # carries the GNSS constellation toggles and `azimuth`) and this call
+        # chain feeds the published site log. See the plan's "F1 trap".
+        from ..gps_metadata_qc import device_structure
 
         # Step 1 — per (join period, subtype), select one attribute epoch,
         # preferring the open one (date_to=None). Same selection as before.
