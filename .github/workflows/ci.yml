@@ -11,10 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 3.9-3.11 dropped 2026-05-24: ecosystem-wide alignment on 3.12+
-        # (root gpslibrary_new/CLAUDE.md targets 3.13; 3.12 is the floor
-        # for Debian stable). See pyproject.toml requires-python.
-        python-version: ["3.12", "3.13"]
+        # 3.12 dropped 2026-08-23: the gps-parser dependency requires
+        # >=3.13, so the 3.12 job could never get past "Install
+        # dependencies" — and fail-fast cancelled the 3.13 job with it,
+        # which is why every push reported a red CI. See pyproject.toml
+        # requires-python for the full note.
+        python-version: ["3.13"]
 
     steps:
     - uses: actions/checkout@v4
@@ -67,7 +69,10 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: "3.11"
+        # Must satisfy requires-python (>=3.13) — this was pinned at 3.11,
+        # below even the previous 3.12 floor. It went unnoticed because
+        # `needs: test` meant this job never ran.
+        python-version: "3.13"
         
     - name: Install build dependencies
       run: |

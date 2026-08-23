@@ -15,10 +15,20 @@ classifiers = [
 ]
 maintainers = [{ name = "Benedikt Gunnar Ófeigsson", email = "bgo@vedur.is" }]
 # 3.9-3.11 dropped 2026-05-24: ecosystem-wide alignment on 3.12+
-# (root gpslibrary_new/CLAUDE.md targets 3.13; 3.12 is the floor for
-# Debian stable). 3.8 was dropped earlier (2026-05-12) when gtimes
-# moved to newer-Python syntax.
-requires-python = ">=3.12"
+# (root gpslibrary CLAUDE.md targets 3.13). 3.8 was dropped earlier
+# (2026-05-12) when gtimes moved to newer-Python syntax.
+#
+# 3.12 dropped 2026-08-23: it was never actually installable. The
+# gps-parser dependency below declares requires-python >=3.13, so
+# `pip install -e .` on 3.12 fails at resolution with
+#   ERROR: Package 'gps-parser' requires a different Python:
+#          3.12.x not in '>=3.13'
+# CI proved this on every run — the 3.12 matrix job died in "Install
+# dependencies" before reaching lint/format/pytest, and fail-fast
+# cancelled the 3.13 job with it. That is why pushes kept reporting a
+# red/bypassed CI even after the format gate itself was fixed (8898e2c).
+# Production (rek-d01) runs 3.13.7, so nothing depended on the 3.12 claim.
+requires-python = ">=3.13"
 dependencies = [
     "requests>=2.31.0",
     "pandas>=2.0.3",
