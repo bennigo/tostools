@@ -70,6 +70,41 @@ def _select_synthesizer(args):
     return gpsqc.gps_metadata_via_devices
 
 
+def _resolve_sitelog_target(args, station: str):
+    """``(full_path, filename)`` for the site log this run will write.
+
+    The single source of truth for the output location. It exists because
+    the §0 previous-log search and the writer used to compute the directory
+    SEPARATELY — the search looked in ``<dir>/<STATION_ID>/`` while
+    ``--date-in-name`` wrote to ``<dir>/sitelog/<STATION_ID>/``. The chain
+    was therefore built from a tree the writer never touched, so every log
+    looked like the first in its series and a real series never chained.
+    """
+    if args.date_in_name:
+        # --date-in-name nests under <dir>/sitelog/<STATION_ID>/, tolerating
+        # a --dir that already ends in 'sitelog' rather than doubling it.
+        base_path = args.dir.rstrip("/")
+        sitelog_base = (
+            base_path
+            if base_path.endswith("sitelog")
+            else os.path.join(base_path, "sitelog")
+        )
+        return generate_igs_sitelog_filename(
+            station,
+            include_date=True,
+            base_dir=sitelog_base,
+            custom_date=args.custom_date,
+            create_station_subdir=True,
+        )
+    return generate_igs_sitelog_filename(
+        station,
+        include_date=False,
+        base_dir=args.dir,
+        custom_date=args.custom_date,
+        create_station_subdir=False,
+    )
+
+
 def detect_modified_sections(current_content: str, previous_log_path: str) -> str:
     """
     Compare current site log content with previous log to detect modified sections.
@@ -1510,11 +1545,13 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
             else:
                 # IGS standard format (default) - use comprehensive legacy function
                 # Prepare dynamic values for auto-filename mode
-                if args.auto_filename:
+                if args.auto_filename or args.date_in_name:
                     station_id = f"{station.upper()}00ISL"
-                    station_dir = os.path.join(args.dir, station_id)
-                    # Shared finder: excludes today's own file, so a second
-                    # run on the same day cannot chain §0 to itself.
+                    # Search where the file will actually be WRITTEN. These
+                    # used to be computed separately and disagreed, so §0
+                    # chained against a directory the writer never used.
+                    _target, _ = _resolve_sitelog_target(args, station)
+                    station_dir = os.path.dirname(_target) or "."
                     previous_log = find_previous_site_log(
                         station_dir,
                         station_id,
@@ -1544,30 +1581,7 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                 output_file = args.output
             elif args.auto_filename or args.date_in_name:
                 # --date-in-name implies auto-filename behavior
-                if args.date_in_name:
-                    # Special directory structure for --date-in-name: base_dir/sitelog/STATION/file
-                    # Strip 'sitelog' from end of --dir if present to avoid duplication
-                    base_path = args.dir.rstrip("/")
-                    if base_path.endswith("sitelog"):
-                        sitelog_base = base_path
-                    else:
-                        sitelog_base = os.path.join(base_path, "sitelog")
-                    full_path, filename = generate_igs_sitelog_filename(
-                        station,
-                        include_date=True,
-                        base_dir=sitelog_base,
-                        custom_date=args.custom_date,
-                        create_station_subdir=True,  # Create STATION subdir under sitelog/
-                    )
-                else:
-                    # Regular --auto-filename behavior
-                    full_path, filename = generate_igs_sitelog_filename(
-                        station,
-                        include_date=False,
-                        base_dir=args.dir,
-                        custom_date=args.custom_date,
-                        create_station_subdir=False,
-                    )
+                full_path, filename = _resolve_sitelog_target(args, station)
 
                 # Ensure output directory exists
                 output_dir = (
@@ -1575,15 +1589,8 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                 )
                 os.makedirs(output_dir, exist_ok=True)
 
-                # Determine previous log and report type
-                station_id = f"{station.upper()}00ISL"
-                station_dir = os.path.dirname(full_path)
-                previous_log = find_previous_site_log(
-                    station_dir,
-                    station_id,
-                    args.custom_date or datetime.now().strftime("%Y%m%d"),
-                )
-
+                # previous_log / station_dir were resolved before rendering,
+                # from this same target path — not recomputed here.
                 # Auto-detect modified sections if not manually specified
                 modified_sections = args.modified_sections
                 if not modified_sections and previous_log:

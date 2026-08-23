@@ -26,6 +26,7 @@ only the modern module leaves the published artefact unchanged.
 
 from __future__ import annotations
 
+import pathlib
 from datetime import datetime
 
 import pytest
@@ -202,3 +203,58 @@ class TestLiveRendererIsTheLegacyOne:
             f"{callers}. If that is intentional, the module docstring and "
             "receivers/dissemination/sitelogs.py must stop saying it is unused."
         )
+
+
+class TestAutoFilenameTargetIsResolvedOnce:
+    """The §0 search and the writer must use ONE resolved path.
+
+    They were computed separately: the search looked in
+    ``<dir>/<STATION_ID>/`` while ``--date-in-name`` wrote to
+    ``<dir>/sitelog/<STATION_ID>/``. So the chain was built from a tree the
+    writer never touched — every log looked first-in-series and a real
+    series never chained.
+    """
+
+    class _Args:
+        def __init__(self, dir_, date_in_name, custom_date=None):
+            self.dir = dir_
+            self.date_in_name = date_in_name
+            self.custom_date = custom_date
+
+    def test_date_in_name_nests_under_sitelog(self, tmp_path):
+        from tostools.tosGPS import _resolve_sitelog_target
+
+        full, name = _resolve_sitelog_target(
+            self._Args(str(tmp_path), True, "20260823"), "RHOF"
+        )
+        assert name == "rhof00isl_20260823.log"
+        assert str(tmp_path / "sitelog" / "RHOF00ISL") in full
+
+    def test_a_dir_already_ending_in_sitelog_is_not_doubled(self, tmp_path):
+        from tostools.tosGPS import _resolve_sitelog_target
+
+        base = tmp_path / "sitelog"
+        full, _ = _resolve_sitelog_target(
+            self._Args(str(base), True, "20260823"), "RHOF"
+        )
+        assert "sitelog/sitelog" not in full
+
+    def test_plain_auto_filename_is_flat(self, tmp_path):
+        from tostools.tosGPS import _resolve_sitelog_target
+
+        full, _ = _resolve_sitelog_target(
+            self._Args(str(tmp_path), False, "20260823"), "RHOF"
+        )
+        assert "sitelog" not in str(pathlib.Path(full).parent.name)
+
+    def test_the_search_dir_equals_the_write_dir(self, tmp_path):
+        """The invariant the bug violated."""
+        import inspect
+
+        from tostools import tosGPS
+
+        src = inspect.getsource(tosGPS)
+        # The pre-render search must derive its directory from the resolved
+        # target, never rebuild it from args.dir.
+        assert "_target, _ = _resolve_sitelog_target(args, station)" in src
+        assert "station_dir = os.path.join(args.dir, station_id)" not in src
