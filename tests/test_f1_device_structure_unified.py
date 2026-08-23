@@ -8,17 +8,20 @@ unification plan is `docs/architecture/legacy-fork-unification-plan.md`.
 bodies are identical apart from how the module logger is constructed, so the
 import moved to the surviving module.
 
-Its sibling, `device_attribute_history`, is **not** interchangeable and must not
-be moved by analogy — the legacy copy carries the GNSS constellation toggles
-(GAL/BDS/QZSS/SBAS/IRN) and `azimuth`, the top-level one does not, and that call
-chain feeds the published site log:
+Its sibling, `device_attribute_history`, could **not** be moved by analogy: the
+legacy copy carried the GNSS constellation toggles (GAL/BDS/QZSS/SBAS/IRN) and
+`azimuth`, the top-level one did not, and that call chain feeds the published
+site log:
 
     core/site_log.py:127 -> get_complete_station_metadata
-      -> get_device_sessions -> _get_device_attribute_history -> legacy
+      -> get_device_sessions -> _get_device_attribute_history
 
-Swapping it would silently drop §3.3 Satellite System and §4 Alignment from
-every published log. That is F1 step 2, and it must collapse the attribute list
-onto `devices.SITELOG_GPS_ATTRIBUTE_CODES` first.
+Swapping it then would have silently dropped §3.3 Satellite System and §4
+Alignment from every published log. F1 step 2 has since removed the hazard at
+its source — both copies read `devices.SITELOG_GPS_ATTRIBUTE_CODES` — and the
+import moved too. The guard for that half now lives in
+`tests/test_f1_device_attribute_history_unified.py`, which asserts on rendered
+site-log output rather than on import lines.
 """
 
 from __future__ import annotations
@@ -105,22 +108,28 @@ class TestTosClientUsesTheSurvivingCopy:
         src = pathlib.Path(tc.__file__).read_text()
         assert "from ..legacy.gps_metadata_qc import device_structure" not in src
 
-    def test_the_attribute_history_import_has_NOT_been_moved(self):
-        """Guard the trap, not just the fix.
+    def test_the_attribute_history_import_has_also_moved_now(self):
+        """Inverted deliberately when F1 step 2 landed.
 
-        This is the one that protects production. If someone "finishes the job"
-        by repointing this import too, the published site log loses §3.3 and §4
-        and it reads as a TOS metadata gap rather than a code change.
+        This assertion used to require the OPPOSITE — that the sibling import
+        still pointed at `legacy` — because the two copies then carried
+        different attribute key lists and repointing it would have dropped §3.3
+        and §4 from every published site log.
 
-        When F1 step 2 lands — the attribute list collapsed onto
-        devices.SITELOG_GPS_ATTRIBUTE_CODES — this test SHOULD be updated
-        deliberately, together with a test that a generated site log still
-        populates §3.3/§4.
+        Step 2 removed the hazard at its source: both copies read
+        `devices.SITELOG_GPS_ATTRIBUTE_CODES`, so the swap became
+        behaviour-preserving and was made. The guard that replaces this one is
+        `tests/test_f1_device_attribute_history_unified.py` — it renders a site
+        log and asserts the constellations and azimuth survive, which is a
+        stronger statement than which module the import names.
         """
         from tostools.api import tos_client
 
         src = inspect.getsource(tos_client.TOSClient._get_device_attribute_history)
-        assert "from ..legacy.gps_metadata_qc import device_attribute_history" in src
+        assert "from ..gps_metadata_qc import device_attribute_history" in src
+        assert (
+            "from ..legacy.gps_metadata_qc import device_attribute_history" not in src
+        )
 
 
 class TestTheTwoCopiesStillAgree:
