@@ -103,9 +103,41 @@ Check the call path, not the diff, before acting on any of these:
   with two named bugs; legacy is the same chain without the warning. Neither is
   the successor: `gps_metadata_via_devices` is.
 
-**Order**: port `tos_client.py`'s two inline imports onto a single
-implementation, diffing those two functions first; then delete
-`legacy/gps_metadata_qc.py` once importer-free.
+### The F1 trap, traced 2026-08-23 — read before touching `tos_client.py`
+
+`api/tos_client.py:651` is **on the site-log publishing path**:
+
+```
+core/site_log.py:127   client.get_complete_station_metadata(sid)
+  -> tos_client.py:253   self.get_device_sessions(device_history)
+    -> tos_client.py:630   self._get_device_attribute_history(...)
+      -> tos_client.py:651   from ..legacy.gps_metadata_qc import device_attribute_history
+```
+
+That legacy copy is the one whose `key_list` carries `GAL`/`BDS`/`QZSS`/`SBAS`/
+`IRN` and `azimuth`; the top-level copy does not. **Swapping this import to the
+top-level `gps_metadata_qc` would silently drop §3.3 Satellite System and §4
+Alignment from True N out of every published site log** — and the loss would look
+like a metadata gap, not a code regression, so it would be diagnosed on the wrong
+side for a long time.
+
+`device_structure` (`tos_client.py:307`) has no such hazard: its only divergence
+is the `get_logger` shim, so that one is a safe swap.
+
+**Order**:
+
+1. Swap `device_structure` to the top-level copy — behaviour-identical, verify by
+   diff.
+2. For `device_attribute_history`, do **not** swap. First collapse the attribute
+   list onto `devices.SITELOG_GPS_ATTRIBUTE_CODES` (which already carries the
+   constellations and `azimuth`, and whose comment says it mirrors this very
+   `key_list`), so one definition feeds both. Only then repoint the import.
+3. Pin the result with a test that a generated site log still populates §3.3 and
+   §4 for a station with non-GPS constellations — the regression this order
+   exists to prevent must be caught by something other than review.
+4. Delete `legacy/gps_metadata_qc.py` once importer-free.
+
+Steps 1-2 are separate branches; do not bundle them.
 
 ## F2 — `gps_metadata_functions` (separate session, after F1)
 
