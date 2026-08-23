@@ -730,3 +730,89 @@ def build_site_log(
         monument_number=monument_number,
         country_code=country_code.upper(),
     )
+
+
+def find_previous_site_log(out_dir: Any, nine_char: str, current_date: str) -> str:
+    """The latest dated site log for ``nine_char`` older than ``current_date``.
+
+    The M3G convention is a dated series (``rhof00isl_20240827.log``); §0
+    "Previous Site Log" chains each log to its predecessor. Lexicographic sort
+    == chronological for ``YYYYMMDD`` names.
+
+    **``current_date``'s own file is excluded**, so a same-day regeneration
+    does not chain a log to itself. That exclusion is the whole reason this
+    is the surviving implementation: ``tosGPS`` carried its own
+    ``find_previous_sitelog(station_dir, station_id)`` that globbed and took
+    the last name with no date filter, so a second ``tosGPS sitelog
+    --auto-filename`` run on the same day produced a log whose §0 pointed at
+    itself. Unified here 2026-08-23.
+
+    Empty string when no prior log exists (first log in the series).
+    """
+    from pathlib import Path as _Path
+
+    prefix = nine_char.lower()
+    current_name = f"{prefix}_{current_date}.log"
+    try:
+        names = sorted(
+            p.name
+            for p in _Path(out_dir).glob(f"{prefix}_*.log")
+            if p.name < current_name
+        )
+    except OSError:
+        return ""
+    return names[-1] if names else ""
+
+
+# Moved from tosGPS.py 2026-08-23. It is a library function that lived in a
+# CLI module, which is why receivers had to `from tostools.tosGPS import
+# generate_igs_sitelog_filename` — importing a CLI to get a helper. tosGPS
+# re-exports it so that import keeps working.
+def generate_igs_sitelog_filename(
+    station_marker: str,
+    country_code: str = "ISL",
+    monument_number: str = "00",
+    include_date: bool = False,
+    base_dir: str = ".",
+    custom_date: str = None,
+    create_station_subdir: bool = True,
+) -> tuple[str, str]:
+    """
+    Generate IGS-compliant site log filename and directory path.
+
+    Format without date: {STATION}{MONUMENT}{COUNTRY}.log
+    Format with date: {station}{monument}{country}_{YYYYMMDD}.log
+    Example: RHOF00ISL.log or rhof00isl_20250825.log
+
+    Args:
+        station_marker: 4-character station code (e.g., "RHOF")
+        country_code: 3-character country code (default: "ISL" for Iceland)
+        monument_number: 2-digit monument number (default: "00" for main monument)
+        include_date: Whether to include current date in filename
+        base_dir: Base directory for site log storage
+        create_station_subdir: Whether to create station-specific subdirectory (default: True)
+
+    Returns:
+        Tuple of (full_path, filename_only)
+    """
+    import os
+    from datetime import datetime
+
+    station_id = f"{station_marker.upper()}{monument_number}{country_code.upper()}"
+
+    if create_station_subdir:
+        output_dir = os.path.join(base_dir, station_id)
+    else:
+        output_dir = base_dir
+
+    if include_date:
+        if custom_date:
+            date_str = custom_date  # Use provided date (YYYYMMDD format)
+        else:
+            date_str = datetime.now().strftime("%Y%m%d")
+        filename = f"{station_id.lower()}_{date_str}.log"
+    else:
+        filename = f"{station_id}.log"
+
+    full_path = os.path.join(output_dir, filename)
+    return full_path, filename
