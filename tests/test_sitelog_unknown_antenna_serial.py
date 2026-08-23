@@ -133,29 +133,55 @@ class TestLiveRendererIsTheLegacyOne:
     deliberate act and this test should be updated with it, not silently.
     """
 
-    def test_tosgps_sitelog_renders_through_legacy(self):
+    def test_both_callers_go_through_build_site_log(self):
+        """One entry point, so the two cannot drift apart in ARGUMENTS.
+
+        They previously called the renderer directly with different argument
+        sets — receivers passed monument_number/country_code, tosGPS passed
+        report_type/modified_sections — and agreed only because the omitted
+        arguments shared defaults.
+        """
         import inspect
+        from pathlib import Path
 
         from tostools import tosGPS
 
-        src = inspect.getsource(tosGPS)
-        assert "gpsf.site_log(" in src
-        assert "from .legacy import gps_metadata_functions as gpsf" in src
-
-    def test_receivers_dissemination_renders_through_legacy(self):
-        from pathlib import Path
+        tosgps_src = inspect.getsource(tosGPS)
+        assert "build_site_log(" in tosgps_src
+        assert "gpsf.site_log(" not in tosgps_src, "tosGPS must not bypass it"
 
         sitelogs = (
             Path(__file__).resolve().parents[2]
             / "receivers/src/receivers/dissemination/sitelogs.py"
         )
-        if not sitelogs.exists():  # receivers not checked out beside tostools
+        if not sitelogs.exists():
             pytest.skip("receivers package not available")
-        src = sitelogs.read_text(encoding="utf-8")
-        assert "from tostools.legacy.gps_metadata_functions import site_log" in src
-        # Only the file writer may come from core.site_log.
-        assert "from tostools.core.site_log import export_site_log_to_file" in src
-        assert "core.site_log import generate_igs_site_log" not in src
+        rx_src = sitelogs.read_text(encoding="utf-8")
+        assert "from tostools.core.site_log import build_site_log" in rx_src
+        assert "import site_log as render_site_log" not in rx_src
+
+    def test_build_site_log_renders_via_legacy(self):
+        """build_site_log delegates to the legacy renderer, not the dead one."""
+        import inspect
+
+        from tostools.core.site_log import build_site_log
+
+        src = inspect.getsource(build_site_log)
+        assert "legacy.gps_metadata_functions import site_log" in src
+        assert "generate_igs_site_log" not in src.split('"""')[-1]
+
+    def test_report_type_follows_the_m3g_convention(self):
+        """NEW for the first log in a dated series, UPDATE once one exists.
+
+        receivers used to omit report_type entirely and inherit the renderer's
+        unconditional 'UPDATE', so a first-ever log was mislabelled.
+        """
+        import inspect
+
+        from tostools.core.site_log import build_site_log
+
+        src = inspect.getsource(build_site_log)
+        assert '"UPDATE" if previous_log else "NEW"' in src
 
     def test_core_renderer_has_no_production_caller(self):
         """Guard the claim in core/site_log.py's docstring."""
