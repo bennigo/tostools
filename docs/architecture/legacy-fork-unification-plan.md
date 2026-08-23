@@ -102,8 +102,25 @@ Check the call path, not the diff, before acting on any of these:
   when TOS returns no owners, including `"phone_primary": "5226000"` **without
   the `+354` prefix**. `gps-config-data/agencies.yaml` was corrected to
   `"+354 5226000"` precisely because the bare number is not dialable from
-  outside Iceland. Check whether this fallback can reach a published site log
-  before assuming the yaml fix covered everything.
+  outside Iceland. ~~Check whether this fallback can reach a published site log
+  before assuming the yaml fix covered everything.~~
+
+  **Answered 2026-08-23: no, not today — and that is a constraint on this
+  merge, not a clean bill of health.** The legacy copy has zero occurrences of
+  `5226000`, and the live renderer reaches contacts through
+  `legacy/gps_metadata_functions.py:804` → `gpsqc.get_station_metadata` →
+  **legacy** `get_contacts`. So the fallback is unreachable from a published log
+  as things stand.
+
+  The hazard is prospective and precise: **unify onto the top-level copy and the
+  live renderer gains the fallback**, at which point a station with no TOS owners
+  publishes IMO's bare number. Before that merge, either drop the hardcoded
+  fallback or give it the `+354` prefix — it is a literal in code, not
+  something `agencies.yaml` can reach.
+
+  Found while answering this, and kept separate because it is a different
+  defect: **§12 never prefixed *any* TOS phone**, fallback or not (fixed
+  `2618b0e`, outside F1 — see below).
 - **`gps_metadata`** — top-level is the documented-deprecated synthesis chain
   with two named bugs; legacy is the same chain without the warning. Neither is
   the successor: `gps_metadata_via_devices` is.
@@ -281,6 +298,26 @@ migrated.
   `phone_primary = +354 + phone_primary` — unary plus on an int, then `int + str`.
   It cannot fire today only because `contact = {}` two lines above guarantees the
   guard is never entered. Latent `TypeError` if that branch is ever populated.
+
+  **Legacy twin deleted `2618b0e`** — with a comment recording that the empty
+  `contact` is *intentional* (§12 renders IGS template placeholders when the
+  responsible agency is the point of contact), so the emptiness is not itself a
+  bug to be "fixed" later. The top-level copy at :1194 is deliberately left: dead
+  renderer, F2's subject.
+
+  The same commit fixed the live defect found alongside it — §12 rendered
+  `{phone_primary}` raw while §11 hardcoded `+354 ` into its f-string, so a
+  station whose responsible agency differed from its point of contact published a
+  number unreachable from outside Iceland. Now both go through an **idempotent**
+  `dialable_tos_phone`; the `agencies` path is deliberately excluded, since
+  `agencies.yaml` owns its own formatting and may carry non-Icelandic numbers.
+
+  **Published-artifact scope, measured against `~/git/gps-sitelogs`** (do this
+  before treating any rendering defect as an incident): 7 logs across 5 stations
+  (eldc, eley, isak, nyla, rhof) carry a bare number, and all 7 are **§11 via the
+  agencies path** — the already-corrected yaml. **Zero** carry the §12 defect.
+  Consequence for the pending re-publications: re-publishing is sufficient and
+  was never blocked on this fix.
 
 ## Ruled out — similar names, different jobs
 
