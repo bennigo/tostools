@@ -245,7 +245,9 @@ def _join_contains(join: TosJoin, era: ArchiveEra) -> bool:
     return join.time_from[:10] <= era.date_from[:10] and era.date_to[:10] <= j_to
 
 
-def _overlaps(a_from: str, a_to: Optional[str], b_from: str, b_to: Optional[str]) -> bool:
+def _overlaps(
+    a_from: str, a_to: Optional[str], b_from: str, b_to: Optional[str]
+) -> bool:
     """Do two [from, to] date windows overlap? Open (None) to == +infinity."""
     a_to = a_to or "9999-12-31"
     b_to = b_to or "9999-12-31"
@@ -265,7 +267,9 @@ def _match_station_info(
         return None
     same = [s for s in station_info if s.subtype == era.subtype]
     for s in same:
-        if _norm_serial(s.serial) and _norm_serial(s.serial) == _norm_serial(era.serial):
+        if _norm_serial(s.serial) and _norm_serial(s.serial) == _norm_serial(
+            era.serial
+        ):
             return s
     for s in same:
         if _overlaps(era.date_from, era.date_to, s.date_from, s.date_to):
@@ -393,7 +397,10 @@ def reconcile_eras(
             # threshold: its antenna join is 2 days before first data, which is
             # simply how a commissioning week looks.
             gap = _days_between(j.time_from, install)
-            if j.time_from[:10] < install[:10] and gap > STATION_INFO_DIVERGENCE_TOLERANCE_DAYS:
+            if (
+                j.time_from[:10] < install[:10]
+                and gap > STATION_INFO_DIVERGENCE_TOLERANCE_DAYS
+            ):
                 report.join_fixes.append(
                     JoinFix(
                         child_id=j.child_id,
@@ -446,7 +453,7 @@ def reconcile_eras(
         # can fall short of the real removal after an end-of-life gap (KOSK:
         # archive 2019-07-02 vs station.info 2019-09-24).
         eff_from = si.date_from[:10] if si else era.date_from
-        eff_to = (si.date_to[:10] if (si and si.date_to) else era.date_to)
+        eff_to = si.date_to[:10] if (si and si.date_to) else era.date_to
         report.missing_eras.append(
             MissingEra(
                 subtype=era.subtype,
@@ -455,7 +462,9 @@ def reconcile_eras(
                 date_from=eff_from,
                 date_to=eff_to,
                 bucket=hit.bucket if hit else None,
-                adopt_entity_id=(hit.entity_id if hit and hit.bucket == BUCKET_REOPEN else None),
+                adopt_entity_id=(
+                    hit.entity_id if hit and hit.bucket == BUCKET_REOPEN else None
+                ),
                 lookup_summary=hit.summary if hit else None,
                 canonical_model=si.model if si else None,
                 composite_height=si.composite_height if si else None,
@@ -495,7 +504,10 @@ def format_triage(
     st = report.station
     L: List[str] = []
     L.append("# === tos audit reconstruct-from-archive — triage action file ===")
-    L.append(f"# Station: {st}" + (f" (id_entity={report.station_id})" if report.station_id else ""))
+    L.append(
+        f"# Station: {st}"
+        + (f" (id_entity={report.station_id})" if report.station_id else "")
+    )
     L.append("#")
     L.append("# Deterministic join-date fixes are UNCOMMENTED (archive-proven).")
     L.append("# create-join adopts are COMMENTED (serial dup-guard found the entity;")
@@ -532,15 +544,20 @@ def format_triage(
     adopts = [m for m in report.missing_eras if m.is_adopt]
     if adopts:
         L.append("# --- adopt existing detached devices (dup-guard: reopen) ---")
-        L.append("# The serial already exists in TOS, detached. create-join re-attaches")
+        L.append(
+            "# The serial already exists in TOS, detached. create-join re-attaches"
+        )
         L.append("# it to this station for its archived era. Confirm the dates.")
         for m in adopts:
             parent = f"{report.station_id}" if report.station_id else "<station_id>"
             model = m.canonical_model or m.model or "?"
             L.append(
                 f"#   {m.subtype} {model} sn={m.serial}  ({m.date_from} → {m.date_to})"
-                + (f"  [station.info h={m.composite_height} — split by monument]"
-                   if m.composite_height else "")
+                + (
+                    f"  [station.info h={m.composite_height} — split by monument]"
+                    if m.composite_height
+                    else ""
+                )
             )
             L.append(
                 f"#ACTION {m.adopt_entity_id} create-join {parent} "
@@ -571,8 +588,12 @@ def format_triage(
                 f"{m.date_from} → {m.date_to}{h}{arch}"
             )
             if m.bucket == BUCKET_CREATE:
-                L.append("#     → dup-guard: serial provably absent → create-device, then join.")
-                L.append("#       Copy-paste (fill <WAREHOUSE>; note the new id_entity, then uncomment the join):")
+                L.append(
+                    "#     → dup-guard: serial provably absent → create-device, then join."
+                )
+                L.append(
+                    "#       Copy-paste (fill <WAREHOUSE>; note the new id_entity, then uncomment the join):"
+                )
                 parent = f"{report.station_id}" if report.station_id else "<station_id>"
                 model = m.canonical_model or m.model or "<model>"
                 if m.subtype == RECEIVER:
@@ -584,7 +605,8 @@ def format_triage(
                 else:
                     ht = (
                         f" --antenna-height <SPLIT_OF_{m.composite_height}>"
-                        if m.composite_height else ""
+                        if m.composite_height
+                        else ""
                     )
                     L.append(
                         f"#   receivers cfg add-antenna --warehouse '<WAREHOUSE>' "
@@ -596,11 +618,15 @@ def format_triage(
                     f"{m.date_from} {m.date_to}"
                 )
             elif m.bucket == BUCKET_ATTACHED:
-                L.append(f"#     → dup-guard: {m.lookup_summary} (attached elsewhere — verify, don't duplicate)")
+                L.append(
+                    f"#     → dup-guard: {m.lookup_summary} (attached elsewhere — verify, don't duplicate)"
+                )
             elif m.bucket in (BUCKET_DUPLICATE, BUCKET_INCONCLUSIVE):
                 L.append(f"#     → dup-guard: {m.lookup_summary}")
             elif m.bucket is None:
-                L.append("#     → serial dup-guard not run (--no-serial-lookup); classify by hand")
+                L.append(
+                    "#     → serial dup-guard not run (--no-serial-lookup); classify by hand"
+                )
         L.append("")
 
     if report.review:
@@ -612,10 +638,14 @@ def format_triage(
     # Companion audits — the attribute dimension is a separate, later pass.
     si = station_info_path or "<station.info>"
     lo = st.lower()
-    L.append("# --- companion audits (attribute dimension — run AFTER joins are fixed) ---")
+    L.append(
+        "# --- companion audits (attribute dimension — run AFTER joins are fixed) ---"
+    )
     L.append(f"#   tos audit missing-attributes {st} --history --station-info {si} \\")
     L.append(f"#       --triage {lo}/{lo}_attrs.txt")
-    L.append(f"#   tos audit attribute-dates {st}          # 2014-10-17 bulk-load artifacts")
+    L.append(
+        f"#   tos audit attribute-dates {st}          # 2014-10-17 bulk-load artifacts"
+    )
     L.append(f"#   tos audit firmware-chain {st}           # receiver firmware history")
     L.append("")
 
