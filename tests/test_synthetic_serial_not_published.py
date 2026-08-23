@@ -80,21 +80,16 @@ class TestIsSyntheticSerial:
 
 
 class TestSiteLogRendering:
-    """The two generators that render section 3/4 must both blank a sentinel.
+    """The generator that renders section 3/4 must blank a sentinel serial.
 
-    ``tosGPS sitelog`` renders through ``legacy.gps_metadata_functions.site_log``
-    (tosGPS.py imports it as ``gpsf``), NOT through ``core.site_log`` — a fix
-    applied only to the modern module has no effect on the published artefact.
-    Both are patched; this pins that both import the predicate so a later
-    refactor cannot quietly drop one.
+    There used to be TWO — this pinned both, because a fix applied only to
+    ``core.site_log`` had no effect on the published artefact. That parallel
+    renderer was deleted on 2026-08-23 (it had no production caller at all),
+    so only the live one remains: ``legacy.gps_metadata_functions.site_log``,
+    reached through ``core.site_log.build_site_log``.
     """
 
-    def test_legacy_generator_imports_the_filter(self):
+    def test_the_live_generator_imports_the_filter(self):
         import tostools.legacy.gps_metadata_functions as legacy
 
         assert hasattr(legacy, "is_synthetic_serial")
-
-    def test_core_generator_imports_the_filter(self):
-        import tostools.core.site_log as core
-
-        assert hasattr(core, "is_synthetic_serial")
