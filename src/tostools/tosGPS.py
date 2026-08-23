@@ -16,7 +16,11 @@ from . import gps_metadata_qc as gpsqc
 
 # Import new modular components
 from .api.tos_client import TOSClient
-from .core.site_log import build_site_log
+from .core.site_log import (  # generate_igs_sitelog_filename re-exported for receivers
+    build_site_log,
+    find_previous_site_log,
+    generate_igs_sitelog_filename,
+)
 from .legacy import gps_metadata_functions as gpsf
 
 # Use the comprehensive legacy site log generator
@@ -64,86 +68,6 @@ def _select_synthesizer(args):
     if getattr(args, "use_legacy_synthesis", False):
         return gpsqc.gps_metadata
     return gpsqc.gps_metadata_via_devices
-
-
-def generate_igs_sitelog_filename(
-    station_marker: str,
-    country_code: str = "ISL",
-    monument_number: str = "00",
-    include_date: bool = False,
-    base_dir: str = ".",
-    custom_date: str = None,
-    create_station_subdir: bool = True,
-) -> tuple[str, str]:
-    """
-    Generate IGS-compliant site log filename and directory path.
-
-    Format without date: {STATION}{MONUMENT}{COUNTRY}.log
-    Format with date: {station}{monument}{country}_{YYYYMMDD}.log
-    Example: RHOF00ISL.log or rhof00isl_20250825.log
-
-    Args:
-        station_marker: 4-character station code (e.g., "RHOF")
-        country_code: 3-character country code (default: "ISL" for Iceland)
-        monument_number: 2-digit monument number (default: "00" for main monument)
-        include_date: Whether to include current date in filename
-        base_dir: Base directory for site log storage
-        create_station_subdir: Whether to create station-specific subdirectory (default: True)
-
-    Returns:
-        Tuple of (full_path, filename_only)
-    """
-    import os
-    from datetime import datetime
-
-    station_id = f"{station_marker.upper()}{monument_number}{country_code.upper()}"
-
-    if create_station_subdir:
-        output_dir = os.path.join(base_dir, station_id)
-    else:
-        output_dir = base_dir
-
-    if include_date:
-        if custom_date:
-            date_str = custom_date  # Use provided date (YYYYMMDD format)
-        else:
-            date_str = datetime.now().strftime("%Y%m%d")
-        filename = f"{station_id.lower()}_{date_str}.log"
-    else:
-        filename = f"{station_id}.log"
-
-    full_path = os.path.join(output_dir, filename)
-    return full_path, filename
-
-
-def find_previous_sitelog(station_dir: str, station_id: str) -> str:
-    """
-    Find the most recent site log file in the station directory.
-
-    Args:
-        station_dir: Directory to search for previous logs
-        station_id: Station identifier (e.g., RHOF00ISL)
-
-    Returns:
-        Filename of most recent log, or empty string if none found
-    """
-    import glob
-    import os
-
-    if not os.path.exists(station_dir):
-        return ""
-
-    # Pattern: rhof00isl_20240827.log (lowercase station + date)
-    pattern = os.path.join(station_dir, f"{station_id.lower()}_????????.log")
-    log_files = glob.glob(pattern)
-
-    if not log_files:
-        return ""
-
-    # Sort by date (filename contains date) and return most recent
-    log_files.sort()
-    most_recent = os.path.basename(log_files[-1])
-    return most_recent
 
 
 def detect_modified_sections(current_content: str, previous_log_path: str) -> str:
@@ -1589,7 +1513,13 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                 if args.auto_filename:
                     station_id = f"{station.upper()}00ISL"
                     station_dir = os.path.join(args.dir, station_id)
-                    previous_log = find_previous_sitelog(station_dir, station_id)
+                    # Shared finder: excludes today's own file, so a second
+                    # run on the same day cannot chain §0 to itself.
+                    previous_log = find_previous_site_log(
+                        station_dir,
+                        station_id,
+                        args.custom_date or datetime.now().strftime("%Y%m%d"),
+                    )
 
                     report_type = "NEW" if not previous_log else "UPDATE"
                     modified_sections = (
@@ -1648,7 +1578,11 @@ def _handle_sitelog_subcommand(args, stations, url, log_level):
                 # Determine previous log and report type
                 station_id = f"{station.upper()}00ISL"
                 station_dir = os.path.dirname(full_path)
-                previous_log = find_previous_sitelog(station_dir, station_id)
+                previous_log = find_previous_site_log(
+                    station_dir,
+                    station_id,
+                    args.custom_date or datetime.now().strftime("%Y%m%d"),
+                )
 
                 # Auto-detect modified sections if not manually specified
                 modified_sections = args.modified_sections
