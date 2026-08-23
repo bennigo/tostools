@@ -321,6 +321,14 @@ _PLAIN_ALIASES = {
     "audit": "_audit_main",
     "fleet": "_fleet_main",
     "station": "_station_main",
+    # Supporting verbs of the same GPS station/device workflow. None has
+    # fleet-wide query behaviour a profile could narrow — each acts on one
+    # named entity and is reached from a GPS task:
+    "device": "_device_main",  # exactly the subtypes the GPS profile curates
+    "location": "_location_main",  # the required `land` parent of a station
+    "visit": "_visit_main",  # vitjanir hang off a station or device
+    "contact": "_contact_main",  # reached from `station show`'s Contacts table
+    "owners": "_owners_main",  # the allow-list backing `device add`
 }
 
 
