@@ -745,6 +745,30 @@ def _fmt_igs_date(value, placeholder="CCYY-MM-DDThh:mmZ"):
     return placeholder
 
 
+def dialable_tos_phone(value, country_code="+354"):
+    """Render a TOS-sourced phone number so it is dialable from abroad.
+
+    TOS stores Icelandic numbers bare (``"5226000"``); an IGS site log is read
+    worldwide, so §11-§13 must carry the country code. §11 got this right by
+    hardcoding ``+354 `` into its f-string, §12 did not and published the bare
+    number whenever the responsible agency differed from the point of contact.
+
+    **Idempotent** — a value that already starts with ``+`` is returned
+    unchanged, so this cannot produce ``+354 +354 5226000``. Empty stays empty
+    (the site log's own "unknown field" convention is a blank, not a
+    placeholder).
+
+    Deliberately NOT applied to the ``agencies`` rendering path: those values
+    come from ``gps-config-data/agencies.yaml``, which owns its own formatting
+    (its comment makes the country code REQUIRED in the value) and can carry
+    non-Icelandic agencies, where a ``+354`` default would be wrong.
+    """
+    text = str(value or "").strip()
+    if not text or text.startswith("+"):
+        return text
+    return f"{country_code} {text}"
+
+
 # GNSS constellation attribute codes, canonical order (baseline first).
 _CONSTELLATION_CODES = ("GPS", "GLO", "GAL", "BDS", "QZSS", "SBAS", "IRN")
 
@@ -1399,7 +1423,7 @@ def site_log(
             f"     Mailing Address          : {address}\n"
             f"     Primary Contact            \n"
             f"       Contact Name           : {primary_contact}\n"
-            f"       Telephone (primary)    : +354 {phone_primary}\n"
+            f"       Telephone (primary)    : {dialable_tos_phone(phone_primary)}\n"
             f"       Telephone (secondary)  : \n"
             f"       Fax                    : \n"
             f"       E-mail                 : {email}\n"
@@ -1417,14 +1441,15 @@ def site_log(
             station["contact"]["contact"]["id_entity"]
             == station["contact"]["operator"]["id_entity"]
         ):
+            # Empty by design: when the responsible agency IS the point of
+            # contact, §12 renders the IGS template placeholders rather than
+            # repeating §11. Every .get() below therefore takes its default.
             contact = {}
 
             agency = contact.get("name_en", "(multiple lines)")
             address = contact.get("address_en", "(multiple lines)")
             abbreviation = contact.get("abbreviation", "(A10)")
             phone_primary = contact.get("phone_primary", "")
-            if phone_primary != "":
-                phone_primary = +354 + phone_primary
             email = contact.get("email", "")
             primary_contact = contact.get("primary_contact", "")
             department = contact.get("department", "")
@@ -1447,7 +1472,7 @@ def site_log(
             f"     Mailing Address          : {address}\n"
             f"     Primary Contact            \n"
             f"       Contact Name           : {primary_contact}\n"
-            f"       Telephone (primary)    : {phone_primary}\n"
+            f"       Telephone (primary)    : {dialable_tos_phone(phone_primary)}\n"
             f"       Telephone (secondary)  : \n"
             f"       Fax                    : \n"
             f"       E-mail                 : {email}\n"
