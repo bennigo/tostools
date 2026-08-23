@@ -3,6 +3,14 @@
 **Status**: scoped, not started. Written 2026-08-23 after the redundancy sweep
 that deleted `legacy/gps_rinex.py` and the abandoned `tostools/cli/` package.
 
+> **Overlaps an untracked doc.** `docs/security-streamlining-remediation-plan.md`
+> (untracked at time of writing) covers the same F1 ordering under its §T1. It
+> reaches the same conclusion on `legacy/gps_rinex.py` but describes it as
+> "~85 % identical — near-pure duplication", where the sweep established it was
+> **stale**: no importer, and missing `domes_or_skip` plus the version
+> comparator. Two plan docs disagreeing about one merge is the exact pattern
+> this work exists to remove — reconcile or retire one before starting F1.
+
 `src/tostools/{gps_metadata_functions,gps_metadata_qc}.py` and
 `src/tostools/legacy/<same names>` are a **partially-completed modernization
 fork**. The refactor was never finished, both copies stayed live, and fixes have
@@ -65,15 +73,26 @@ That accounts for the ±1/−2 line diffs in `additional_contact_fields`,
 `read_gzip_file` / `read_text_file` / `read_zzipped_file` trio is the same story
 — top-level delegates to `io/file_utils`, legacy inlines the body.
 
-Three carry **real** divergence and decide the merge:
+Three carry divergence that decides the merge. Note the first was initially
+written up here as a live functional gap and was **wrong** — the diff showed a
+missing attribute list, but the default runtime path reaches it elsewhere.
+Check the call path, not the diff, before acting on any of these:
 
 - **`device_attribute_history`** — legacy fetches the GNSS constellation toggles
-  (`GAL`, `BDS`, `QZSS`, `SBAS`, `IRN`) and `azimuth`; top-level does not. That
-  is commit `052d7f7`, which landed on legacy only. The site log composes §3.3
-  Satellite System and §4 Alignment from those, and reaches them via
-  `tos_client.py:651` → legacy. **The top-level copy — the one `tosGPS` uses —
-  is missing them.** Verify against a live station before merging; this is the
-  highest-value item in F1.
+  (`GAL`, `BDS`, `QZSS`, `SBAS`, `IRN`) and `azimuth` (commit `052d7f7`, which
+  landed on legacy only); the top-level copy does not.
+
+  **This is a duplicated constant, not a missing capability** — do not read the
+  diff as a live gap. `tosGPS` defaults to `gps_metadata_via_devices` →
+  `devices.station_sessions`, and `devices.SITELOG_GPS_ATTRIBUTE_CODES` carries
+  the constellations and `azimuth` itself; its own comment says it "Mirrors the
+  legacy `gps_metadata_qc.device_attribute_history` key_list". So the attribute
+  list now exists in **two** places that must be changed together, and the
+  top-level `device_attribute_history` is short only on the **deprecated**
+  `gps_metadata` chain (the `--use-legacy-synthesis` opt-out).
+
+  The merge job here is therefore to collapse the mirrored list onto
+  `devices.SITELOG_GPS_ATTRIBUTE_CODES`, not to "restore missing attributes".
 - **`get_contacts`** (+37/−7) — top-level adds a hardcoded IMO fallback used
   when TOS returns no owners, including `"phone_primary": "5226000"` **without
   the `+354` prefix**. `gps-config-data/agencies.yaml` was corrected to
