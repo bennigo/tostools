@@ -4,7 +4,7 @@
 
 A Python3 command-line toolkit for GPS/GNSS station metadata quality control, RINEX processing, and TOS API integration. Combines GPS station validation tools with Icelandic weather/seismic station queries.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## 🚀 Quick Start
@@ -30,12 +30,60 @@ tosGPS sitelog RHOF --auto-filename --date-in-name --dir ./sitelogs
 tosGPS syncMeta --type gamit-station-info RHOF --update --dry-run      # Test mode
 tosGPS syncMeta --type gamit-station-info RHOF --update  # Safe production (interactive by default)
 
+# Search the fleet by attribute or by joined device
+tos search --active-gps --no-receiver --markers-only
+tos search 'receiver.firmware_version ~ 5.7*' --show receiver.software_version
+
 # Validate GPS/GNSS standards compliance
 python scripts/update_standards.py --validate-only
 ```
 
+## 🧭 Two entry points: `tos` and `tosGPS`
+
+- **`tos`** — the entity layer. Returns TOS state in its native shape (raw
+  attribute periods, joins, ids). Subtype-agnostic: the same verb works for a
+  receiver, an antenna, a seismometer.
+- **`tosGPS`** — the GPS interpretation layer. Synthesizes TOS entities into
+  GPS-domain objects: a station session, a GAMIT `station.info` row, an IGS
+  site log block, a RINEX-vs-TOS diff.
+
+The split is about **output shape**, not entity type. Every `tos` verb is
+reachable from `tosGPS`: eight (`audit`, `fleet`, `station`, `device`,
+`location`, `visit`, `contact`, `owners`) are plain aliases, and `search` is
+GPS-profiled under `tosGPS` (subtype pinned) while staying the general fleet
+query under `tos`.
+
+**[`docs/cli-surface.md`](docs/cli-surface.md)** — the full surface, plus
+`tos audit version-chains` and the single site-log entry point.
+
+## 🔎 Fleet search
+
+`tos search` queries by station attribute and by currently-joined device:
+
+```bash
+tos search --attribute-list                  # what can I filter on?
+tos search --selectors receiver              # what selectors exist?
+tos search 'iers_domes_number != null'
+tos search --at 2021-06-01 'receiver.firmware_version = 5.3.0'
+tos search --history --show receiver.firmware_version
+```
+
+Dotted selectors (`receiver.firmware_version`) address a joined device and work
+in both expressions and `--show`. `--at` / `--history` make the query
+period-aware; `--snapshot` / `--from-snapshot` make a run replayable with no
+network at all.
+
+Three traps: `~` globs are **fully anchored** (`HVE*` is starts-with, not
+contains — wrap in stars for substring); device matching is **existential**
+across a station's devices; `!=` is **satisfied by an absent value**.
+
+**[`docs/search-selectors.md`](docs/search-selectors.md)** — the full selector
+language.
+
 ## 📋 Table of Contents
 
+- [Two entry points](#-two-entry-points-tos-and-tosgps)
+- [Fleet search](#-fleet-search)
 - [Features](#-features)
 - [Installation](#-installation)
 - [GPS Tools](#-gps-tools)
@@ -79,13 +127,13 @@ python scripts/update_standards.py --validate-only
 ## 🔧 Installation
 
 ### Prerequisites
-- Python 3.8+ (supports up to Python 3.13)
+- Python 3.13+ (the `gps_parser` dependency requires >=3.13)
 - Recommended: Mamba or Conda for environment management
 
 ### Environment Setup
 ```bash
 # Create dedicated environment
-mamba create -n tostools python=3.11
+mamba create -n tostools python=3.13
 mamba activate tostools
 
 # Install from repository
@@ -541,4 +589,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Version**: 0.2.3 | **Python**: 3.8+ | **Status**: Production Ready
+**Version**: 0.6.1 | **Python**: 3.13+ | **Status**: Production Ready
