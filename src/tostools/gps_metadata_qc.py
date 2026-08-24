@@ -840,7 +840,15 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
 
 
 def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
-    """"""
+    """Synthesise per-device sessions for the EQUIPMENT-ERA consumers.
+
+    Feeds ``gps_metadata`` and, through it, the archive header retrofit,
+    ``gps_rinex`` QC, ``tosGPS timespan`` and GAMIT ``station.info``. See the
+    ``codes=`` pin at the ``device_attribute_history`` call below — the narrow
+    attribute list is load-bearing here, not an oversight.
+    """
+
+    from .devices import LEGACY_GPS_ATTRIBUTE_CODES
 
     module_logger = get_logger(__name__, loglevel)
 
@@ -888,11 +896,28 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
                 gpsf.json_print(device),
             )
 
+            # Pinned to the NARROW list on purpose — this chain resolves
+            # EQUIPMENT ERAS, and a constellation boundary is not an era
+            # boundary. `gps_metadata` feeds four consumers, none of which reads
+            # a constellation or `azimuth` field: the archive header retrofit
+            # (`rinex/corrector.py` --fix-headers), `gps_rinex` QC, `tosGPS
+            # timespan`, and GAMIT `station.info` — where a constellation split
+            # would publish a spurious duplicate occupation
+            # (docs/architecture/synthesis-legacy-divergence.md).
+            #
+            # The wide default is right for the site-log direction and wrong
+            # here: widening lets more attribute rows move `date_from`/`date_to`,
+            # and via this kernel's Bug 1 a toggle starting mid-tenure can move a
+            # session's start onto the toggle date and drop the earlier window
+            # entirely. `corrector` then finds no session covering an older file
+            # and silently falls back to `device_history[-1]` — the most RECENT
+            # equipment — writing the wrong era into a historical RINEX header.
             attribute_history = device_attribute_history(
                 device,
                 connection["time_from"],
                 connection["time_to"],
                 loglevel=logging.CRITICAL,
+                codes=LEGACY_GPS_ATTRIBUTE_CODES,
             )
 
             module_logger.debug(
