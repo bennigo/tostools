@@ -46,6 +46,13 @@ HTTP); `--all` on station show extends to full visit history.
   * `--no-completed` marks the visit open (long-running repair / ongoing investigation).
   * Implementation wraps `TOSWriter.add_maintenance_visit` (the existing 3-call POST + GET + PUT flow that handles auto-seeded `maintenance_attribute_value` rows).
 
+**`tos visit search`** (fleet-wide free-text, 2026-08-24):
+
+  * `tos visit search --work TEXT [--type {on_site,remote}] [--epos] [--missing] [--markers-only] [--json] [EXPRESSION ...]`
+  * Searches EVERY station's vitjanir by free text on the work field — the fleet-level complement to per-station `list`. `--work` and `--type` are optional and AND-ed.
+  * `--missing` inverts to stations WITHOUT a match. Positional EXPRESSIONs + the shared sugar flags (`--epos`/`--active-gps`/`--continuous`/…) scope the station set first.
+  * **For a station-level YES/NO cross-check, the `visit.*` selectors in `tos search` are the primary form** (`tos search --epos 'visit.all !~ "TOS reviewed"'`); `visit search` lists the matching VISIT rows (id + date) for drill-down.
+
 **`add-visit` ACTION verb** (Phase C — device lifecycle tracker, v1):
 
 Triage-file integration for the lifecycle workflow. Operators chain

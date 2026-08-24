@@ -82,6 +82,62 @@ Two behaviours worth knowing before trusting a result:
   5.7.0", not "has no receiver on 5.7.0". Every device in the namespace
   contributes to a `--show` cell, comma-joined.
 
+## Visit selectors — `visit.*`
+
+A `visit.` selector addresses the station's **vitjanir** (visit / maintenance
+records), a list-per-entity rather than a single value. Available fields:
+
+| Selector | Matches |
+|---|---|
+| `visit.work` / `visit.comment` / `visit.remaining` | that note field (Vinna / Athugasemdir / Útistandandi) |
+| `visit.all` (aliases `visit.any`, `visit.text`) | **any** of the three note fields |
+| `visit.type` | `maintenance_type` — `on_site` / `remote` |
+| `visit.participants` | email **or** resolved name |
+
+Aggregation differs from devices in one important way — **multiple POSITIVE
+visit predicates group onto ONE visit** (`visit.work ~ TOS` + `visit.type =
+remote` = a remote visit whose work matches), and the **negated operators are
+UNIVERSAL**: `visit.work !~ X` means *no visit* whose work matches X, the
+inverse of the include form. `= null` is universal absence, `!= null`
+existential presence. A visit selector walks the vitjun list (one call per
+surviving station, after station predicates prune the fleet).
+
+```bash
+tos search --epos 'visit.all ~ "TOS reviewed"'    # onboarded
+
+tos search --epos 'visit.all !~ "TOS reviewed"'   # still to do
+
+tos search 'visit.type = remote' 'visit.participants ~ bgo'
+
+tos search 'visit.remaining != null'              # stations with open items
+```
+
+## Contact selectors — `contact.*`
+
+A `contact.` selector addresses the station's **contacts** — the owner /
+operator / data-owner organisations that live in the contact roles
+(Eigandi stöðvar / Rekstraraðili / Eigandi gagna), *not* the `owner` attribute
+(which only carries IMO/Cambridge/Czech/ÍSOR).
+
+| Selector | Matches |
+|---|---|
+| `contact.owner` / `contact.operator` / `contact.data_owner` | that role's organisation |
+| `contact.organization` / `contact.name` / `contact.email` | any contact's field |
+
+Organisation terms get **abbreviation expansion** from `agencies.yaml`, so
+`contact.owner ~ IES` resolves to `Jarðvísindastofnun Háskóla Íslands` without
+knowing the Icelandic genitive. Negation is universal — `contact.owner !~ IES`
+means the owner org does not match (exclude an agency). Sugar:
+`--owner ORG` / `--no-owner ORG`.
+
+```bash
+tos search --epos 'contact.owner !~ IES'     # exclude the IES stations
+
+tos search --no-owner IES                    # same, as a flag
+
+tos search --owner Cambridge                 # only Cambridge-owned
+```
+
 ## Time — `--at` and `--history`
 
 - `--at YYYY-MM-DD` — evaluate every selector as of that date instead of today;
@@ -123,13 +179,15 @@ tos search --attribute-list                      # what codes exist
 tos search --attribute continuity --allowed-values   # what values it takes
 tos search --selectors                           # the index
 tos search --selectors receiver                  # one subtype's attributes
+tos search --selectors visit                     # visit.* vocabulary
+tos search --selectors contact                   # contact.* vocabulary
 tos search --selectors all --observed
 ```
 
-`--selectors` asks for ONE thing at a time: `station`, `subtypes`, a subtype
-name, or `all`. Every line starts with the selector exactly as `tos search`
-expects it, so output pastes straight into the next command; `--json` emits a
-bare array.
+`--selectors` asks for ONE thing at a time: `station`, `subtypes`, `visit`,
+`contact`, a subtype name, or `all`. Every line starts with the selector
+exactly as `tos search` expects it, so output pastes straight into the next
+command; `--json` emits a bare array.
 
 `--observed` additionally reads what the live fleet actually carries rather than
 what the catalog classifies. It costs a device walk (cached) and is the **only**
@@ -155,6 +213,10 @@ tos search --device router:any --device sim:any
 tos search --markers-only                      # every subtype in the domain
 tos search 'subtype = GPS stöð' --markers-only  # narrow to GPS
 tos search --json --epos > epos.json
+tos search --epos 'visit.all ~ "TOS reviewed"'   # onboarded
+tos search --epos 'visit.all !~ "TOS reviewed"'  # still to do
+tos search --epos 'visit.all !~ "TOS reviewed"' --no-owner IES  # minus IES
+tos search --owner Cambridge                   # only Cambridge-owned
 ```
 
 Output modes: `--json`, `--markers-only` (one 4-char marker per line,

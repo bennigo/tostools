@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ `tos search` — visit and contact selectors (2026-08-24)
+
+#### Added
+
+- **`visit.*` selectors** — the third selector kind: `visit.work` / `visit.comment` / `visit.remaining` (free text, `re:` regex + glob), `visit.all` (aliases `any`/`text`, OR across the three note fields), `visit.type` (`on_site`/`remote`), `visit.participants` (email or resolved name). Multiple positive predicates group onto ONE visit; negated operators are UNIVERSAL (`visit.all !~ "TOS reviewed"` = the not-yet-onboarded cross-check).
+- **`contact.*` selectors** — the fourth selector kind: `contact.owner` / `contact.operator` / `contact.data_owner` (role-scoped orgs) + `contact.organization` / `contact.name` / `contact.email`. The owner org lives in the CONTACT role, not the `owner` attribute.
+- **`--owner ORG` / `--no-owner ORG`** flags — sugar for `contact.owner ~` / `!~`.
+- **Agency abbreviation expansion** — org terms resolve `abbrev`/`abbrev_is` from `agencies.yaml`, so `--no-owner IES` matches `Jarðvísindastofnun Háskóla Íslands` without the Icelandic genitive.
+- **`tos visit search`** — fleet-wide free-text vitjun search (`--work`, `--type`, `--missing`, `--epos`, positional scope expressions).
+- **`--selectors visit` / `--selectors contact`** — the visit/contact vocabularies are discoverable.
+- **Quote-stripping** in `parse_expression` — `'marker ~ "a b"'` means the value `a b`, not a quoted literal.
+
 ### 🔄 Interactive Behavior Changes
 
 #### Changed

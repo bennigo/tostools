@@ -85,9 +85,14 @@ Full detail: **[`docs/cli-surface.md`](docs/cli-surface.md)**.
 ### `tos search` — the selector language
 
 Attribute expressions (`code = value`, `!=`, `~`, `!~`, `= null`, `= [a, b]`),
-glob/`re:` patterns on the match operators only, and **dotted device
-selectors** (`receiver.firmware_version`, `antenna.serial_number`, `*.model`)
-usable in both expressions and `--show`. Plus `--at DATE` / `--history` for
+glob/`re:` patterns on the match operators only, and **dotted selectors** in
+three extra kinds beyond devices: **device** (`receiver.firmware_version`,
+`antenna.serial_number`, `*.model`), **visit** (`visit.work/comment/remaining/all`,
+`visit.type`, `visit.participants` — same-visit AND for positives, universal
+negation for `!~`), and **contact** (`contact.owner/operator/data_owner`,
+`contact.organization/name/email`, plus `--owner`/`--no-owner` and agency
+abbreviation expansion from `agencies.yaml`). All usable in expressions;
+device selectors also in `--show`. Plus `--at DATE` / `--history` for
 period-aware queries, a read cache (`--cache-ttl`, `--refresh`, `--no-cache`),
 replayable `--snapshot` / `--from-snapshot`, and `--selectors` discovery.
 
@@ -368,6 +373,7 @@ tos visit list --station <STN>     # vitjanir attached to a station
 tos visit list --device <id>       # vitjanir attached to a device
 tos visit show <id_maintenance>    # one vitjun, full detail
 tos visit add  --station <STN> --start DATE [opts]  # new vitjun (dry-run default)
+tos visit search --work TEXT [--epos] [--missing]   # fleet-wide free-text vitjun search
 tos contact show --id <id>         # contact entity detail
 tos contact list --station <STN>   # contacts mapped to a station
 tos contact patch-relationship <id_rel> --time-from DATE  # fix relationship date (dry-run default)
@@ -387,6 +393,11 @@ tos search --active-gps --no-receiver     # operational GNSS fleet (sugar:
                                           #   not ice + continuous)
 tos search --attribute-list               # discovery: filterable codes
 tos search --attribute CODE --allowed-values
+tos search --epos 'visit.all ~ "TOS reviewed"'   # onboarded (visit.* selector)
+tos search --epos 'visit.all !~ "TOS reviewed"'  # still to do
+tos search --epos 'visit.all !~ "TOS reviewed"' --no-owner IES  # minus IES
+# (contact.owner/operator/data_owner + --owner/--no-owner + abbrev expansion
+#  from agencies.yaml; visit.* + contact.* are the third/fourth selector kinds)
 ```
 
 Legacy flat-arg form (`tos RHOF`, `tos -s SERIAL`, `tos --fdsnxml/--sc3ml`)
@@ -630,5 +641,5 @@ Integration with VS Code Todo Tree and Neovim todo-comments.nvim available.
 
 ---
 
-_Last updated: 2026-08-11_ (added `tos search` — fleet search by attribute + device)
+_Last updated: 2026-08-24_ (added `visit.*` + `contact.*` selectors, `--owner` flag, `tos visit search`, abbreviation expansion)
 
