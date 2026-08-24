@@ -6184,6 +6184,63 @@ def _visit_main(argv):
     )
     p_add.add_argument("--port", type=int, default=443)
 
+    p_search = sub.add_parser(
+        "search",
+        help="Fleet-wide free-text search across every station's vitjanir",
+        description=(
+            "Search the vitjanir (visit / maintenance) of every station in "
+            "the domain by free text on the work field — the fleet-level "
+            "complement to `tos visit list --station S`, which only sees "
+            "one station.\n\n"
+            "Use case: cross-check EPOS onboarding. The onboarding pipeline "
+            "records a standard remote vitjun whose work starts 'TOS "
+            "reviewed…', so\n"
+            "  tos visit search --epos --work 'TOS reviewed' --missing\n"
+            "lists exactly the EPOS stations still to onboard. Without "
+            "--missing it lists the stations that HAVE a match.\n\n"
+            "--work and --type are optional and AND-ed; with neither, any "
+            "visit matches (so --missing means 'stations with no visits "
+            "at all')."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_search.add_argument(
+        "--work",
+        default=None,
+        help="Case-insensitive substring match on the visit work field.",
+    )
+    p_search.add_argument(
+        "--type",
+        dest="visit_type",
+        choices=["on_site", "remote"],
+        default=None,
+        help="Restrict to a visit type (on_site / remote).",
+    )
+    p_search.add_argument(
+        "--epos",
+        action="store_true",
+        help="Restrict to in_network_epos = true stations.",
+    )
+    p_search.add_argument(
+        "--missing",
+        action="store_true",
+        help="Report stations WITHOUT a matching visit instead of with one.",
+    )
+    p_search.add_argument(
+        "--markers-only",
+        action="store_true",
+        help="Print one 4-char marker per line (pipe/xargs friendly).",
+    )
+    p_search.add_argument(
+        "--json", action="store_true", help="Emit a structured JSON payload."
+    )
+    p_search.add_argument(
+        "--server",
+        default="vi-api.vedur.is",
+        help="TOS API host (default: vi-api.vedur.is).",
+    )
+    p_search.add_argument("--port", type=int, default=443)
+
     args = p.parse_args(argv)
 
     scheme = "https" if args.port == 443 else "http"
@@ -6390,7 +6447,154 @@ def _visit_main(argv):
             print(f"Drill: tos visit show {new_id}")
         return 0
 
+    if args.verb == "search":
+        return _visit_search_main(args)
+
     return 2
+
+
+def _visit_search_main(args) -> int:
+    """Fleet-wide free-text search of vitjanir (``tos visit search``).
+
+    Fetches every station in the geophysical domain (one bulk call), then
+    per station lists its visits and filters on ``--work`` (case-insensitive
+    substring) and ``--type``. ``--missing`` inverts the report to the
+    stations WITHOUT a match — the cross-check for 'which stations are
+    still to onboard' (``--epos --work 'TOS reviewed' --missing``).
+    """
+    import json as _json
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from . import search as search_mod
+    from .api.tos_client import TOSClient
+
+    scheme = "https" if args.port == 443 else "http"
+    base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+    client = TOSClient(base_url=base_url)
+
+    try:
+        fleet = search_mod.fetch_fleet(client, domain="geophysical")
+    except Exception as exc:  # noqa: BLE001
+        print(f"tos visit search: fleet fetch failed: {exc}", file=sys.stderr)
+        return 1
+
+    if args.epos:
+        fleet = [
+            e
+            for e in fleet
+            if search_mod.open_value(e, "in_network_epos") == "true"
+        ]
+
+    needle = (args.work or "").lower()
+    vtype = args.visit_type
+
+    matches: "dict[str, list]" = {}
+    no_match: "list[str]" = []
+    rows: "list[dict]" = []
+    for ent in fleet:
+        eid = ent.get("id_entity") or ent.get("id_lvl_two")
+        marker = search_mod.open_value(ent, "marker") or "?"
+        if eid is None:
+            continue
+        try:
+            visits = client.list_maintenance_visits(int(eid)) or []
+        except Exception:  # noqa: BLE001 - one bad station must not abort the sweep
+            visits = []
+        hits = []
+        for v in visits:
+            if vtype and v.get("maintenance_type") != vtype:
+                continue
+            if needle and needle not in str(v.get("work") or "").lower():
+                continue
+            hits.append(v)
+        if hits:
+            matches[marker] = hits
+            for v in hits:
+                rows.append(
+                    {
+                        "marker": marker,
+                        "id": v.get("id"),
+                        "start_time": v.get("start_time"),
+                        "maintenance_type": v.get("maintenance_type"),
+                        "work": v.get("work"),
+                    }
+                )
+        else:
+            no_match.append(marker)
+
+    matches = dict(sorted(matches.items()))
+    no_match = sorted(no_match)
+
+    # Scope label for the summary + table title.
+    scope = "EPOS " if args.epos else ""
+    constraint = []
+    if needle:
+        constraint.append(f"work ~ {args.work!r}")
+    if vtype:
+        constraint.append(f"type = {vtype}")
+    con = f" ({', '.join(constraint)})" if constraint else " (any visit)"
+
+    if args.json:
+        payload = {
+            "scope": f"{scope}stations".strip(),
+            "constraint": con.strip(),
+            "matched": len(matches),
+            "missing": len(no_match),
+            "total": len(fleet),
+            "stations_with_match": [
+                {"marker": m, "visits": [v["id"] for v in vs]}
+                for m, vs in matches.items()
+            ],
+            "stations_without_match": no_match,
+            "rows": rows,
+        }
+        print(_json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return 0
+
+    if args.markers_only:
+        for m in (no_match if args.missing else list(matches)):
+            print(m)
+        return 0
+
+    console = Console()
+    if args.missing:
+        title = f"{scope}stations WITHOUT a matching visit{con}"
+        table = Table(title=title)
+        table.add_column("marker", style="cyan")
+        table.add_column("name")
+        for m in no_match:
+            ent = next((e for e in fleet if (search_mod.open_value(e, "marker") or "?") == m), {})
+            table.add_row(m, search_mod.open_value(ent, "name") or "")
+        console.print(table)
+        console.print(
+            f"[dim]{len(no_match)} of {len(fleet)} {scope}stations have no "
+            f"matching visit.[/dim]"
+        )
+        return 0
+
+    table = Table(title=f"{scope}stations with a matching visit{con}")
+    table.add_column("marker", style="cyan")
+    table.add_column("visit", justify="right")
+    table.add_column("date")
+    table.add_column("type")
+    table.add_column("work", max_width=60)
+    for r in sorted(rows, key=lambda r: (r["marker"], str(r["start_time"] or ""))):
+        table.add_row(
+            r["marker"],
+            str(r["id"] or ""),
+            (str(r["start_time"] or "")[:10]),
+            r["maintenance_type"] or "",
+            (str(r["work"]) or "")[:60],
+        )
+    console.print(table)
+    console.print(
+        f"[dim]{len(matches)} of {len(fleet)} {scope}stations have a matching "
+        f"visit; {len(no_match)} do not. Re-run with --missing to list the "
+        f"latter.[/dim]"
+    )
+    return 0
 
 
 def _render_visits_table(
