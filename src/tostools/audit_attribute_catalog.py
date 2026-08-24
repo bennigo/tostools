@@ -53,8 +53,28 @@ logger = get_logger(__name__, logging.WARNING)
 #: The attribute-type table. A plain read — no credentials.
 SCHEMA_ENDPOINT = "/admin_attribute_rows"
 
+#: The entity-type table, mapping ``id_entity_type`` to a code.
+ENTITY_TYPE_ENDPOINT = "/admin_entity_type_rows"
+
 #: Catalog scopes, in report order.
 SCOPES = ("stations", "devices", "locations")
+
+#: Catalog scope → the TOS entity-type code(s) it covers.
+#:
+#: TOS keys an attribute by ``(code, id_entity_type)``, not by code alone —
+#: ``_resolve_id_attribute`` says so ("multiple rows per code, one per
+#: entity_type"). Bare membership therefore passes a catalog entry whose
+#: code TOS defines only for some OTHER entity type, which is exactly the
+#: error this verb exists to catch.
+#:
+#: ``devices`` spans two entity types: the catalog's devices scope holds
+#: ``monument`` alongside the GNSS hardware, and a monument is Innviði —
+#: entity type ``infrastructure``, not ``device``.
+SCOPE_ENTITY_TYPES = {
+    "stations": ("station",),
+    "devices": ("device", "infrastructure"),
+    "locations": ("location",),
+}
 
 #: Fields that make a catalog entry reachable by a code path that WRITES.
 #: A phantom code carrying any of these would propose a TOS write for an
@@ -79,6 +99,12 @@ class PhantomCode:
     write_reaching: List[str] = field(default_factory=list)
     #: Live codes sharing this entry's Icelandic label — the rename candidate.
     same_label_as: List[str] = field(default_factory=list)
+    #: True when TOS defines the code, but only for some OTHER entity type.
+    #: A subtler error than an invented name: the code is real, the scope is
+    #: wrong, and bare code membership would have called it fine.
+    wrong_scope: bool = False
+    #: Entity-type codes TOS does define it for, when ``wrong_scope``.
+    defined_for: List[str] = field(default_factory=list)
 
     @property
     def severity(self) -> str:
@@ -122,11 +148,25 @@ def fetch_schema_codes(
 
     One row per ``(code, entity_type)``, so a code spanning scopes (``model``
     is defined for devices AND monuments) collapses to one entry carrying
-    every entity type it is defined for.
+    every entity type it is defined for. ``entity_types`` holds entity-type
+    *codes* (``station``, ``device``, …) rather than the raw integer ids, so
+    the caller never has to know that stations are 2 and devices are 4.
+
+    A row whose ``id_entity_type`` is None is a cross-scope entry (rare, but
+    ``_resolve_id_attribute`` rule 2 relies on it); it is recorded as
+    ``None`` and satisfies every scope.
     """
-    scheme = "https" if port == 443 else "http"
-    url = canonical_tos_url(f"{scheme}://{server}:{port}/tos/internal", SCHEMA_ENDPOINT)
-    resp = requests.get(url, timeout=timeout)
+    base = f"{'https' if port == 443 else 'http'}://{server}:{port}/tos/internal"
+
+    et_resp = requests.get(
+        canonical_tos_url(base, ENTITY_TYPE_ENDPOINT), timeout=timeout
+    )
+    et_resp.raise_for_status()
+    et_names = {
+        row.get("id"): row.get("code") for row in et_resp.json() or [] if row.get("id")
+    }
+
+    resp = requests.get(canonical_tos_url(base, SCHEMA_ENDPOINT), timeout=timeout)
     resp.raise_for_status()
     out: Dict[str, Dict[str, Any]] = {}
     for row in resp.json() or []:
@@ -134,8 +174,26 @@ def fetch_schema_codes(
         if not code:
             continue
         entry = out.setdefault(code, {"label": row.get("name_is"), "entity_types": []})
-        entry["entity_types"].append(row.get("id_entity_type"))
+        et_id = row.get("id_entity_type")
+        name = None if et_id is None else et_names.get(et_id, et_id)
+        if name not in entry["entity_types"]:
+            entry["entity_types"].append(name)
     return out
+
+
+def _defined_for_scope(entry: Dict[str, Any], scope: str) -> bool:
+    """Is this schema entry defined for the entity type(s) ``scope`` covers?
+
+    A ``None`` entity type is cross-scope and satisfies any scope. An unknown
+    scope (a catalog key we have no mapping for) is treated as satisfied —
+    reporting every one of its codes as wrongly-scoped would be noise about
+    our own mapping, not about the catalog.
+    """
+    wanted = SCOPE_ENTITY_TYPES.get(scope)
+    if wanted is None:
+        return True
+    types = entry.get("entity_types") or []
+    return any(t is None or t in wanted for t in types)
 
 
 def _label_index(schema: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
@@ -173,7 +231,14 @@ def audit_attribute_catalog(
         entries = scoped.get(scope) or {}
         for code, entry in sorted(entries.items()):
             catalog_all.add(code)
-            if code in schema:
+            schema_entry = schema.get(code)
+            # Scope-aware, not bare membership: TOS keys by (code,
+            # entity_type), so a code defined only for some other entity type
+            # is still wrong here — just wrong in a subtler way.
+            in_scope = schema_entry is not None and _defined_for_scope(
+                schema_entry, scope
+            )
+            if in_scope:
                 continue
             entry = entry or {}
             label = (entry.get("icelandic_label") or "").strip() or None
@@ -186,6 +251,12 @@ def audit_attribute_catalog(
                     write_reaching=[f for f in WRITE_REACHING_FIELDS if entry.get(f)],
                     # Same label, different name — how a rename announces itself.
                     same_label_as=sorted(by_label.get(label, [])) if label else [],
+                    wrong_scope=schema_entry is not None,
+                    defined_for=(
+                        [str(t) for t in (schema_entry.get("entity_types") or [])]
+                        if schema_entry is not None
+                        else []
+                    ),
                 )
             )
     report.catalog_codes = len(catalog_all)

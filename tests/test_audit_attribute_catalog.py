@@ -37,10 +37,22 @@ def _catalog(tmp_path: Path, stations=None, devices=None, locations=None) -> Pat
 
 
 def _schema(**codes):
-    """`{code: {"label": ..., "entity_types": [...]}}` as the fetcher returns."""
+    """`{code: {"label": ..., "entity_types": [...]}}` as the fetcher returns.
+
+    Defaults to a code defined for every scope, so a test that does not care
+    about scope is not accidentally testing it.
+    """
     return {
-        code: {"label": label, "entity_types": [1]} for code, label in codes.items()
+        code: {
+            "label": label,
+            "entity_types": ["station", "device", "infrastructure", "location"],
+        }
+        for code, label in codes.items()
     }
+
+
+def _scoped_schema(code, label, entity_types):
+    return {code: {"label": label, "entity_types": list(entity_types)}}
 
 
 class TestPhantomDetection:
@@ -229,3 +241,66 @@ class TestReportShape:
 
     def test_empty_report_is_clean(self):
         assert not CatalogAuditReport().has_findings
+
+
+class TestScopeAwareness:
+    """TOS keys attributes by (code, entity_type) — bare membership is unsound.
+
+    A catalog entry naming a code TOS defines only for some OTHER entity type
+    is still wrong, and the bare-membership version of this verb called it
+    clean. That is the same class of miss the verb exists to catch, so it is
+    checked rather than assumed.
+    """
+
+    def test_code_defined_for_another_entity_type_is_still_phantom(self, tmp_path):
+        cat = _catalog(tmp_path, devices={"marker": {"icelandic_label": "Auðkenni"}})
+        report = audit_attribute_catalog(
+            _scoped_schema("marker", "Auðkenni", ["station"]), catalog_path=cat
+        )
+        assert [p.code for p in report.phantom] == ["marker"]
+        assert report.phantom[0].wrong_scope is True
+        assert report.phantom[0].defined_for == ["station"]
+
+    def test_code_defined_for_this_scope_is_clean(self, tmp_path):
+        cat = _catalog(tmp_path, stations={"marker": {}})
+        report = audit_attribute_catalog(
+            _scoped_schema("marker", "Auðkenni", ["station"]),
+            catalog_path=cat,
+            observed_codes={"marker"},
+        )
+        assert report.phantom == []
+
+    def test_devices_scope_spans_infrastructure(self, tmp_path):
+        """A monument is Innviði — entity type `infrastructure`, not `device`."""
+        cat = _catalog(tmp_path, devices={"subtype": {}})
+        report = audit_attribute_catalog(
+            _scoped_schema("subtype", "Undirtegund", ["infrastructure"]),
+            catalog_path=cat,
+            observed_codes={"subtype"},
+        )
+        assert report.phantom == []
+
+    def test_a_null_entity_type_satisfies_every_scope(self, tmp_path):
+        """`_resolve_id_attribute` rule 2 — a cross-scope catalog entry."""
+        cat = _catalog(tmp_path, locations={"anything": {}})
+        report = audit_attribute_catalog(
+            _scoped_schema("anything", "X", [None]),
+            catalog_path=cat,
+            observed_codes={"anything"},
+        )
+        assert report.phantom == []
+
+    def test_an_invented_name_is_phantom_but_not_wrong_scope(self, tmp_path):
+        """The two failures are distinct and get different remedies."""
+        cat = _catalog(tmp_path, stations={"ghost": {}})
+        report = audit_attribute_catalog(
+            _scoped_schema("marker", "Auðkenni", ["station"]), catalog_path=cat
+        )
+        assert report.phantom[0].wrong_scope is False
+        assert report.phantom[0].defined_for == []
+
+    def test_unknown_scope_is_not_flagged(self, tmp_path):
+        """An unmapped catalog key would otherwise report every code it holds."""
+        from tostools.audit_attribute_catalog import _defined_for_scope
+
+        assert _defined_for_scope({"entity_types": ["station"]}, "nonesuch") is True
