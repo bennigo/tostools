@@ -9543,6 +9543,8 @@ def _audit_main(argv):
                                 "severity": p.severity,
                                 "write_reaching": p.write_reaching,
                                 "same_label_as": p.same_label_as,
+                                "wrong_scope": p.wrong_scope,
+                                "defined_for": p.defined_for,
                             }
                             for p in report.phantom
                         ],
@@ -13077,6 +13079,15 @@ def _print_attribute_catalog_report(report) -> None:
                 )
                 gps = " (gps_relevance: yes)" if p.gps_relevant else ""
                 print(f"    {icons[p.severity]} {p.code:30s}{gps}{rename}")
+                if p.wrong_scope:
+                    # The code is real; the SCOPE is wrong. Renaming it would
+                    # not fix this, so say so rather than let it read as a
+                    # missing name.
+                    print(
+                        f"        WRONG SCOPE — TOS defines this code, but "
+                        f"only for {', '.join(p.defined_for) or '(no entity type)'}, "
+                        f"not for {scope}."
+                    )
                 if p.write_reaching:
                     print(
                         f"        WRITE PATH REACHES THIS via "
