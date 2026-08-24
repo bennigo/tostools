@@ -98,3 +98,28 @@ def test_contact_is_a_discoverable_selectors_topic():
         "contact.name",
         "contact.email",
     ]
+
+
+def test_org_term_expands_abbreviation(monkeypatch):
+    from tostools import search as sm
+
+    monkeypatch.setattr(
+        sm, "_org_aliases",
+        lambda: {"ies": "Jarðvísindastofnun Háskóla Íslands", "jhí": "Jarðvísindastofnun Háskóla Íslands"},
+    )
+    assert sm._expand_org_term("IES") == "Jarðvísindastofnun Háskóla Íslands"
+    assert sm._expand_org_term("jhí") == "Jarðvísindastofnun Háskóla Íslands"
+    # a plain substring passes through untouched
+    assert sm._expand_org_term("Háskóla") == "Háskóla"
+
+
+def test_owner_selector_accepts_abbreviation(monkeypatch):
+    from tostools import search as sm
+
+    monkeypatch.setattr(
+        sm, "_org_aliases",
+        lambda: {"ies": "Jarðvísindastofnun Háskóla Íslands"},
+    )
+    contacts = [_c(organization="Jarðvísindastofnun Háskóla Íslands")]
+    assert contacts_satisfy(contacts, [parse_expression("contact.owner ~ IES")])
+    assert not contacts_satisfy(contacts, [parse_expression("contact.owner !~ IES")])

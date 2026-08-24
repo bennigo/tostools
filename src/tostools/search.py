@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .utils.logging import get_logger
@@ -178,6 +180,10 @@ CONTACT_FIELD_CODES = ("organization", "name", "email")
 
 #: Every code the ``contact.`` namespace accepts.
 CONTACT_CODES = frozenset(CONTACT_ROLE_CODES + CONTACT_FIELD_CODES)
+
+#: The contact fields that read an ORGANISATION — these get abbreviation
+#: expansion (``contact.owner ~ IES`` resolves to the full org name).
+CONTACT_ORG_FIELDS = CONTACT_ROLE_CODES + ("organization",)
 
 #: Icelandic role keywords, matched as substrings of ``role_is``.
 _CONTACT_ROLE_KEYWORDS = {
@@ -978,6 +984,64 @@ def _contact_values(contacts: List[dict], code: str) -> List[str]:
     return out
 
 
+_ORG_ALIASES: Optional[Dict[str, str]] = None
+
+
+def _agencies_yaml_paths() -> List[Path]:
+    """Candidate agencies.yaml locations, deployed config first."""
+    paths: List[Path] = []
+    cfg = os.environ.get("GPS_CONFIG_PATH")
+    if cfg:
+        for d in cfg.split(":"):
+            if d:
+                paths.append(Path(d) / "agencies.yaml")
+    paths.append(Path.home() / ".config" / "gpsconfig" / "agencies.yaml")
+    paths.append(Path.home() / "git" / "gps-config-data" / "agencies.yaml")
+    return paths
+
+
+def _org_aliases() -> Dict[str, str]:
+    """``abbrev``/``abbrev_is`` (case-folded) → full Icelandic org name.
+
+    Read from ``agencies.yaml`` (deployed config first, then the repo) so
+    ``contact.owner ~ IES`` resolves to 'Jarðvísindastofnun Háskóla
+    Íslands' without the operator knowing the Icelandic inflection. Cached
+    per process; an absent/unreadable file degrades to no expansion.
+    """
+    global _ORG_ALIASES
+    if _ORG_ALIASES is not None:
+        return _ORG_ALIASES
+    mapping: Dict[str, str] = {}
+    for path in _agencies_yaml_paths():
+        try:
+            import yaml
+
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001 — optional enrichment
+            continue
+        for full, entry in (data.get("agencies") or {}).items():
+            entry = entry or {}
+            for key in ("abbrev", "abbrev_is"):
+                a = str(entry.get(key) or "").strip()
+                if a:
+                    mapping[norm_value(a)] = full
+        if mapping:
+            break  # first readable file with data wins
+    _ORG_ALIASES = mapping
+    return mapping
+
+
+def _expand_org_term(term: str) -> str:
+    """The full org name when ``term`` is its abbreviation, else unchanged.
+
+    ``contact.owner ~ IES`` → matches 'Jarðvísindastofnun Háskóla Íslands'
+    because 'IES' is its ``abbrev``; a plain substring ('Háskóla',
+    'Jarðvísinda') passes through untouched.
+    """
+    full = _org_aliases().get(norm_value(term))
+    return full if full else term
+
+
 def _existential_decision(values: List[str], pred: Predicate) -> bool:
     """Existential positive / universal negative / null presence, on a flat
     candidate-value list (contacts, or one visit's fields)."""
@@ -997,9 +1061,17 @@ def contacts_satisfy(contacts: List[dict], preds: List[Predicate]) -> bool:
     Each predicate is independent (role-scoped). Positive ops are
     existential over the scoped contacts; negative ops universal —
     ``contact.owner !~ Háskóli`` means 'the owner org does NOT match',
-    the inverse of the ``--owner`` include form.
+    the inverse of the ``--owner`` include form. Organisation terms get
+    abbreviation expansion, so ``contact.owner ~ IES`` matches the org
+    whose ``abbrev`` is 'IES'.
     """
     for p in preds:
+        term = p.value
+        if p.code in CONTACT_ORG_FIELDS and not is_null_term(term):
+            term = _expand_org_term(term)
+            p = Predicate(
+                code=p.code, op=p.op, value=term, values=p.values, namespace=p.namespace
+            )
         if not _existential_decision(_contact_values(contacts, p.code), p):
             return False
     return True
