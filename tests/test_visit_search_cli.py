@@ -106,3 +106,37 @@ def test_search_json_reports_matched_and_missing(capsys):
     assert payload["matched"] == 1
     assert payload["missing"] == 1
     assert payload["stations_without_match"] == ["hauc"]
+
+
+def test_search_scopes_by_positional_expression(capsys):
+    # A general station predicate narrows the visit search — not just --epos.
+    fleet = [
+        _entity("RHOF", epos=False, eid=1),
+        _entity("THOC", epos=False, eid=2),
+    ]
+    visits = {1: [_visit(1, "TOS reviewed")], 2: [_visit(2, "TOS reviewed")]}
+    rc, _ = _run("--work", "TOS reviewed", "--missing", "--markers-only",
+                 "marker = thoc", fleet=fleet, visits_map=visits)
+    assert rc == 0
+    # THOC has the visit, so --missing with 'marker = thoc' yields nothing;
+    # RHOF is excluded by the expression.
+    assert _markers_from_stdout(capsys) == []
+
+
+def test_search_scopes_by_sugar_flag(capsys):
+    # A sugar flag is a station predicate, not a visit filter: it must
+    # remove stations that fail it from scope before the visit match.
+    fleet = [
+        _entity("RHOF", epos=False, eid=1),
+        _entity("THOC", epos=False, eid=2),
+    ]
+    # RHOF is continuous → passes --continuous; THOC is not.
+    fleet[0]["attributes"].append(
+        {"code": "continuity", "value": "continuous", "date_from": "2020-01-01", "date_to": None}
+    )
+    visits = {2: [_visit(1, "TOS reviewed")]}  # THOC has the visit
+    rc, _ = _run("--work", "TOS reviewed", "--missing", "--continuous",
+                 "--markers-only", fleet=fleet, visits_map=visits)
+    assert rc == 0
+    # Only RHOF (continuous) is in scope and it lacks the visit.
+    assert _markers_from_stdout(capsys) == ["rhof"]

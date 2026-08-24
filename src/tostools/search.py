@@ -255,6 +255,33 @@ ACTIVE_GPS_PREDICATES = (
 )
 
 
+def sugar_predicates(args) -> List[Predicate]:
+    """Translate the shared sugar flags into attribute predicates.
+
+    ``--epos`` / ``--no-epos`` / ``--active-gps`` / ``--discontinued`` /
+    ``--continuous`` / ``--campaign`` / ``--no-ice`` — the one mapping every
+    scope-taking verb reads, so ``tos search`` and ``tos visit search``
+    (and future verbs) can't drift apart. Flags are read defensively via
+    ``getattr`` so a caller with only a subset still works.
+    """
+    preds: List[Predicate] = []
+    if getattr(args, "epos", False):
+        preds.append(Predicate(EPOS_CODE, "=", "true"))
+    if getattr(args, "no_epos", False):
+        preds.append(Predicate(EPOS_CODE, "!=", "true"))
+    if getattr(args, "active_gps", False):
+        preds.extend(ACTIVE_GPS_PREDICATES)
+    if getattr(args, "discontinued", False):
+        preds.append(Predicate("date_end", "!=", "null"))
+    if getattr(args, "continuous", False):
+        preds.append(Predicate("continuity", "=", "continuous"))
+    if getattr(args, "campaign", False):
+        preds.append(Predicate("continuity", "=", "campaign"))
+    if getattr(args, "no_ice", False):
+        preds.append(Predicate("geological_characteristic", "!=", "ice"))
+    return preds
+
+
 def parse_expression(expr: str) -> Predicate:
     """Parse ``'code OP value'`` into a :class:`Predicate`.
 

@@ -6217,9 +6217,56 @@ def _visit_main(argv):
         help="Restrict to a visit type (on_site / remote).",
     )
     p_search.add_argument(
+        "expressions",
+        nargs="*",
+        metavar="EXPRESSION",
+        help=(
+            "Station-attribute predicate 'code OP value' (OP = != ~ !~), "
+            "repeatable, AND-ed — the SAME scope language as 'tos search', "
+            "so any cross-check can be narrowed to a station subset: "
+            "'subtype = GPS stöð', 'marker ~ HVE*', 'station_status != "
+            "discontinued', etc."
+        ),
+    )
+    p_search.add_argument(
         "--epos",
         action="store_true",
-        help="Restrict to in_network_epos = true stations.",
+        help="Sugar for 'in_network_epos = true'.",
+    )
+    p_search.add_argument(
+        "--no-epos",
+        action="store_true",
+        help="Sugar for 'in_network_epos != true' (absent also counts).",
+    )
+    p_search.add_argument(
+        "--active-gps",
+        action="store_true",
+        help="Sugar for the operational IMO GNSS fleet (same as tos search).",
+    )
+    p_search.add_argument(
+        "--discontinued",
+        action="store_true",
+        help="Sugar for 'date_end != null' (station has an end date).",
+    )
+    p_search.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Sugar for 'continuity = continuous'.",
+    )
+    p_search.add_argument(
+        "--campaign",
+        action="store_true",
+        help="Sugar for 'continuity = campaign'.",
+    )
+    p_search.add_argument(
+        "--no-ice",
+        action="store_true",
+        help="Sugar for 'geological_characteristic != ice'.",
+    )
+    p_search.add_argument(
+        "--domain",
+        default="geophysical",
+        help="Station domain to search (default: geophysical).",
     )
     p_search.add_argument(
         "--missing",
@@ -6475,17 +6522,23 @@ def _visit_search_main(args) -> int:
     client = TOSClient(base_url=base_url)
 
     try:
-        fleet = search_mod.fetch_fleet(client, domain="geophysical")
+        fleet = search_mod.fetch_fleet(client, domain=args.domain)
     except Exception as exc:  # noqa: BLE001
         print(f"tos visit search: fleet fetch failed: {exc}", file=sys.stderr)
         return 1
 
-    if args.epos:
-        fleet = [
-            e
-            for e in fleet
-            if search_mod.open_value(e, "in_network_epos") == "true"
-        ]
+    # Scope by the same predicate language as `tos search` — positional
+    # expressions plus the shared sugar flags (--epos/--active-gps/...).
+    predicates = []
+    try:
+        for expr in args.expressions:
+            predicates.append(search_mod.parse_expression(expr))
+    except ValueError as exc:
+        print(f"tos visit search: {exc}", file=sys.stderr)
+        return 2
+    predicates.extend(search_mod.sugar_predicates(args))
+    if predicates:
+        fleet = search_mod.filter_by_predicates(fleet, predicates)
 
     needle = (args.work or "").lower()
     vtype = args.visit_type
@@ -6529,11 +6582,17 @@ def _visit_search_main(args) -> int:
 
     # Scope label for the summary + table title.
     scope = "EPOS " if args.epos else ""
+    if args.active_gps:
+        scope = "active-GPS "
+    if args.expressions:
+        scope = "scoped "
     constraint = []
     if needle:
         constraint.append(f"work ~ {args.work!r}")
     if vtype:
         constraint.append(f"type = {vtype}")
+    if args.expressions:
+        constraint.extend(args.expressions)
     con = f" ({', '.join(constraint)})" if constraint else " (any visit)"
 
     if args.json:
@@ -14870,22 +14929,7 @@ def _search_main(argv, profile=None):
                 )
             return 2
 
-    if args.epos:
-        predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "=", "true"))
-    if args.no_epos:
-        predicates.append(search_mod.Predicate(search_mod.EPOS_CODE, "!=", "true"))
-    if args.active_gps:
-        predicates.extend(search_mod.ACTIVE_GPS_PREDICATES)
-    if args.discontinued:
-        predicates.append(search_mod.Predicate("date_end", "!=", "null"))
-    if args.continuous:
-        predicates.append(search_mod.Predicate("continuity", "=", "continuous"))
-    if args.campaign:
-        predicates.append(search_mod.Predicate("continuity", "=", "campaign"))
-    if args.no_ice:
-        predicates.append(
-            search_mod.Predicate("geological_characteristic", "!=", "ice")
-        )
+    predicates.extend(search_mod.sugar_predicates(args))
 
     # Scope: ONLY a profile pins a subtype. Plain `tos search` is the entity
     # layer and is deliberately unconstrained — it predates `tosGPS search`,
