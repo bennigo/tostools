@@ -36,8 +36,9 @@ logger = get_logger(__name__, logging.WARNING)
 #: What ``--selectors`` accepts besides a device-subtype alias.
 TOPIC_STATION = "station"
 TOPIC_SUBTYPES = "subtypes"
+TOPIC_VISIT = "visit"
 TOPIC_ALL = "all"
-TOPICS = (TOPIC_STATION, TOPIC_SUBTYPES, TOPIC_ALL)
+TOPICS = (TOPIC_STATION, TOPIC_SUBTYPES, TOPIC_VISIT, TOPIC_ALL)
 
 
 @dataclass
@@ -341,6 +342,29 @@ def subtypes_group(observed: Optional[Dict[str, int]] = None) -> SelectorGroup:
         title="device subtypes — the namespace before the dot",
         entries=entries,
         note="list one subtype's attributes with: tos search --selectors <subtype>",
+    )
+
+
+def visit_group() -> SelectorGroup:
+    """The ``visit.`` selector vocabulary (vitjanir records).
+
+    A fixed list, not catalog-driven — visits are a cross-cutting record
+    kind, not a station/device attribute the catalog classifies.
+    """
+    entries = [
+        SelectorEntry("visit.work", "work note (Vinna / Framkvæmt)"),
+        SelectorEntry("visit.comment", "comment note (Athugasemdir)"),
+        SelectorEntry("visit.remaining", "outstanding work (Útistandandi)"),
+        SelectorEntry(
+            "visit.all",
+            "any of work/comment/remaining (aliases: visit.any, visit.text)",
+        ),
+        SelectorEntry("visit.type", "maintenance type (= on_site / remote)"),
+        SelectorEntry("visit.participants", "participant email or resolved name"),
+    ]
+    return SelectorGroup(
+        title="visit selectors — vitjanir, e.g. 'visit.all ~ \"TOS reviewed\"'",
+        entries=entries,
     )
 
 

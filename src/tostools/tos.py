@@ -5971,10 +5971,18 @@ def _visit_main(argv, profile=None):
             "  list --station S        Vitjanir attached to station S.\n"
             "  list --device <id>      Vitjanir attached to a device by id_entity.\n"
             "  list --entity <id>      Escape hatch — any entity by id_entity.\n"
-            "  show <id_maintenance>   One vitjun's full detail.\n\n"
+            "  show <id_maintenance>   One vitjun's full detail.\n"
+            "  add ...                 Create a new vitjun (dry-run by default).\n"
+            "  search --work TEXT      Fleet-wide free-text search.\n\n"
             "List accepts the standard visit-filter set: --type, "
             "--reason (repeatable), --since DATE, --participants SUBSTR, "
-            "--open / --completed."
+            "--open / --completed.\n\n"
+            "TIP: for a FLEET cross-check, the visit.* selectors in "
+            "'tos search' are the primary form —\n"
+            "  tos search --epos 'visit.all ~ \"TOS reviewed\"'   # onboarded\n"
+            "  tos search --epos 'visit.all !~ \"TOS reviewed\"'  # still to do\n"
+            "'tos visit search' lists the matching VISIT rows (id + date) "
+            "for drill-down.\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -6200,7 +6208,13 @@ def _visit_main(argv, profile=None):
             "--missing it lists the stations that HAVE a match.\n\n"
             "--work and --type are optional and AND-ed; with neither, any "
             "visit matches (so --missing means 'stations with no visits "
-            "at all')."
+            "at all').\n\n"
+            "TIP: for a station-level YES/NO cross-check, the visit.* "
+            "selectors in 'tos search' are the primary form —\n"
+            "  tos search --epos 'visit.all ~ \"TOS reviewed\"'   # onboarded\n"
+            "  tos search --epos 'visit.all !~ \"TOS reviewed\"'  # still to do\n"
+            "This verb lists the matching VISIT rows (id + date) instead, "
+            "for drill-down."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -14640,6 +14654,11 @@ def _search_main(argv, profile=None):
             "  tos search --device router:any --device sim:any\n"
             "  tos search --no-receiver --markers-only   # fleet hygiene\n"
             "  tos search --json --epos > epos.json\n"
+            "  tos search --epos 'visit.all ~ \"TOS reviewed\"'   # onboarded\n"
+            "  tos search --epos 'visit.all !~ \"TOS reviewed\"'  # still to do\n"
+            "  tos search 'visit.type = remote' 'visit.participants ~ bgo'\n"
+            "  tos search 'visit.remaining != null'    # stations with open items\n"
+            "  tos search 'visit.work ~ re:TOS (reviewed|corrected)'\n"
             "\n"
             "DISCOVERY (before writing a predicate):\n"
             "  tos search --attribute-list          # what codes exist\n"
@@ -15387,6 +15406,7 @@ def _selectors_main(args, profile=None) -> int:
         print("tos search --selectors WHAT — ask for one of:\n")
         print(f"  {'station':<12} station attributes (use bare)")
         print(f"  {'subtypes':<12} device subtypes (the namespace before the dot)")
+        print(f"  {'visit':<12} vitjanir record selectors (use as 'visit.<code>')")
         for subtype in sel.canonical_subtypes():
             alias = sel.aliases_for(subtype)[0]
             print(f"  {alias:<12} {subtype} attributes (use as '{alias}.<code>')")
@@ -15446,6 +15466,8 @@ def _selectors_main(args, profile=None) -> int:
                 sel.observed_subtypes(observed_devices) if observed_devices else None
             )
         )
+    if topic in (sel.TOPIC_VISIT, sel.TOPIC_ALL):
+        groups.append(sel.visit_group())
     if topic == sel.TOPIC_ALL:
         # Under a profile, only the subtypes it actually curates.
         for subtype in profile.subtypes() if profile else sel.canonical_subtypes():
@@ -15461,7 +15483,7 @@ def _selectors_main(args, profile=None) -> int:
                     profile=profile,
                 )
             )
-    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES):
+    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES, sel.TOPIC_VISIT):
         groups.append(
             sel.device_group(
                 topic,

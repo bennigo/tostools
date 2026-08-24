@@ -117,3 +117,19 @@ def test_visit_work_null_is_universal_absence():
 def test_visit_regex():
     visits = [_v(work="TOS reviewed and corrected")]
     assert visits_satisfy(visits, [parse_expression("visit.work ~ re:TOS (reviewed|corrected)")])
+
+
+def test_visit_is_a_discoverable_selectors_topic():
+    from tostools import search_selectors as sel
+
+    assert sel.resolve_topic("visit") == sel.TOPIC_VISIT
+    group = sel.visit_group()
+    selectors = [e.selector for e in group.entries]
+    assert selectors == [
+        "visit.work",
+        "visit.comment",
+        "visit.remaining",
+        "visit.all",
+        "visit.type",
+        "visit.participants",
+    ]
