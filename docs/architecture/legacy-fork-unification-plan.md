@@ -90,8 +90,26 @@ Check the call path, not the diff, before acting on any of these:
   the constellations and `azimuth` itself; its own comment says it "Mirrors the
   legacy `gps_metadata_qc.device_attribute_history` key_list". So the attribute
   list now exists in **two** places that must be changed together, and the
-  top-level `device_attribute_history` is short only on the **deprecated**
-  `gps_metadata` chain (the `--use-legacy-synthesis` opt-out).
+  top-level `device_attribute_history` is short only on the ~~**deprecated**
+  `gps_metadata` chain (the `--use-legacy-synthesis` opt-out)~~.
+
+  **Wrong, and the error propagated into step 2's commit message — corrected
+  2026-08-24.** `gps_metadata` is not just a deprecated opt-out. It has **four**
+  production consumers, and they are the TOS-metadata → re-rinex → fix-headers →
+  EPOS pipeline:
+
+  | consumer | what it does |
+  |---|---|
+  | `rinex/corrector.py:410` | the archive header retrofit (`--fix-headers`) |
+  | `gps_rinex.py:992` | RINEX QC / inconsistency report |
+  | `tosGPS.py:1414` | `timespan` — TOS dates vs archive |
+  | `tosGPS.py:2096` | GAMIT `station.info` |
+
+  None of them reads a constellation or `azimuth` field (0 occurrences across
+  all three files). **This chain resolves EQUIPMENT ERAS, and a constellation
+  boundary is not an era boundary** — so the wide site-log list is not merely
+  unnecessary here, it is harmful, and `get_device_sessions` now pins
+  `codes=LEGACY_GPS_ATTRIBUTE_CODES` at the call site (`8fa822c`).
 
   The merge job here is therefore to collapse the mirrored list onto
   `devices.SITELOG_GPS_ATTRIBUTE_CODES`, not to "restore missing attributes".
@@ -222,6 +240,33 @@ is the `get_logger` shim, so that one is a safe swap.
    assertions were written to the overstated claim and are kept, relabelled, as
    a check that the two session producers stay interchangeable at the renderer's
    input.
+
+   **Step 2 shipped with a regression, fixed in `8fa822c` — read this before
+   changing any `codes` default.** Making the wide set the DEFAULT was right for
+   the site-log direction and wrong for the era-resolution direction, and the
+   commit message named only the deprecated opt-out as affected. It also reached
+   `--fix-headers`, `gps_rinex`, `tosGPS timespan` and GAMIT `station.info` (see
+   the corrected `device_attribute_history` entry above). Two harms:
+
+   - `station.info` — a constellation split is a spurious duplicate occupation.
+   - `--fix-headers` — silent. A widened list moves session boundaries; via
+     Bug 1 a mid-tenure toggle can move a session start onto the toggle date and
+     drop the earlier window, after which `corrector` finds no session covering
+     an older file and falls back to `device_history[-1]`, the **most recent**
+     equipment — the wrong era, written into a historical RINEX header, with no
+     error.
+
+   Exposure was checked before fixing rather than assumed: `tostools` is
+   editable-installed, so the widening was live ~40 minutes. No `--fix-headers`,
+   re-rinex or `gps_rinex` process ran, no retrofit log since 2026-08-21, no
+   staging trees; the single artifact written in the window
+   (`gps-sitelogs/vmos00isl_20260823.log`) is correct. **No data needs
+   re-correcting.**
+
+   The fix is a `codes=` pin at the call site, not a reverted default — the
+   site-log direction still needs the wide set. Both directions now carry a
+   guard, because an argument at a call site is protected by nothing else:
+   `tests/test_era_resolution_uses_narrow_codes.py`.
 
    One measured behaviour worth carrying into F2: `codes` is not just a filter.
    It gates `if item["code"] in key_list`, so a widened list lets more attribute
