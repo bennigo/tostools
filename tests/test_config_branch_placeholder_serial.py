@@ -29,7 +29,12 @@ from tostools.rinex.corrector import _get_corrections_from_config
 
 def _cfg(serial, ant_type="SEPCHOKE_B3E6", radome="SPKE"):
     return {
-        "antenna": {"serial": serial, "type": ant_type, "radome": radome, "height": 0.999},
+        "antenna": {
+            "serial": serial,
+            "type": ant_type,
+            "radome": radome,
+            "height": 0.999,
+        },
         "receiver": {},
         "rinex": {},
         "station": {},
@@ -52,32 +57,55 @@ class TestAPlaceholderNeverReachesTheHeader:
         ],
     )
     def test_it_is_replaced_with_0000(self, serial):
-        field = _ant_field(_get_corrections_from_config("THOB", _cfg(serial), logging.getLogger("t")))
+        field = _ant_field(
+            _get_corrections_from_config("THOB", _cfg(serial), logging.getLogger("t"))
+        )
         assert field is not None
         assert field[0] == "0000"
 
     def test_a_real_serial_is_untouched(self):
-        field = _ant_field(_get_corrections_from_config("THOB", _cfg("1441137916"), logging.getLogger("t")))
+        field = _ant_field(
+            _get_corrections_from_config(
+                "THOB", _cfg("1441137916"), logging.getLogger("t")
+            )
+        )
         assert field[0] == "1441137916"
 
     def test_the_antenna_type_survives_a_suppressed_serial(self):
         # Gating the whole field on the serial would drop TYPE and RADOME too —
         # a worse header than a blank serial.
-        field = _ant_field(_get_corrections_from_config("THOB", _cfg("antenna-thob-20200128"), logging.getLogger("t")))
+        field = _ant_field(
+            _get_corrections_from_config(
+                "THOB", _cfg("antenna-thob-20200128"), logging.getLogger("t")
+            )
+        )
         assert "SEPCHOKE_B3E6" in field[1]
         assert "SPKE" in field[1]
 
     def test_no_serial_but_a_type_still_emits(self):
-        field = _ant_field(_get_corrections_from_config("THOB", _cfg(""), logging.getLogger("t")))
+        field = _ant_field(
+            _get_corrections_from_config("THOB", _cfg(""), logging.getLogger("t"))
+        )
         assert field is not None
         assert field[0] == "0000"
         assert "SEPCHOKE_B3E6" in field[1]
 
     def test_neither_serial_nor_type_emits_nothing(self):
         # Must not stamp a bare 0000 onto a station with no antenna configured.
-        assert _ant_field(_get_corrections_from_config("THOB", _cfg("", ant_type=""), logging.getLogger("t"))) is None
+        assert (
+            _ant_field(
+                _get_corrections_from_config(
+                    "THOB", _cfg("", ant_type=""), logging.getLogger("t")
+                )
+            )
+            is None
+        )
 
     def test_the_written_field_fits_the_a20_column(self):
         # The failure was a width overflow, so assert the width directly.
-        field = _ant_field(_get_corrections_from_config("THOB", _cfg("antenna-thob-20200128"), logging.getLogger("t")))
+        field = _ant_field(
+            _get_corrections_from_config(
+                "THOB", _cfg("antenna-thob-20200128"), logging.getLogger("t")
+            )
+        )
         assert len(field[0]) <= 20

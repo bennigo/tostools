@@ -40,20 +40,14 @@ class TestClosesTheOpenPeriod:
             ]
         )
         assert w.close_attribute_period(4527, "antenna_height", "2026-07-30")
-        w.patch_attribute_value.assert_called_once_with(
-            113122, date_to="2026-07-30"
-        )
+        w.patch_attribute_value.assert_called_once_with(113122, date_to="2026-07-30")
 
     def test_falls_back_to_the_id_key(self):
         """TOS returns the row id as `id` on some endpoints, `id_attribute_value`
         on others."""
-        w = _writer_with(
-            [{"id": 113122, "date_from": "2002-01-09", "date_to": None}]
-        )
+        w = _writer_with([{"id": 113122, "date_from": "2002-01-09", "date_to": None}])
         w.close_attribute_period(4527, "antenna_height", "2026-07-30")
-        w.patch_attribute_value.assert_called_once_with(
-            113122, date_to="2026-07-30"
-        )
+        w.patch_attribute_value.assert_called_once_with(113122, date_to="2026-07-30")
 
     def test_picks_the_latest_open_period_when_several_exist(self):
         """The invariant is one open period per code, but a corrupt entity must
@@ -80,7 +74,9 @@ class TestClosesTheOpenPeriod:
 
 class TestRefusesToCreateAnInvalidPeriod:
     def test_no_open_period_is_a_no_op(self):
-        w = _writer_with([{"id": 1, "date_from": "2002-01-09", "date_to": "2010-01-01"}])
+        w = _writer_with(
+            [{"id": 1, "date_from": "2002-01-09", "date_to": "2010-01-01"}]
+        )
         assert w.close_attribute_period(4527, "antenna_height", "2026-07-30") is None
         w.patch_attribute_value.assert_not_called()
 
