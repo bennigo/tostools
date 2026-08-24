@@ -163,6 +163,30 @@ VISIT_STRUCTURED_FIELDS = ("type", "participants")
 VISIT_CODES = frozenset(VISIT_TEXT_FIELDS + VISIT_ALL_ALIASES + VISIT_STRUCTURED_FIELDS)
 
 
+#: The contact selector namespace — a FOURTH selector kind. A station's
+#: contacts (Eigandi stöðvar / Rekstraraðili / Eigandi gagna) carry the
+#: owner/operator organisation that the ``owner`` attribute does NOT — that
+#: is why filtering 'UI stations' (Jarðvísindastofnun Háskóla Íslands) needs
+#: this, not ``owner ~ ...``.
+CONTACT_NAMESPACE = "contact"
+
+#: Role-scoped selectors — match only contacts playing that role.
+CONTACT_ROLE_CODES = ("owner", "operator", "data_owner")
+
+#: Field selectors — match the field across every contact.
+CONTACT_FIELD_CODES = ("organization", "name", "email")
+
+#: Every code the ``contact.`` namespace accepts.
+CONTACT_CODES = frozenset(CONTACT_ROLE_CODES + CONTACT_FIELD_CODES)
+
+#: Icelandic role keywords, matched as substrings of ``role_is``.
+_CONTACT_ROLE_KEYWORDS = {
+    "owner": ("eigandi stöðvar",),
+    "operator": ("rekstraraðili",),
+    "data_owner": ("eigandi gagna",),
+}
+
+
 def parse_selector(raw: str) -> tuple:
     """Split ``'code'`` or ``'namespace.code'`` into ``(namespace, code)``.
 
@@ -199,6 +223,13 @@ def parse_selector(raw: str) -> tuple:
                 + ", ".join(sorted(VISIT_CODES))
             )
         return VISIT_NAMESPACE, code
+    if ns == CONTACT_NAMESPACE:
+        if code not in CONTACT_CODES:
+            raise ValueError(
+                f"unknown contact field {code!r} in {raw!r} — valid: "
+                + ", ".join(sorted(CONTACT_CODES))
+            )
+        return CONTACT_NAMESPACE, code
     # DEVICE_SUBTYPE_ALIASES is defined further down (device-spec section);
     # module globals resolve at call time, so the forward reference is fine.
     if ns not in DEVICE_SUBTYPE_ALIASES:
@@ -908,6 +939,103 @@ def walk_visits(
 
 
 # ---------------------------------------------------------------------------
+# Contact (eigandi/operator) predicates — the fourth selector kind
+# ---------------------------------------------------------------------------
+
+
+def _contact_role(contact: dict, code: str) -> bool:
+    """Whether a contact plays the role a role-scoped selector names.
+
+    Field selectors (``organization``/``name``/``email``) match every
+    contact, so this returns True for them.
+    """
+    if code not in CONTACT_ROLE_CODES:
+        return True
+    role = str(contact.get("role_is") or contact.get("role") or "").lower()
+    return any(kw in role for kw in _CONTACT_ROLE_KEYWORDS[code])
+
+
+def _contact_field(contact: dict, code: str) -> Optional[str]:
+    """The value a contact selector reads for one contact.
+
+    Role-scoped selectors read the ORGANISATION (the agencies.yaml key);
+    field selectors read the named field.
+    """
+    if code in CONTACT_ROLE_CODES:
+        return contact.get("organization") or contact.get("name")
+    return contact.get(code)
+
+
+def _contact_values(contacts: List[dict], code: str) -> List[str]:
+    """Candidate values for one contact selector across the contact list."""
+    out: List[str] = []
+    for c in contacts:
+        if not _contact_role(c, code):
+            continue
+        v = _contact_field(c, code)
+        if v:
+            out.append(str(v))
+    return out
+
+
+def _existential_decision(values: List[str], pred: Predicate) -> bool:
+    """Existential positive / universal negative / null presence, on a flat
+    candidate-value list (contacts, or one visit's fields)."""
+    if pred.op == "=" and is_null_term(pred.value):
+        return not values  # absent everywhere
+    if pred.op == "!=" and is_null_term(pred.value):
+        return bool(values)  # present somewhere
+    if pred.op in ("=", "~", "in"):
+        return values_satisfy(values, pred)
+    inv = _negate_predicate(pred)
+    return not values_satisfy(values, inv)
+
+
+def contacts_satisfy(contacts: List[dict], preds: List[Predicate]) -> bool:
+    """Evaluate contact selectors against a station's contact list.
+
+    Each predicate is independent (role-scoped). Positive ops are
+    existential over the scoped contacts; negative ops universal —
+    ``contact.owner !~ Háskóli`` means 'the owner org does NOT match',
+    the inverse of the ``--owner`` include form.
+    """
+    for p in preds:
+        if not _existential_decision(_contact_values(contacts, p.code), p):
+            return False
+    return True
+
+
+def walk_contacts(
+    client: Any,
+    station_ids: List[int],
+    *,
+    max_workers: int = 8,
+    progress: Optional[Callable[[int, int], None]] = None,
+) -> Dict[int, List[dict]]:
+    """Contacts for many stations, walked on a thread pool.
+
+    A failed station (TOS error) yields an empty list + a warning, never
+    an abort. Returns ``{id_entity: [contact, ...]}``.
+    """
+    out: Dict[int, List[dict]] = {}
+    ids = list(station_ids)
+    if not ids:
+        return out
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(client.get_contacts, sid): sid for sid in ids}
+        for done, fut in enumerate(as_completed(futures), 1):
+            sid = futures[fut]
+            try:
+                out[sid] = fut.result() or []
+            except Exception as exc:  # noqa: BLE001 — per-station isolation
+                logger.warning("contact walk failed for id_entity=%s: %s", sid, exc)
+                out[sid] = []
+            if progress is not None:
+                progress(done, len(ids))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Attribute discovery (—-attribute-list / --allowed-values)
 # ---------------------------------------------------------------------------
 
@@ -1090,6 +1218,7 @@ class SearchResult:
     device_must_not: List[DeviceSpec] = field(default_factory=list)
     devices_by_id: Dict[int, List[dict]] = field(default_factory=dict)
     visits_by_id: Dict[int, List[dict]] = field(default_factory=dict)
+    contacts_by_id: Dict[int, List[dict]] = field(default_factory=dict)
     at: Optional[str] = None
     history: bool = False
 
@@ -1119,12 +1248,13 @@ class SearchResult:
     def device_columns(self) -> List[tuple]:
         """DEVICE columns as ``(namespace, code)``: predicates + --show.
 
-        Visit selectors are excluded — they are filters, not projection
-        columns (``--show visit.*`` is not yet a thing).
+        Visit and contact selectors are excluded — they are filters, not
+        projection columns (``--show visit.*`` / ``--show contact.*`` are
+        not yet a thing).
         """
         cols: List[tuple] = []
         for pred in self.predicates:
-            if pred.namespace is not None and pred.namespace != VISIT_NAMESPACE:
+            if pred.namespace is not None and pred.namespace not in (VISIT_NAMESPACE, CONTACT_NAMESPACE):
                 pair = (pred.namespace, pred.code)
                 if pair not in cols:
                     cols.append(pair)
@@ -1132,7 +1262,7 @@ class SearchResult:
             if "." not in raw:
                 continue
             pair = parse_selector(raw)
-            if pair[0] == VISIT_NAMESPACE:
+            if pair[0] in (VISIT_NAMESPACE, CONTACT_NAMESPACE):
                 continue
             if pair not in cols:
                 cols.append(pair)
@@ -1220,9 +1350,10 @@ def search_stations(
     # predicates can only be evaluated after it.
     station_preds = [p for p in predicates if p.namespace is None]
     device_preds = [
-        p for p in predicates if p.namespace is not None and p.namespace != VISIT_NAMESPACE
+        p for p in predicates if p.namespace is not None and p.namespace not in (VISIT_NAMESPACE, CONTACT_NAMESPACE)
     ]
     visit_preds = [p for p in predicates if p.namespace == VISIT_NAMESPACE]
+    contact_preds = [p for p in predicates if p.namespace == CONTACT_NAMESPACE]
 
     at = as_day(at)
     fleet = fetch_fleet(client, domain=domain)
@@ -1247,10 +1378,26 @@ def search_stations(
             if visits_satisfy(visits_by_id.get(s.get("id_entity"), []), visit_preds)
         ]
 
+    # A contact selector walks the contact list (owner/operator orgs).
+    contacts_by_id: Dict[int, List[dict]] = {}
+    if contact_preds:
+        contacts_by_id = walk_contacts(
+            client,
+            [s.get("id_entity") for s in survivors if s.get("id_entity")],
+            max_workers=max_workers,
+            progress=progress,
+        )
+        survivors = [
+            s
+            for s in survivors
+            if contacts_satisfy(contacts_by_id.get(s.get("id_entity"), []), contact_preds)
+        ]
+
     # A device selector needs the walk even with no --device/--receiver
     # filter — projecting receiver.firmware_version is reason enough.
     show_needs_devices = any(
-        "." in c and not c.startswith(VISIT_NAMESPACE + ".") for c in raw_show
+        "." in c and not c.startswith((VISIT_NAMESPACE + ".", CONTACT_NAMESPACE + "."))
+        for c in raw_show
     )
     need_devices = bool(
         device_must or device_must_not or device_preds or show_needs_devices
@@ -1303,6 +1450,7 @@ def search_stations(
         device_must_not=device_must_not,
         devices_by_id=devices_by_id,
         visits_by_id=visits_by_id,
+        contacts_by_id=contacts_by_id,
         at=at,
         history=history,
     )

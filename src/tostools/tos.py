@@ -14620,6 +14620,17 @@ def _search_main(argv, profile=None):
             "the vitjun list — one call per station, after station\n"
             "predicates have pruned the fleet.\n"
             "\n"
+            "CONTACT SELECTORS (owner / operator / data-owner organisations):\n"
+            "  contact.owner ~ TEXT       owner org (Eigandi stöðvar) matches\n"
+            "  contact.operator ~ TEXT    operator org (Rekstraraðili)\n"
+            "  contact.data_owner ~ TEXT  data-owner org (Eigandi gagna)\n"
+            "  contact.organization ~ TEXT any contact's organisation\n"
+            "  contact.name / contact.email  ... name / email ...\n"
+            "The owner org is the CONTACT role, NOT the 'owner' attribute "
+            "(which only carries IMO/Cambridge/Czech/ÍSOR) — so exclude the "
+            "IES stations with 'contact.owner !~ Háskóli' or "
+            "--no-owner Háskóli. A contact selector walks the contact list.\n"
+            "\n"
             "Expressions test the currently-open attribute period — the\n"
             "value the TOS UI's Eigindi panel shows today.\n"
             "\n"
@@ -14659,6 +14670,9 @@ def _search_main(argv, profile=None):
             "  tos search 'visit.type = remote' 'visit.participants ~ bgo'\n"
             "  tos search 'visit.remaining != null'    # stations with open items\n"
             "  tos search 'visit.work ~ re:TOS (reviewed|corrected)'\n"
+            "  tos search --epos 'contact.owner !~ Háskóli'  # exclude IES\n"
+            "  tos search --no-owner Háskóli                # same, as a flag\n"
+            "  tos search --owner Cambridge                 # only Cambridge-owned\n"
             "\n"
             "DISCOVERY (before writing a predicate):\n"
             "  tos search --attribute-list          # what codes exist\n"
@@ -14751,6 +14765,28 @@ def _search_main(argv, profile=None):
         default=None,
         metavar="[TYPE:]MODEL",
         help="Negated --device (must NOT have). Repeatable (AND).",
+    )
+    p.add_argument(
+        "--owner",
+        action="append",
+        default=None,
+        metavar="ORG",
+        help=(
+            "Owner contact's organisation contains ORG (substring) — sugar "
+            "for 'contact.owner ~ ORG'. The owner org is the CONTACT role "
+            "(Eigandi stöðvar), not the 'owner' attribute. Repeatable (AND)."
+        ),
+    )
+    p.add_argument(
+        "--no-owner",
+        action="append",
+        default=None,
+        metavar="ORG",
+        help=(
+            "Negated --owner (owner org does NOT contain ORG) — sugar for "
+            "'contact.owner !~ ORG'. Use to EXCLUDE an agency, e.g. "
+            "--no-owner Háskóli for the IES stations."
+        ),
     )
     p.add_argument(
         "--show",
@@ -14996,13 +15032,14 @@ def _search_main(argv, profile=None):
         offenders = [
             (p.namespace, p.code, p.selector)
             for p in predicates
-            if p.namespace != search_mod.VISIT_NAMESPACE
+            if p.namespace not in (search_mod.VISIT_NAMESPACE, search_mod.CONTACT_NAMESPACE)
             and not profile.allows(p.namespace, p.code)
         ] + [
             (ns, code, raw)
             for raw in show_codes
             for ns, code in [search_mod.parse_selector(raw)]
-            if ns != search_mod.VISIT_NAMESPACE and not profile.allows(ns, code)
+            if ns not in (search_mod.VISIT_NAMESPACE, search_mod.CONTACT_NAMESPACE)
+            and not profile.allows(ns, code)
         ]
         if offenders:
             for ns, code, raw in offenders:
@@ -15013,6 +15050,14 @@ def _search_main(argv, profile=None):
             return 2
 
     predicates.extend(search_mod.sugar_predicates(args))
+    for org in args.owner or []:
+        predicates.append(
+            search_mod.Predicate("owner", "~", org, namespace=search_mod.CONTACT_NAMESPACE)
+        )
+    for org in args.no_owner or []:
+        predicates.append(
+            search_mod.Predicate("owner", "!~", org, namespace=search_mod.CONTACT_NAMESPACE)
+        )
 
     # Scope: ONLY a profile pins a subtype. Plain `tos search` is the entity
     # layer and is deliberately unconstrained — it predates `tosGPS search`,
@@ -15407,6 +15452,7 @@ def _selectors_main(args, profile=None) -> int:
         print(f"  {'station':<12} station attributes (use bare)")
         print(f"  {'subtypes':<12} device subtypes (the namespace before the dot)")
         print(f"  {'visit':<12} vitjanir record selectors (use as 'visit.<code>')")
+        print(f"  {'contact':<12} owner/operator org selectors (use as 'contact.<code>')")
         for subtype in sel.canonical_subtypes():
             alias = sel.aliases_for(subtype)[0]
             print(f"  {alias:<12} {subtype} attributes (use as '{alias}.<code>')")
@@ -15468,6 +15514,8 @@ def _selectors_main(args, profile=None) -> int:
         )
     if topic in (sel.TOPIC_VISIT, sel.TOPIC_ALL):
         groups.append(sel.visit_group())
+    if topic in (sel.TOPIC_CONTACT, sel.TOPIC_ALL):
+        groups.append(sel.contact_group())
     if topic == sel.TOPIC_ALL:
         # Under a profile, only the subtypes it actually curates.
         for subtype in profile.subtypes() if profile else sel.canonical_subtypes():
@@ -15483,7 +15531,7 @@ def _selectors_main(args, profile=None) -> int:
                     profile=profile,
                 )
             )
-    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES, sel.TOPIC_VISIT):
+    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES, sel.TOPIC_VISIT, sel.TOPIC_CONTACT):
         groups.append(
             sel.device_group(
                 topic,

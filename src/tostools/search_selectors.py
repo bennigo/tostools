@@ -37,8 +37,9 @@ logger = get_logger(__name__, logging.WARNING)
 TOPIC_STATION = "station"
 TOPIC_SUBTYPES = "subtypes"
 TOPIC_VISIT = "visit"
+TOPIC_CONTACT = "contact"
 TOPIC_ALL = "all"
-TOPICS = (TOPIC_STATION, TOPIC_SUBTYPES, TOPIC_VISIT, TOPIC_ALL)
+TOPICS = (TOPIC_STATION, TOPIC_SUBTYPES, TOPIC_VISIT, TOPIC_CONTACT, TOPIC_ALL)
 
 
 @dataclass
@@ -364,6 +365,27 @@ def visit_group() -> SelectorGroup:
     ]
     return SelectorGroup(
         title="visit selectors — vitjanir, e.g. 'visit.all ~ \"TOS reviewed\"'",
+        entries=entries,
+    )
+
+
+def contact_group() -> SelectorGroup:
+    """The ``contact.`` selector vocabulary (owner/operator orgs).
+
+    Fixed, like :func:`visit_group` — contacts are a cross-cutting record
+    kind (the agencies.yaml owner/operator/data-owner roles), not a
+    station/device attribute the catalog classifies.
+    """
+    entries = [
+        SelectorEntry("contact.owner", "owner org (Eigandi stöðvar)"),
+        SelectorEntry("contact.operator", "operator org (Rekstraraðili)"),
+        SelectorEntry("contact.data_owner", "data-owner org (Eigandi gagna)"),
+        SelectorEntry("contact.organization", "any contact's organisation"),
+        SelectorEntry("contact.name", "any contact's name"),
+        SelectorEntry("contact.email", "any contact's email"),
+    ]
+    return SelectorGroup(
+        title="contact selectors — owner/operator orgs, e.g. 'contact.owner ~ Háskóli'",
         entries=entries,
     )
 
