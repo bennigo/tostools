@@ -2002,3 +2002,28 @@ class TestStationCodeValidation:
             st["attributes"].append(_attr("date_end", None))
         rc, _ = _run_cli(["--active-gps", "--markers-only"], fleet, capsys=capsys)
         assert rc == 0
+
+    def test_snapshot_replay_validates_against_the_whole_fleet(self, tmp_path):
+        """A narrow query still snapshots the FULL bulk listing.
+
+        Filtering is client-side, so ``list_stations`` is recorded whole
+        regardless of how few stations the query kept. Validation on replay
+        therefore sees the same vocabulary as a live run. If snapshots ever
+        start recording a filtered listing, replaying an unrelated predicate
+        would refuse a real code — this pins the property that prevents it.
+        """
+        from tostools.api.client_cache import CachingClient, SnapshotClient
+
+        fleet = self._fleet()
+        cached = CachingClient(
+            FakeClient(fleet), ttl=0, enabled=False, server="fake:443"
+        )
+        cached.list_stations(domain="geophysical")
+        snap = tmp_path / "narrow.json"
+        cached.write_snapshot(snap, criteria=["marker = vmey"], domain="geophysical")
+
+        replayed = SnapshotClient.load(snap).list_stations(domain="geophysical")
+        assert len(replayed) == len(fleet)
+        assert known_station_codes(replayed, catalog_codes=[]) == known_station_codes(
+            fleet, catalog_codes=[]
+        )
