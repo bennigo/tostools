@@ -142,6 +142,27 @@ class UnsupportedSelector(ValueError):
     """
 
 
+#: The visit (vitjun) selector namespace — a THIRD selector kind alongside
+#: station attributes (bare code) and device selectors (dotted). A visit is
+#: a list-per-entity of maintenance records, so visit predicates are
+#: existential over the entity's visit list (see :func:`visits_satisfy`).
+VISIT_NAMESPACE = "visit"
+
+#: Free-text note fields a visit carries; ``visit.all`` (aliases ``any`` /
+#: ``text``) matches when ANY of these match.
+VISIT_TEXT_FIELDS = ("work", "comment", "remaining")
+
+#: Aliases for the "search across every note field" selector.
+VISIT_ALL_ALIASES = ("all", "any", "text")
+
+#: Structured (non-text) visit fields. ``type`` reads ``maintenance_type``;
+#: ``participants`` matches participants OR participants_names.
+VISIT_STRUCTURED_FIELDS = ("type", "participants")
+
+#: Every code the ``visit.`` namespace accepts.
+VISIT_CODES = frozenset(VISIT_TEXT_FIELDS + VISIT_ALL_ALIASES + VISIT_STRUCTURED_FIELDS)
+
+
 def parse_selector(raw: str) -> tuple:
     """Split ``'code'`` or ``'namespace.code'`` into ``(namespace, code)``.
 
@@ -171,6 +192,13 @@ def parse_selector(raw: str) -> tuple:
         )
     if ns == ANY_DEVICE:
         return ANY_DEVICE, code
+    if ns == VISIT_NAMESPACE:
+        if code not in VISIT_CODES:
+            raise ValueError(
+                f"unknown visit field {code!r} in {raw!r} — valid: "
+                + ", ".join(sorted(VISIT_CODES))
+            )
+        return VISIT_NAMESPACE, code
     # DEVICE_SUBTYPE_ALIASES is defined further down (device-spec section);
     # module globals resolve at call time, so the forward reference is fine.
     if ns not in DEVICE_SUBTYPE_ALIASES:
@@ -314,7 +342,12 @@ def parse_expression(expr: str) -> Predicate:
         raise ValueError(
             f"list value only supports '=' / '!=' (got {op!r} in {expr!r})"
         )
-    return Predicate(code=code, op=op, value=value, namespace=namespace)
+    # Strip a MATCHING pair of surrounding quotes — 'marker ~ "a b"' and
+    # "marker ~ 'a b'" both mean the multi-word value `a b`, not the quoted
+    # literal. Only when both ends match (a lone leading quote stays literal).
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
+        stripped = stripped[1:-1]
+    return Predicate(code=code, op=op, value=stripped, namespace=namespace)
 
 
 def open_value(entity: dict, code: str) -> Optional[str]:
@@ -763,6 +796,118 @@ def devices_satisfy(
 
 
 # ---------------------------------------------------------------------------
+# Visit (vitjun) predicates — the third selector kind
+# ---------------------------------------------------------------------------
+
+_OP_NEGATION = {"=": "!=", "!=": "=", "~": "!~", "!~": "~", "in": "not in", "not in": "in"}
+
+
+def _negate_predicate(pred: Predicate) -> Predicate:
+    """The positive form of a negative predicate (for universal negation)."""
+    return Predicate(
+        code=pred.code,
+        op=_OP_NEGATION[pred.op],
+        value=pred.value,
+        values=pred.values,
+        namespace=pred.namespace,
+    )
+
+
+def _visit_field_values(visit: dict, code: str) -> List[str]:
+    """The candidate text value(s) one visit carries for a ``visit.`` field.
+
+    Empty/None → empty list, so ``= null`` reads as absence and a bare
+    ``~``/``=`` never matches a blank note. ``all`` expands to the three
+    note fields (work/comment/remaining); ``participants`` matches the
+    email AND the resolved name.
+    """
+    if code in VISIT_ALL_ALIASES:
+        return [str(visit[f]) for f in VISIT_TEXT_FIELDS if visit.get(f)]
+    if code == "type":
+        v = visit.get("maintenance_type")
+        return [str(v)] if v else []
+    if code == "participants":
+        return [
+            str(visit[k]) for k in ("participants", "participants_names") if visit.get(k)
+        ]
+    v = visit.get(code)
+    return [str(v)] if v else []
+
+
+def visits_satisfy(visits: List[dict], preds: List[Predicate]) -> bool:
+    """Same-visit AND for positives; universal negation for negatives.
+
+    Visit predicates are the third selector kind — a station matches when::
+
+        visit.X ~ v / = v / in [...]   some ONE visit's X matches
+        visit.X !~ v / != v / not in   NO visit's X matches v
+        visit.X = null                 no visit carries X
+        visit.X != null                some visit carries X
+
+    Multiple positive predicates group onto ONE visit (``visit.work ~ TOS``
+    AND ``visit.type = remote`` = a remote visit whose work matches); a
+    negative predicate holds station-wide, so the 'not yet onboarded'
+    cross-check is ``visit.all !~ "TOS reviewed"``.
+    """
+    positive = [
+        p for p in preds if p.op in ("=", "~", "in") and not is_null_term(p.value)
+    ]
+    negative = [
+        p for p in preds if p.op in ("!=", "!~", "not in") and not is_null_term(p.value)
+    ]
+    absent = [p for p in preds if p.op == "=" and is_null_term(p.value)]
+    present = [p for p in preds if p.op == "!=" and is_null_term(p.value)]
+
+    if positive and not any(
+        all(values_satisfy(_visit_field_values(v, p.code), p) for p in positive)
+        for v in visits
+    ):
+        return False
+    for p in negative:
+        inv = _negate_predicate(p)
+        if any(values_satisfy(_visit_field_values(v, inv.code), inv) for v in visits):
+            return False
+    for p in absent:
+        if any(_visit_field_values(v, p.code) for v in visits):
+            return False
+    for p in present:
+        if not any(_visit_field_values(v, p.code) for v in visits):
+            return False
+    return True
+
+
+def walk_visits(
+    client: Any,
+    station_ids: List[int],
+    *,
+    max_workers: int = 8,
+    progress: Optional[Callable[[int, int], None]] = None,
+) -> Dict[int, List[dict]]:
+    """Vitjanir for many stations, walked on a thread pool.
+
+    A failed station (TOS error) yields an empty list + a warning, never
+    an abort — a flaky single station must not sink the fleet search.
+    Returns ``{id_entity: [visit, ...]}``.
+    """
+    out: Dict[int, List[dict]] = {}
+    ids = list(station_ids)
+    if not ids:
+        return out
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(client.list_maintenance_visits, sid): sid for sid in ids}
+        for done, fut in enumerate(as_completed(futures), 1):
+            sid = futures[fut]
+            try:
+                out[sid] = fut.result() or []
+            except Exception as exc:  # noqa: BLE001 — per-station isolation
+                logger.warning("visit walk failed for id_entity=%s: %s", sid, exc)
+                out[sid] = []
+            if progress is not None:
+                progress(done, len(ids))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Attribute discovery (—-attribute-list / --allowed-values)
 # ---------------------------------------------------------------------------
 
@@ -944,6 +1089,7 @@ class SearchResult:
     device_must: List[DeviceSpec] = field(default_factory=list)
     device_must_not: List[DeviceSpec] = field(default_factory=list)
     devices_by_id: Dict[int, List[dict]] = field(default_factory=dict)
+    visits_by_id: Dict[int, List[dict]] = field(default_factory=dict)
     at: Optional[str] = None
     history: bool = False
 
@@ -971,10 +1117,14 @@ class SearchResult:
 
     @property
     def device_columns(self) -> List[tuple]:
-        """DEVICE columns as ``(namespace, code)``: predicates + --show."""
+        """DEVICE columns as ``(namespace, code)``: predicates + --show.
+
+        Visit selectors are excluded — they are filters, not projection
+        columns (``--show visit.*`` is not yet a thing).
+        """
         cols: List[tuple] = []
         for pred in self.predicates:
-            if pred.namespace is not None:
+            if pred.namespace is not None and pred.namespace != VISIT_NAMESPACE:
                 pair = (pred.namespace, pred.code)
                 if pair not in cols:
                     cols.append(pair)
@@ -982,6 +1132,8 @@ class SearchResult:
             if "." not in raw:
                 continue
             pair = parse_selector(raw)
+            if pair[0] == VISIT_NAMESPACE:
+                continue
             if pair not in cols:
                 cols.append(pair)
         return cols
@@ -1067,7 +1219,10 @@ def search_stations(
     # Station predicates prune the fleet BEFORE any device walk; device
     # predicates can only be evaluated after it.
     station_preds = [p for p in predicates if p.namespace is None]
-    device_preds = [p for p in predicates if p.namespace is not None]
+    device_preds = [
+        p for p in predicates if p.namespace is not None and p.namespace != VISIT_NAMESPACE
+    ]
+    visit_preds = [p for p in predicates if p.namespace == VISIT_NAMESPACE]
 
     at = as_day(at)
     fleet = fetch_fleet(client, domain=domain)
@@ -1076,9 +1231,27 @@ def search_stations(
     validate_station_codes(fleet, station_preds, raw_show, domain=domain)
     survivors = filter_by_predicates(fleet, station_preds, at=at, history=history)
 
+    # A visit selector walks the vitjun list — one call per surviving
+    # station, same isolation shape as the device walk below.
+    visits_by_id: Dict[int, List[dict]] = {}
+    if visit_preds:
+        visits_by_id = walk_visits(
+            client,
+            [s.get("id_entity") for s in survivors if s.get("id_entity")],
+            max_workers=max_workers,
+            progress=progress,
+        )
+        survivors = [
+            s
+            for s in survivors
+            if visits_satisfy(visits_by_id.get(s.get("id_entity"), []), visit_preds)
+        ]
+
     # A device selector needs the walk even with no --device/--receiver
     # filter — projecting receiver.firmware_version is reason enough.
-    show_needs_devices = any("." in c for c in raw_show)
+    show_needs_devices = any(
+        "." in c and not c.startswith(VISIT_NAMESPACE + ".") for c in raw_show
+    )
     need_devices = bool(
         device_must or device_must_not or device_preds or show_needs_devices
     )
@@ -1129,6 +1302,7 @@ def search_stations(
         device_must=device_must,
         device_must_not=device_must_not,
         devices_by_id=devices_by_id,
+        visits_by_id=visits_by_id,
         at=at,
         history=history,
     )

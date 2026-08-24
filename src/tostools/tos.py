@@ -14586,6 +14586,26 @@ def _search_main(argv, profile=None):
             "receiver that is not on 5.7.0'. Every device in the namespace\n"
             "contributes to a --show cell, comma-joined.\n"
             "\n"
+            "VISIT SELECTORS (vitjanir — the visit/maintenance records):\n"
+            "  visit.work ~ TEXT     a visit whose work note matches\n"
+            "  visit.comment ~ TEXT  ... comment ...\n"
+            "  visit.remaining ~ TEXT ... remaining ...\n"
+            "  visit.all ~ TEXT      ANY of work/comment/remaining matches\n"
+            "                       (aliases: visit.any, visit.text)\n"
+            "  visit.type = remote   maintenance_type (on_site / remote)\n"
+            "  visit.participants ~ EMAIL  participants or resolved name\n"
+            "A visit predicate is existential over the station's visits, but\n"
+            "the NEGATED operators are universal — the cross-check shape:\n"
+            "  tos search --epos 'visit.all ~ \"TOS reviewed\"'   # onboarded\n"
+            "  tos search --epos 'visit.all !~ \"TOS reviewed\"'  # still to do\n"
+            "  tos search 'visit.type = remote' 'visit.participants ~ bgo'\n"
+            "Multiple POSITIVE visit predicates group onto ONE visit\n"
+            "('visit.work ~ TOS' 'visit.type = remote' = a remote visit\n"
+            "whose work matches). Text ops take the same patterns as ~\n"
+            "elsewhere (substring / glob / re:). A visit selector walks\n"
+            "the vitjun list — one call per station, after station\n"
+            "predicates have pruned the fleet.\n"
+            "\n"
             "Expressions test the currently-open attribute period — the\n"
             "value the TOS UI's Eigindi panel shows today.\n"
             "\n"
@@ -14957,12 +14977,13 @@ def _search_main(argv, profile=None):
         offenders = [
             (p.namespace, p.code, p.selector)
             for p in predicates
-            if not profile.allows(p.namespace, p.code)
+            if p.namespace != search_mod.VISIT_NAMESPACE
+            and not profile.allows(p.namespace, p.code)
         ] + [
             (ns, code, raw)
             for raw in show_codes
             for ns, code in [search_mod.parse_selector(raw)]
-            if not profile.allows(ns, code)
+            if ns != search_mod.VISIT_NAMESPACE and not profile.allows(ns, code)
         ]
         if offenders:
             for ns, code, raw in offenders:
