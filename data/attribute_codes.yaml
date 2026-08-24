@@ -530,7 +530,7 @@ devices:
 
   # --- Lifecycle dates ---
 
-  end_date:
+  date_end:
     icelandic_label: Lokadagsetning
     description: Date device was taken out of operation
     classification: inherent # inherent once set
@@ -582,7 +582,7 @@ devices:
     walked: true
     why: ""
 
-  start_date_comment:
+  comment_date_start:
     icelandic_label: Athugasemd upphafsdagsetningar
     description: Comment on the start date
     classification: inherent
@@ -597,7 +597,7 @@ devices:
     walked: false
     why: ""
 
-  end_date_comment:
+  comment_date_end:
     icelandic_label: Athugasemd endadagsetningar
     description: Comment on the end date
     classification: inherent
@@ -612,7 +612,7 @@ devices:
     walked: false
     why: ""
 
-  notes:
+  note:
     icelandic_label: Glósur
     description: Notes / glosses (separate from comment)
     classification: mutable
@@ -749,7 +749,7 @@ devices:
     walked: false
     why: ""
 
-  registered_by:
+  created_by_user:
     icelandic_label: Skráð af notanda
     description: User who originally registered the device
     classification: inherent
@@ -764,7 +764,7 @@ devices:
     walked: false
     why: "Metadata about TOS data entry, not the physical device"
 
-  last_modified_by:
+  last_changed_by_user:
     icelandic_label: Síðast breytt af notand
     description: User who last modified the entry
     classification: inherent
@@ -980,7 +980,7 @@ devices:
     walked: false
     why: ""
 
-  disk_size:
+  hdd_size:
     icelandic_label: Stærð harðdisks
     description: Hard disk size (GB)
     classification: inherent
@@ -1628,7 +1628,7 @@ locations:
     walked: false
     why: ""
 
-  identifier:
+  marker:
     icelandic_label: Auðkenni
     description: Location identifier
     classification: inherent
@@ -1773,7 +1773,7 @@ stations:
 
   # --- Optional ---
 
-  close_date:
+  date_end:
     icelandic_label: Lokadagsetning
     description: Station close date — only set when the station is permanently decommissioned
     classification: inherent
@@ -1784,6 +1784,35 @@ stations:
     gps_relevance: "yes"
     walked: false
     why: ""
+
+  operational_status:
+    icelandic_label: Rekstrarstaða
+    description: Operational state of the station as TOS records it
+    classification: TODO
+    tos_required_for: []
+    gps_required_for: []
+    default_value: ~
+    applies_to: [geophysical]
+    gps_relevance: "yes"
+    walked: false
+    why: Added 2026-08-24 by the schema reconcile — defined in TOS and carried by
+      217 geophysical stations, but absent from this catalog, so it was not
+      queryable under `tosGPS search` at all. classification left TODO on
+      purpose - nothing here has established inherent vs mutable.
+
+  tectonic_plate:
+    icelandic_label: Jarðfleki
+    description: Tectonic plate the station sits on
+    classification: TODO
+    tos_required_for: []
+    gps_required_for: []
+    default_value: ~
+    applies_to: [geophysical]
+    gps_relevance: "yes"
+    walked: false
+    why: Added 2026-08-24 by the schema reconcile — 217 geophysical stations
+      carry it, and it is plainly GPS-relevant (cf. the station-plate assignment
+      in gps-config-data), yet it was unreachable under `tosGPS search`.
 
   name_alias:
     icelandic_label: Nafn alías
@@ -1965,7 +1994,7 @@ stations:
     walked: false
     why: ""
 
-  notes:
+  note:
     icelandic_label: Glósur
     description: Station notes
     classification: inherent
