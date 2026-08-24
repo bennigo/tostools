@@ -140,3 +140,65 @@ def test_search_scopes_by_sugar_flag(capsys):
     assert rc == 0
     # Only RHOF (continuous) is in scope and it lacks the visit.
     assert _markers_from_stdout(capsys) == ["rhof"]
+
+
+def _gps_profile():
+    from tostools.search_selectors import Profile
+
+    return Profile(
+        name="GPS",
+        subtype="GPS stöð",
+        station={"marker": True, "name": True, "in_network_epos": True, "subtype": True, "continuity": True},
+        devices={},
+    )
+
+
+def test_profile_pins_subtype_scope(capsys):
+    # tosGPS visit search must pin subtype = GPS stöð even with no expression.
+    from unittest.mock import patch
+
+    fleet = [
+        _entity("RHOF", epos=False, eid=1),
+        _entity("SIL1", epos=False, eid=2),
+    ]
+    fleet[0]["attributes"].append(
+        {"code": "subtype", "value": "GPS stöð", "date_from": "2020-01-01", "date_to": None}
+    )
+    fleet[1]["attributes"].append(
+        {"code": "subtype", "value": "SIL stöð", "date_from": "2020-01-01", "date_to": None}
+    )
+    # Neither has a matching visit, so WITHOUT the pin both would be listed
+    # missing; WITH the pin only RHOF (GPS) is in scope.
+    client = MagicMock()
+    client.list_maintenance_visits.side_effect = lambda eid: []
+    from tostools.tos import _visit_main
+
+    with (
+        patch("tostools.search.fetch_fleet", return_value=fleet),
+        patch("tostools.api.tos_client.TOSClient", return_value=client),
+    ):
+        rc = _visit_main(
+            ["search", "--work", "TOS reviewed", "--missing", "--markers-only"],
+            profile=_gps_profile(),
+        )
+    assert rc == 0
+    assert _markers_from_stdout(capsys) == ["rhof"]
+
+
+def test_profile_gate_refuses_foreign_attribute(capsys):
+    from unittest.mock import patch
+
+    from tostools.tos import _visit_main
+
+    fleet = [_entity("RHOF", epos=False, eid=1)]
+    client = MagicMock()
+    with (
+        patch("tostools.search.fetch_fleet", return_value=fleet),
+        patch("tostools.api.tos_client.TOSClient", return_value=client),
+    ):
+        rc = _visit_main(
+            ["search", "--work", "x", "meteorological_zone ~ foo"],
+            profile=_gps_profile(),
+        )
+    assert rc == 2
+    assert "not a GPS attribute" in capsys.readouterr().err

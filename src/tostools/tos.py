@@ -5925,7 +5925,7 @@ def _render_contact_record(contact: Dict[str, Any]) -> None:
     console.print(table)
 
 
-def _visit_main(argv):
+def _visit_main(argv, profile=None):
     """Handle ``tos visit <verb>`` subcommands.
 
     Vitjun (visit / maintenance) records live on an entity, alongside
@@ -6495,12 +6495,12 @@ def _visit_main(argv):
         return 0
 
     if args.verb == "search":
-        return _visit_search_main(args)
+        return _visit_search_main(args, profile)
 
     return 2
 
 
-def _visit_search_main(args) -> int:
+def _visit_search_main(args, profile=None) -> int:
     """Fleet-wide free-text search of vitjanir (``tos visit search``).
 
     Fetches every station in the geophysical domain (one bulk call), then
@@ -6508,6 +6508,12 @@ def _visit_search_main(args) -> int:
     substring) and ``--type``. ``--missing`` inverts the report to the
     stations WITHOUT a match — the cross-check for 'which stations are
     still to onboard' (``--epos --work 'TOS reviewed' --missing``).
+
+    ``profile`` (a :class:`search_selectors.Profile`) pins the scope to one
+    discipline, exactly as ``tos search`` does — ``tosGPS visit search``
+    narrows to ``subtype = GPS stöð`` and refuses attributes the GPS group
+    does not curate, because a fleet-wide visit query is precisely the
+    unconstrained behaviour a profile exists to narrow.
     """
     import json as _json
 
@@ -6517,6 +6523,8 @@ def _visit_search_main(args) -> int:
     from . import search as search_mod
     from .api.tos_client import TOSClient
 
+    _prog = f"tos{profile.name}" if profile else "tos"
+
     scheme = "https" if args.port == 443 else "http"
     base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
     client = TOSClient(base_url=base_url)
@@ -6524,7 +6532,7 @@ def _visit_search_main(args) -> int:
     try:
         fleet = search_mod.fetch_fleet(client, domain=args.domain)
     except Exception as exc:  # noqa: BLE001
-        print(f"tos visit search: fleet fetch failed: {exc}", file=sys.stderr)
+        print(f"{_prog} visit search: fleet fetch failed: {exc}", file=sys.stderr)
         return 1
 
     # Scope by the same predicate language as `tos search` — positional
@@ -6534,8 +6542,43 @@ def _visit_search_main(args) -> int:
         for expr in args.expressions:
             predicates.append(search_mod.parse_expression(expr))
     except ValueError as exc:
-        print(f"tos visit search: {exc}", file=sys.stderr)
+        print(f"{_prog} visit search: {exc}", file=sys.stderr)
         return 2
+
+    # ---- Profile gate + subtype pin (mirror _search_main) ---------------
+    if profile is not None:
+        offenders = [
+            p
+            for p in predicates
+            if not profile.allows(p.namespace, p.code)
+        ]
+        if offenders:
+            for p in offenders:
+                print(
+                    f"{_prog} visit search: "
+                    f"{_profile_reject(profile, p.namespace, p.code, p.selector, verb='visit search')}",
+                    file=sys.stderr,
+                )
+            return 2
+        explicit = [p for p in predicates if p.code == "subtype"]
+        conflicting = [
+            p
+            for p in explicit
+            if search_mod.norm_value(p.value) != search_mod.norm_value(profile.subtype)
+            or p.op != "="
+        ]
+        if conflicting:
+            print(
+                f"{_prog} visit search: tos{profile.name} is pinned to "
+                f"'subtype = {profile.subtype}' — drop "
+                f"{conflicting[0].describe()!r}, or use plain 'tos visit "
+                f"search' to query other station types.",
+                file=sys.stderr,
+            )
+            return 2
+        if not explicit:
+            predicates.insert(0, search_mod.Predicate("subtype", "=", profile.subtype))
+
     predicates.extend(search_mod.sugar_predicates(args))
     if predicates:
         fleet = search_mod.filter_by_predicates(fleet, predicates)
@@ -15279,7 +15322,7 @@ def _search_main(argv, profile=None):
     return 0
 
 
-def _profile_reject(profile, namespace, code, raw) -> str:
+def _profile_reject(profile, namespace, code, raw, verb: str = "search") -> str:
     """Message for a selector the active profile does not curate."""
     from .search_selectors import aliases_for
 
@@ -15292,7 +15335,7 @@ def _profile_reject(profile, namespace, code, raw) -> str:
         f"{raw!r} is not a {profile.name} attribute ({topic} scope). "
         f"tos{profile.name} exposes only what the catalog marks "
         f"gps_relevance=yes — list them with '--selectors {topic}'. "
-        f"Use plain 'tos search' for the unconstrained vocabulary."
+        f"Use plain 'tos {verb}' for the unconstrained vocabulary."
     )
 
 

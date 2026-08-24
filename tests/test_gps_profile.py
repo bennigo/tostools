@@ -193,7 +193,6 @@ class TestTosGpsDelegation:
             ("station", "_station_main"),
             ("device", "_device_main"),
             ("location", "_location_main"),
-            ("visit", "_visit_main"),
             ("contact", "_contact_main"),
             ("owners", "_owners_main"),
         ],
@@ -206,24 +205,37 @@ class TestTosGpsDelegation:
             assert self._main([verb, "--help"]) == 0
         spy.assert_called_once_with(["--help"])
 
-    def test_the_table_covers_every_tos_verb_except_search(self):
+    def test_visit_is_delegated_with_the_gps_profile(self):
+        # `visit search` is fleet-wide, so tosGPS threads the profile (only
+        # the search subcommand uses it; list/show/add ignore it).
+        import tostools.tos as tos_mod
+
+        with patch.object(tos_mod, "_visit_main", return_value=0) as spy:
+            assert self._main(["visit", "search", "--work", "x"]) == 0
+        argv, kwargs = spy.call_args
+        assert argv[0] == ["search", "--work", "x"]
+        assert kwargs["profile"].name == "GPS"
+
+    def test_the_table_covers_every_tos_verb_except_profiled(self):
         """tosGPS exposes the whole `tos` surface, and nothing is silently
         missing: a verb added to tos.py must be aliased or deliberately
         profiled, never forgotten."""
         from tostools.tos import KNOWN_SUBCOMMANDS
         from tostools.tosGPS import _PLAIN_ALIASES
 
-        missing = set(KNOWN_SUBCOMMANDS) - set(_PLAIN_ALIASES) - {"search"}
+        missing = set(KNOWN_SUBCOMMANDS) - set(_PLAIN_ALIASES) - {"search", "visit"}
         assert not missing, (
             f"tos verb(s) neither aliased by tosGPS nor profiled: {missing}. "
             "Add to _PLAIN_ALIASES, or profile it like search and exempt it."
         )
 
-    def test_the_alias_table_excludes_search(self):
-        """search is the one verb WITH unconstrained behaviour to narrow."""
+    def test_the_alias_table_excludes_profiled_verbs(self):
+        """search (wholly) and visit (its search subcommand) are the verbs
+        with unconstrained fleet-wide behaviour to narrow."""
         from tostools.tosGPS import _PLAIN_ALIASES
 
         assert "search" not in _PLAIN_ALIASES
+        assert "visit" not in _PLAIN_ALIASES
 
     def test_every_alias_target_exists_on_tos(self):
         """A typo in the table would surface as AttributeError at runtime."""

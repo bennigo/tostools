@@ -326,7 +326,6 @@ _PLAIN_ALIASES = {
     # named entity and is reached from a GPS task:
     "device": "_device_main",  # exactly the subtypes the GPS profile curates
     "location": "_location_main",  # the required `land` parent of a station
-    "visit": "_visit_main",  # vitjanir hang off a station or device
     "contact": "_contact_main",  # reached from `station show`'s Contacts table
     "owners": "_owners_main",  # the allow-list backing `device add`
 }
@@ -346,6 +345,14 @@ def main():
     #   search  PROFILED. `tos search` is genuinely unconstrained, so tosGPS
     #           narrows it — subtype pinned to 'GPS stöð' and only attributes
     #           the catalog marks gps_relevance=yes accepted.
+    #
+    #   visit   PARTIALLY PROFILED. `visit list/show/add` act on one named
+    #           entity (GPS-by-construction, same as audit/device), but
+    #           `visit search` is a FLEET-WIDE query — the same unconstrained
+    #           behaviour `search` is profiled for. So tosGPS threads the
+    #           profile through _visit_main, and it only bites on the `search`
+    #           subcommand (subtype pin + attribute gate); list/show/add
+    #           ignore it and stay byte-identical to `tos visit`.
     #
     #   audit   PLAIN ALIAS. Already GPS-only BY CONSTRUCTION:
     #   fleet   audit_missing_attributes skips every code whose
@@ -370,6 +377,11 @@ def main():
         from .tos import _search_main
 
         return _search_main(sys.argv[2:], profile=gps_profile())
+    if verb == ["visit"]:
+        from .search_selectors import gps_profile
+        from .tos import _visit_main
+
+        return _visit_main(sys.argv[2:], profile=gps_profile())
     if verb and verb[0] in _PLAIN_ALIASES:
         from . import tos as _tos
 
