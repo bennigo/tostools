@@ -14571,6 +14571,29 @@ def _search_main(argv, profile=None):
     except SnapshotMiss as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
+    except search_mod.UnknownStationCode as exc:
+        # Ordered before the transport handler: this is a usage error (2),
+        # not a fetch failure (1).
+        if progress is not None:
+            sys.stderr.write("\n")
+        for code, suggestions in exc.unknown:
+            hint = (
+                f" Did you mean {' / '.join(repr(s) for s in suggestions)}?"
+                if suggestions
+                else ""
+            )
+            print(
+                f"{_prog} search: {code!r} is not a station attribute code — "
+                f"no {exc.domain} station carries it and the catalog does not "
+                f"list it.{hint}",
+                file=sys.stderr,
+            )
+        print(
+            f"{_prog} search: list what exists with '--attribute-list'"
+            f"{'' if args.domain == 'geophysical' else f' --domain {args.domain}'}.",
+            file=sys.stderr,
+        )
+        return 2
     except Exception as exc:  # noqa: BLE001 — surface any transport failure
         print(f"{_prog} search: fleet fetch failed: {exc}", file=sys.stderr)
         return 1
