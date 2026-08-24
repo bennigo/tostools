@@ -22,6 +22,7 @@ from tostools.search import (
     ANY_DEVICE,
     DeviceSpec,
     Predicate,
+    UnknownStationCode,
     UnsupportedSelector,
     as_day,
     attribute_inventory,
@@ -32,6 +33,7 @@ from tostools.search import (
     filter_by_predicates,
     has_glob,
     history_values,
+    known_station_codes,
     norm_value,
     open_value,
     parse_device_spec,
@@ -42,6 +44,7 @@ from tostools.search import (
     require_station_selector,
     search_stations,
     text_matches,
+    validate_station_codes,
     value_at,
 )
 
@@ -1886,3 +1889,141 @@ class TestSubtypeDefault:
         assert rc == 0
         payload = json.loads(out)
         assert payload["criteria"]["attributes"] == ["subtype = GPS stöð"]
+
+
+class TestStationCodeValidation:
+    """An unknown station code must FAIL, never answer.
+
+    Before this gate, ``'typo = null'`` matched the whole fleet (every
+    station "lacks" a code nothing carries) and ``'typo != null'``
+    returned a clean ``0 station(s) match``. Both read as real answers,
+    and this output drives live TOS writes.
+    """
+
+    def _fleet(self):
+        return [
+            _station(100, "VMEY", "Vestmannaeyjar", in_epos="true", domes="10217M001"),
+            _station(101, "RHOF", "Raufarhöfn", in_epos="true"),
+        ]
+
+    # ---- the engine -----------------------------------------------------
+
+    def test_observed_code_is_known(self):
+        assert "in_network_epos" in known_station_codes(self._fleet())
+
+    def test_catalog_vouches_for_an_unpopulated_code(self):
+        """'code = null' — which stations LACK this — must stay askable.
+
+        No station in the fleet carries ``close_date``, so observation
+        alone cannot vouch for it; the catalog must.
+        """
+        known = known_station_codes(self._fleet(), catalog_codes=["close_date"])
+        assert "close_date" in known
+
+    def test_unknown_code_raises_before_filtering(self):
+        with pytest.raises(UnknownStationCode) as exc:
+            validate_station_codes(
+                self._fleet(),
+                [Predicate("zzz_not_a_code", "=", "null")],
+                catalog_codes=[],
+            )
+        assert [c for c, _ in exc.value.unknown] == ["zzz_not_a_code"]
+
+    def test_every_offender_is_named_at_once(self):
+        with pytest.raises(UnknownStationCode) as exc:
+            validate_station_codes(
+                self._fleet(),
+                [Predicate("foo", "=", "1"), Predicate("bar", "=", "2")],
+                catalog_codes=[],
+            )
+        assert [c for c, _ in exc.value.unknown] == ["foo", "bar"]
+
+    def test_near_miss_gets_a_suggestion(self):
+        with pytest.raises(UnknownStationCode) as exc:
+            validate_station_codes(
+                self._fleet(), [Predicate("marke", "=", "x")], catalog_codes=[]
+            )
+        assert "marker" in exc.value.unknown[0][1]
+
+    def test_device_selector_is_not_station_scope(self):
+        """Dotted selectors have their own vocabulary — not checked here."""
+        validate_station_codes(
+            self._fleet(),
+            [Predicate("firmware_version", "=", "5.7.0", namespace="gnss_receiver")],
+            catalog_codes=[],
+        )
+
+    def test_show_selector_is_validated(self):
+        with pytest.raises(UnknownStationCode):
+            validate_station_codes(
+                self._fleet(), [], ["zzz_not_a_code"], catalog_codes=[]
+            )
+
+    def test_empty_fleet_does_not_guess(self):
+        """No fleet means no observations — refusing would be a false positive."""
+        validate_station_codes([], [Predicate("anything", "=", "1")], catalog_codes=[])
+
+    def test_missing_catalog_degrades_to_observed(self):
+        with patch(
+            "tostools.search_selectors.catalog_station_codes",
+            side_effect=FileNotFoundError("no catalog"),
+        ):
+            known = known_station_codes(self._fleet())
+        assert "marker" in known and "close_date" not in known
+
+    # ---- the CLI --------------------------------------------------------
+
+    def test_cli_refuses_with_exit_2(self, capsys):
+        rc, out = _run_cli(["zzz_not_a_code = null"], self._fleet(), capsys=capsys)
+        assert rc == 2
+        assert "not a station attribute code" in out
+        assert "--attribute-list" in out
+
+    def test_cli_typo_no_longer_matches_the_whole_fleet(self, capsys):
+        """The regression this exists to prevent."""
+        rc, out = _run_cli(
+            ["zzz_not_a_code = null", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 2
+        assert "VMEY" not in out and "RHOF" not in out
+
+    def test_cli_accepts_a_real_code(self, capsys):
+        rc, out = _run_cli(
+            ["in_network_epos = true", "--markers-only"], self._fleet(), capsys=capsys
+        )
+        assert rc == 0
+        assert out.split() == ["RHOF", "VMEY"]
+
+    def test_cli_sugar_expansion_is_not_refused(self, capsys):
+        """--active-gps expands to 'date_end = null', which the hand-written
+        catalog calls 'close_date'. The union must keep the flag working."""
+        fleet = self._fleet()
+        for st in fleet:
+            st["attributes"].append(_attr("date_end", None))
+        rc, _ = _run_cli(["--active-gps", "--markers-only"], fleet, capsys=capsys)
+        assert rc == 0
+
+    def test_snapshot_replay_validates_against_the_whole_fleet(self, tmp_path):
+        """A narrow query still snapshots the FULL bulk listing.
+
+        Filtering is client-side, so ``list_stations`` is recorded whole
+        regardless of how few stations the query kept. Validation on replay
+        therefore sees the same vocabulary as a live run. If snapshots ever
+        start recording a filtered listing, replaying an unrelated predicate
+        would refuse a real code — this pins the property that prevents it.
+        """
+        from tostools.api.client_cache import CachingClient, SnapshotClient
+
+        fleet = self._fleet()
+        cached = CachingClient(
+            FakeClient(fleet), ttl=0, enabled=False, server="fake:443"
+        )
+        cached.list_stations(domain="geophysical")
+        snap = tmp_path / "narrow.json"
+        cached.write_snapshot(snap, criteria=["marker = vmey"], domain="geophysical")
+
+        replayed = SnapshotClient.load(snap).list_stations(domain="geophysical")
+        assert len(replayed) == len(fleet)
+        assert known_station_codes(replayed, catalog_codes=[]) == known_station_codes(
+            fleet, catalog_codes=[]
+        )

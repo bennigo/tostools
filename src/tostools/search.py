@@ -26,12 +26,13 @@ vocabulary in the wild (RHOF carries ``in_network_epos=true`` but
 
 from __future__ import annotations
 
+import difflib
 import logging
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .utils.logging import get_logger
 
@@ -434,6 +435,104 @@ def predicate_matches(
         # 'ever held this value' — every recorded period is a candidate.
         return values_satisfy(history_values(station, pred.code), pred)
     return values_satisfy([value_at(station, pred.code, at)], pred)
+
+
+class UnknownStationCode(ValueError):
+    """A station attribute code no source vouches for.
+
+    Raised BEFORE filtering, because an unvalidated code does not fail —
+    it answers. ``value_at`` returns ``None`` for a code nothing carries,
+    so ``'typo != null'`` renders a confident ``0 station(s) match`` and
+    ``'typo = null'`` matches the WHOLE fleet with a column of dashes.
+    Both are indistinguishable from real answers, and this output drives
+    live TOS writes.
+    """
+
+    def __init__(self, unknown: List[tuple], domain: str):
+        #: ``[(code, [suggestion, ...]), ...]`` — suggestions may be empty.
+        self.unknown = unknown
+        self.domain = domain
+        super().__init__("; ".join(code for code, _ in unknown))
+
+
+def known_station_codes(
+    fleet: List[dict], *, catalog_codes: Optional[Iterable[str]] = None
+) -> set:
+    """The vocabulary a station predicate may draw on: observed ∪ catalog.
+
+    **Observed** is every code carried by any station in ``fleet`` — the
+    same aggregation ``--attribute-list`` prints. **Catalog** is
+    ``data/attribute_codes.yaml``. The union is deliberate and neither
+    half is sufficient:
+
+    - Observed alone would reject a real-but-unpopulated code, breaking
+      ``'code = null'`` — "which stations lack this?" is the query that
+      found the DOMES gap, and it is precisely the one with no observed
+      values to learn from.
+    - The catalog alone would reject codes that are live and in daily
+      use. It is hand-written (every entry carries ``walked: false``) and
+      has never been reconciled with the API: it calls ``date_end``
+      ``close_date``, and ``--active-gps`` expands to a predicate the
+      catalog does not contain.
+
+    A missing/unreadable catalog degrades to observed-only rather than
+    breaking search.
+    """
+    codes = {
+        a.get("code")
+        for st in fleet
+        for a in (st.get("attributes") or [])
+        if a.get("code")
+    }
+    if catalog_codes is None:
+        try:  # lazy — search_selectors imports this module
+            from .search_selectors import catalog_station_codes
+
+            catalog_codes = catalog_station_codes().keys()
+        except Exception as exc:  # noqa: BLE001 — catalog is an optional source
+            logger.warning(
+                "attribute catalog unavailable, validating on observed codes only: %s",
+                exc,
+            )
+            catalog_codes = ()
+    return codes | {c for c in catalog_codes if c}
+
+
+def validate_station_codes(
+    fleet: List[dict],
+    predicates: List[Predicate],
+    show_codes: Optional[List[str]] = None,
+    *,
+    domain: str = "geophysical",
+    catalog_codes: Optional[Iterable[str]] = None,
+) -> None:
+    """Refuse station codes outside the known vocabulary.
+
+    Station-scope only — a dotted selector is a device code and is checked
+    against a different vocabulary during the device walk. Raises
+    :class:`UnknownStationCode` naming every offender at once, so a
+    two-typo command is corrected in one round trip rather than two.
+    """
+    known = known_station_codes(fleet, catalog_codes=catalog_codes)
+    if not known:  # empty fleet — nothing to validate against, don't guess
+        return
+    wanted: List[str] = []
+    for pred in predicates:
+        if pred.namespace is None and pred.code not in wanted:
+            wanted.append(pred.code)
+    for raw in show_codes or []:
+        code = raw.lower()
+        if "." not in code and code not in wanted:
+            wanted.append(code)
+
+    ordered = sorted(known)
+    unknown = [
+        (code, difflib.get_close_matches(code, ordered, n=3, cutoff=0.6))
+        for code in wanted
+        if code not in known
+    ]
+    if unknown:
+        raise UnknownStationCode(unknown, domain)
 
 
 def filter_by_predicates(
@@ -945,6 +1044,9 @@ def search_stations(
 
     at = as_day(at)
     fleet = fetch_fleet(client, domain=domain)
+    # Before filtering, not after: an unknown code silently ANSWERS rather
+    # than failing, and a wrong answer here reaches live TOS writes.
+    validate_station_codes(fleet, station_preds, raw_show, domain=domain)
     survivors = filter_by_predicates(fleet, station_preds, at=at, history=history)
 
     # A device selector needs the walk even with no --device/--receiver
