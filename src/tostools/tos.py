@@ -8384,6 +8384,64 @@ def _audit_main(argv):
     p_chains.add_argument("--server", default="vi-api.vedur.is")
     p_chains.add_argument("--port", type=int, default=443)
 
+    p_catalog = sub.add_parser(
+        "attribute-catalog",
+        help="Reconcile data/attribute_codes.yaml against the TOS schema.",
+        description=(
+            "The attribute catalog is hand-written — every entry carries "
+            "`walked: false` — and nothing ever checked its code names "
+            "against TOS. It drifted: it lists `close_date` where TOS calls "
+            "the same attribute `date_end` (identical Icelandic label, 844 "
+            "stations), so `tos search --active-gps` expands to a predicate "
+            "the catalog does not contain and `tosGPS search` refuses.\n\n"
+            "Observation cannot settle this. `--attribute-list` aggregates "
+            "over the values entities carry, so a code nothing carries looks "
+            "exactly like a code that does not exist. The authority is "
+            "GET /admin_attribute_rows — the attribute TYPE table, one row "
+            "per (code, entity_type), needing no credentials.\n\n"
+            "Two findings, different remedies:\n"
+            "  phantom  — in the catalog, absent from TOS. The catalog is "
+            "wrong. When a live code shares the Icelandic label, that is the "
+            "rename candidate and is printed alongside.\n"
+            "  unlisted — defined in TOS and carried by live entities, but "
+            "absent from the catalog, so unreachable under `tosGPS search`.\n\n"
+            "Severity follows blast radius. A phantom code that a WRITE path "
+            "could reach (it carries gps_required_for / "
+            "gps_required_when_installed / gps_recommended_for) is an error — "
+            "it would propose a TOS write for an attribute TOS cannot accept. "
+            "One that only pollutes the search vocabulary is a warning. Today "
+            "none are errors; the audit re-checks that rather than assume it.\n\n"
+            "Exit 0 clean, 1 findings, 2 usage/transport error."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_catalog.add_argument(
+        "--all-unlisted",
+        action="store_true",
+        help=(
+            "Report every schema code the catalog omits, not just those a "
+            "live entity carries. Adds the ~90 codes belonging to other "
+            "disciplines, which this catalog has no business listing."
+        ),
+    )
+    p_catalog.add_argument(
+        "--domain",
+        action="append",
+        dest="domains",
+        help=(
+            "Domain(s) whose live entities define 'observed' (repeatable; "
+            "default: geophysical meteorological hydrological)."
+        ),
+    )
+    p_catalog.add_argument(
+        "--catalog-path",
+        type=Path,
+        help="Override the catalog file (default: the packaged one).",
+    )
+    p_catalog.add_argument("--json", action="store_true", help="JSON output.")
+    p_catalog.add_argument("--server", default="vi-api.vedur.is")
+    p_catalog.add_argument("--port", type=int, default=443)
+
     p_missing = sub.add_parser(
         "missing-attributes",
         help="Flag required TOS attributes that have no open period.",
@@ -9427,6 +9485,83 @@ def _audit_main(argv):
         else:
             _print_attribute_date_report(report, verbose=args.verbose)
         return 1 if report.has_violations else 0
+
+    if args.kind == "attribute-catalog":
+        from . import audit_attribute_catalog as aac_mod
+        from . import search as search_mod
+
+        try:
+            schema = aac_mod.fetch_schema_codes(server=args.server, port=args.port)
+        except Exception as exc:  # noqa: BLE001 — surface any transport failure
+            print(
+                f"tos audit attribute-catalog: schema fetch failed: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+
+        observed = None
+        if not args.all_unlisted:
+            # 'Unlisted' means a code the fleet actually carries. Without this
+            # the report drowns in other disciplines' vocabulary.
+            domains = args.domains or ["geophysical", "meteorological", "hydrological"]
+            observed = set()
+            for dom in domains:
+                try:
+                    fleet = search_mod.fetch_fleet(client, domain=dom)
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        f"tos audit attribute-catalog: fleet fetch failed for "
+                        f"domain {dom!r}: {exc}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                for st in fleet:
+                    for a in st.get("attributes") or []:
+                        if a.get("code"):
+                            observed.add(a["code"])
+
+        try:
+            report = aac_mod.audit_attribute_catalog(
+                schema, catalog_path=args.catalog_path, observed_codes=observed
+            )
+        except FileNotFoundError as exc:
+            print(f"tos audit attribute-catalog: {exc}", file=sys.stderr)
+            return 2
+
+        if args.json:
+            print(
+                _json.dumps(
+                    {
+                        "catalog_codes": report.catalog_codes,
+                        "schema_codes": report.schema_codes,
+                        "phantom": [
+                            {
+                                "scope": p.scope,
+                                "code": p.code,
+                                "label": p.label,
+                                "gps_relevant": p.gps_relevant,
+                                "severity": p.severity,
+                                "write_reaching": p.write_reaching,
+                                "same_label_as": p.same_label_as,
+                            }
+                            for p in report.phantom
+                        ],
+                        "unlisted": [
+                            {
+                                "code": u.code,
+                                "label": u.label,
+                                "entity_types": u.entity_types,
+                            }
+                            for u in report.unlisted
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            _print_attribute_catalog_report(report)
+        return 1 if report.has_findings else 0
 
     if args.kind == "version-chains":
         from . import audit_version_chains as avc_mod
@@ -12899,6 +13034,70 @@ def _attribute_date_report_to_dict(report):
         "excluded_codes": list(report.excluded_codes),
         "included_codes_unmatched": list(report.included_codes_unmatched),
     }
+
+
+def _print_attribute_catalog_report(report) -> None:
+    """Render the catalog/schema reconciliation on stdout.
+
+    Phantom codes group by scope and lead with severity, because the count
+    (64 of 148 on first run) is far less useful than knowing that none of
+    them reach a write path.
+    """
+    print(
+        f"Attribute catalog: {report.catalog_codes} code(s) "
+        f"vs {report.schema_codes} defined in TOS"
+    )
+    if report.catalog_path:
+        print(f"  catalog: {report.catalog_path}")
+
+    if not report.has_findings:
+        print(
+            "✓ CLEAN — every catalog code is defined in TOS, and every code "
+            "the live fleet carries is listed."
+        )
+        return
+
+    if report.phantom:
+        errors = report.errors
+        print(
+            f"\n✗ {len(report.phantom)} PHANTOM code(s) — in the catalog, "
+            f"not defined in TOS ({len(errors)} reach a write path):"
+        )
+        icons = {"error": "‼", "warning": "!", "info": "·"}
+        for scope in ("stations", "devices", "locations"):
+            rows = [p for p in report.phantom if p.scope == scope]
+            if not rows:
+                continue
+            print(f"\n  [{scope}]")
+            for p in rows:
+                rename = (
+                    f"  → TOS calls this {', '.join(p.same_label_as)}"
+                    if p.same_label_as
+                    else ""
+                )
+                gps = " (gps_relevance: yes)" if p.gps_relevant else ""
+                print(f"    {icons[p.severity]} {p.code:30s}{gps}{rename}")
+                if p.write_reaching:
+                    print(
+                        f"        WRITE PATH REACHES THIS via "
+                        f"{', '.join(p.write_reaching)} — a proposed write "
+                        f"would be rejected by TOS at the boundary."
+                    )
+
+    if report.unlisted:
+        print(
+            f"\n! {len(report.unlisted)} UNLISTED code(s) — defined in TOS and "
+            "carried by live entities, absent from the catalog (so "
+            "unreachable under `tosGPS search`):"
+        )
+        for u in report.unlisted:
+            label = f"  {u.label}" if u.label else ""
+            print(f"    {u.code:30s}{label}")
+
+    print(
+        "\nA phantom code sharing a live code's Icelandic label is a rename, "
+        "not a deletion — check each before editing the catalog."
+    )
 
 
 def _print_attribute_date_report(report, *, verbose: bool = False):
