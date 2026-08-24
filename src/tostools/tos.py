@@ -14231,9 +14231,15 @@ def _search_main(argv, profile=None):
         prog=f"{_prog} search",
         description=(
             "Search the TOS fleet by station attributes and devices.\n\n"
-            "DEFAULT SCOPE: 'subtype = GPS stöð' is applied automatically.\n"
-            "Lift it with 'subtype = all', or select types explicitly with\n"
-            "'subtype = [GPS stöð, SIL stöð, ...]'.\n\n"
+            "DEFAULT SCOPE: none. 'tos search' is the entity layer and spans\n"
+            "every subtype in the domain (443 geophysical entities across 17\n"
+            "subtypes, not just the 217 GPS stations). Narrow it with\n"
+            "'subtype = GPS stöð' or 'subtype = [GPS stöð, SIL stöð, ...]';\n"
+            "'--domain' selects geophysical (default) / meteorological /\n"
+            "hydrological.\n\n"
+            "For GPS work use 'tosGPS search', which pins 'subtype = GPS stöð'\n"
+            "and refuses attributes the GPS group does not curate. That pin is\n"
+            "why this command no longer carries one.\n\n"
             "ATTRIBUTE EXPRESSIONS (positional, repeatable, AND-ed):\n"
             "  'code = value'    equality (case-insensitive; já/nei fold\n"
             "                    onto true/false)\n"
@@ -14302,7 +14308,7 @@ def _search_main(argv, profile=None):
             "  tos search 'in_network_epos = true' 'subtype = GPS stöð'\n"
             "  tos search 'subtype = SIL stöð'            # non-GPS type\n"
             "  tos search 'subtype = [GPS stöð, SIL stöð]'  # multiple types\n"
-            "  tos search 'subtype = all' --markers-only  # every type\n"
+            "  tos search --markers-only                  # every type (default)\n"
             "  tos search 'iers_domes_number != null'\n"
             "  tos search --epos --receiver polarx5 --show iers_domes_number\n"
             "  tos search --device router:any --device sim:any\n"
@@ -14342,7 +14348,9 @@ def _search_main(argv, profile=None):
             "Sugar for the operational IMO GNSS fleet: 'subtype = GPS stöð' "
             "'date_end = null' 'geological_characteristic != ice' "
             "'continuity = continuous'. Composes with every other "
-            "flag/expression."
+            "flag/expression. NOTE this carries its own subtype pin, so it "
+            "is far narrower than a bare 'tos search', which spans every "
+            "subtype in the domain."
         ),
     )
     p.add_argument(
@@ -14675,9 +14683,11 @@ def _search_main(argv, profile=None):
             search_mod.Predicate("geological_characteristic", "!=", "ice")
         )
 
-    # Default scope: GPS stations. Lifted by an explicit subtype expression
-    # ('subtype = X', 'subtype = [a, b]', 'subtype = all') or by --active-gps
-    # (whose predicate chain already pins subtype = GPS stöð).
+    # Scope: ONLY a profile pins a subtype. Plain `tos search` is the entity
+    # layer and is deliberately unconstrained — it predates `tosGPS search`,
+    # which now owns the GPS pin, and keeping a silent 'subtype = GPS stöð'
+    # here made the layer split untrue: the doc called this the general fleet
+    # query while it answered only about 217 of 443 geophysical entities.
     if profile is not None:
         # A profile PINS the subtype: 'tosGPS search' answering about SIL
         # stations would make the tool's name a lie. An explicit subtype
@@ -14700,8 +14710,6 @@ def _search_main(argv, profile=None):
             return 2
         if not explicit:
             predicates.insert(0, search_mod.Predicate("subtype", "=", profile.subtype))
-    elif not any(p.code == "subtype" for p in predicates):
-        predicates.insert(0, search_mod.Predicate("subtype", "=", "GPS stöð"))
 
     # ---- Build device specs ---------------------------------------------
     device_must, device_must_not = [], []

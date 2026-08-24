@@ -1530,10 +1530,8 @@ class TestSearchCli:
         assert rc == 0
         payload = json.loads(out)
         assert payload["count"] == 2
-        assert payload["criteria"]["attributes"] == [
-            "subtype = GPS stöð",
-            "in_network_epos = true",
-        ]
+        # No implicit subtype pin — plain `tos search` is unconstrained.
+        assert payload["criteria"]["attributes"] == ["in_network_epos = true"]
         markers = {s["marker"] for s in payload["stations"]}
         assert markers == {"VMEY", "RHOF"}
         # show codes/predicate codes surfaced per station
@@ -1762,7 +1760,6 @@ class TestSugarFlags:
         assert rc == 0
         payload = json.loads(out)
         assert payload["criteria"]["attributes"] == [
-            "subtype = GPS stöð",
             "date_end != null",
             "continuity = continuous",
             "geological_characteristic != ice",
@@ -1834,7 +1831,13 @@ class TestListAndAllPredicates:
 
 
 class TestSubtypeDefault:
-    """CLI defaults to subtype = GPS stöð unless overridden."""
+    """`tos search` applies NO subtype scope; `tosGPS search` pins one.
+
+    Until 2026-08-24 this command inserted a silent `subtype = GPS stöð`,
+    left over from before `tosGPS search` existed. That made the
+    entity-layer/GPS-layer split untrue — the docs called this the general
+    fleet query while it answered about 217 of 443 geophysical entities.
+    """
 
     def _fleet(self):
         return [
@@ -1856,8 +1859,31 @@ class TestSubtypeDefault:
             },
         ]
 
-    def test_default_is_gps(self, capsys):
+    def test_default_spans_every_subtype(self, capsys):
         rc, out = _run_cli(["--markers-only"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert out.split() == ["GAS1", "GPS1", "GPS2", "SIL1"]
+
+    def test_no_subtype_predicate_is_injected(self, capsys):
+        """Not merely 'the fleet is unfiltered' — nothing is ADDED."""
+        rc, out = _run_cli(["--json"], self._fleet(), capsys=capsys)
+        assert rc == 0
+        assert json.loads(out)["criteria"]["attributes"] == []
+
+    def test_a_profile_still_pins(self, capsys):
+        """The pin moved to `tosGPS`; it did not disappear."""
+        from tostools.search_selectors import Profile
+        from tostools.tos import _search_main
+
+        profile = Profile(
+            name="GPS",
+            subtype="GPS stöð",
+            station={"marker": False, "subtype": False},
+        )
+        fake = FakeClient(self._fleet())
+        with patch("tostools.api.tos_client.TOSClient", return_value=fake):
+            rc = _search_main(["--markers-only"], profile=profile)
+        out = capsys.readouterr().out
         assert rc == 0
         assert out.split() == ["GPS1", "GPS2"]
 
@@ -1884,11 +1910,18 @@ class TestSubtypeDefault:
         assert rc == 0
         assert out.split() == ["GAS1", "GPS1", "GPS2", "SIL1"]
 
-    def test_default_shown_in_criteria(self, capsys):
-        rc, out = _run_cli(["--json"], self._fleet(), capsys=capsys)
+    def test_all_is_now_a_no_op_not_a_scope_lift(self, capsys):
+        """`subtype = all` kept working rather than becoming an error.
+
+        It is evaluated as always-true by `values_satisfy`, so it still
+        parses and still matches everything — it just no longer lifts
+        anything. Existing scripts and habits keep working.
+        """
+        rc, out = _run_cli(
+            ["subtype = all", "--markers-only"], self._fleet(), capsys=capsys
+        )
         assert rc == 0
-        payload = json.loads(out)
-        assert payload["criteria"]["attributes"] == ["subtype = GPS stöð"]
+        assert out.split() == ["GAS1", "GPS1", "GPS2", "SIL1"]
 
 
 class TestStationCodeValidation:

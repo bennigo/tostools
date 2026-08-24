@@ -4,8 +4,18 @@
 currently joined to a station. This page is the reference for the expression
 grammar; `tos search --help` is the same material in terse form.
 
-**Default scope**: `subtype = GPS stöð` is applied automatically. Lift it with
-`subtype = all`, or name types explicitly: `subtype = [GPS stöð, SIL stöð]`.
+**Default scope**: none. `tos search` is the entity layer and spans every
+subtype in the domain — 443 geophysical entities across 17 subtypes, not the
+217 GPS stations alone. Narrow with `subtype = GPS stöð`, or name several:
+`subtype = [GPS stöð, SIL stöð]`. `--domain` picks geophysical (default),
+meteorological or hydrological.
+
+For GPS work use **`tosGPS search`**, which pins `subtype = GPS stöð` and
+refuses attributes the GPS group does not curate — see
+[`cli-surface.md`](cli-surface.md). That pin is why this command no longer
+carries one: until 2026-08-24 `tos search` applied a silent GPS default, which
+made the entity-layer/GPS-layer split untrue. `subtype = all` still parses and
+still matches everything; it is now a no-op rather than a scope lift.
 
 Expressions test the **currently-open attribute period** — the value the TOS
 UI's *Eigindi* panel shows today — unless `--at` or `--history` says otherwise.
@@ -142,7 +152,8 @@ tos search --discontinued --markers-only
 tos search 'iers_domes_number != null'
 tos search --epos --receiver polarx5 --show iers_domes_number
 tos search --device router:any --device sim:any
-tos search 'subtype = all' --markers-only
+tos search --markers-only                      # every subtype in the domain
+tos search 'subtype = GPS stöð' --markers-only  # narrow to GPS
 tos search --json --epos > epos.json
 ```
 
