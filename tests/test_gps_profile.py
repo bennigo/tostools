@@ -357,3 +357,80 @@ class TestFleetDelegation:
             with patch.object(tosgps.sys, "argv", ["tosGPS", "fleet", "status"]):
                 assert tosgps.main() == 0
         spy.assert_called_once_with(["status"])
+
+
+class TestSugarStaysInsideTheProfile:
+    """Every code a sugar flag expands to must be one the gate admits.
+
+    The gate (`tos.py`) runs BEFORE sugar expansion, so a sugar predicate is
+    never checked against the profile. That made `tosGPS search
+    'date_end != null'` a refusal while `tosGPS search --discontinued` ran
+    the identical predicate — the catalog called that attribute
+    `close_date`, a name TOS does not define.
+
+    Fixed at the root by correcting the catalog rather than by reordering
+    the gate: reordering first would have turned the inconsistency into a
+    hard failure of `--active-gps`. This test is what keeps the two in
+    agreement, and it fails if a future sugar flag reaches for an
+    uncurated code.
+    """
+
+    def _sugar_codes(self):
+        """Codes reachable through a sugar flag, read off the source of truth."""
+        from tostools.search import ACTIVE_GPS_PREDICATES, EPOS_CODE
+
+        codes = {EPOS_CODE} | {p.code for p in ACTIVE_GPS_PREDICATES}
+        # --discontinued / --continuous / --campaign / --no-ice
+        codes |= {"date_end", "continuity", "geological_characteristic"}
+        return sorted(codes)
+
+    def test_every_sugar_code_is_curated(self, profile):
+        refused = [c for c in self._sugar_codes() if not profile.allows(None, c)]
+        assert refused == [], (
+            f"sugar flags expand to {refused}, which the GPS profile refuses — "
+            "`tosGPS search --active-gps` would then run a predicate that the "
+            "same command rejects when typed."
+        )
+
+    def test_the_check_covers_date_end(self):
+        """Guard the guard: date_end is the code this regression was about."""
+        assert "date_end" in self._sugar_codes()
+
+    def test_sugar_and_typed_agree_under_a_profile(self, capsys, profile):
+        """The exact divergence, end to end, on a fake fleet."""
+        from unittest.mock import patch
+
+        from tests.test_search import FakeClient, _attr
+
+        fleet = [
+            {
+                "id_entity": 1,
+                "attributes": [
+                    _attr("marker", "aaaa"),
+                    _attr("subtype", "GPS stöð"),
+                    _attr("date_end", "2024-03-16"),
+                ],
+            },
+            {
+                "id_entity": 2,
+                "attributes": [
+                    _attr("marker", "bbbb"),
+                    _attr("subtype", "GPS stöð"),
+                ],
+            },
+        ]
+        with patch("tostools.api.tos_client.TOSClient", return_value=FakeClient(fleet)):
+            rc_sugar, out_sugar = _run(
+                ["--discontinued", "--markers-only"], capsys, profile
+            )
+            rc_typed, out_typed = _run(
+                ["date_end != null", "--markers-only"], capsys, profile
+            )
+        assert rc_sugar == 0 and rc_typed == 0
+
+        # `_run` merges stderr, where the cache-provenance line lands; the
+        # markers are the 4-char uppercase tokens.
+        def markers(out):
+            return [t for t in out.split() if len(t) == 4 and t.isupper()]
+
+        assert markers(out_sugar) == markers(out_typed) == ["AAAA"]
