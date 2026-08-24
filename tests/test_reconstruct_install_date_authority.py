@@ -86,9 +86,20 @@ def _si(date_from, date_to, rec_sn, rec_model, ant_sn, ant_model):
 # between them is the antenna swap, not a receiver install.
 VMEY_STATION_INFO = (
     _si("2000-07-26", "2003-11-11", "28516", "TRIMBLE 4000SSI", "148018", "TRM29659.00")
-    + _si("2003-11-11", "2013-01-01", "26093", "TRIMBLE 4000SSI", "148018", "TRM29659.00")
-    + _si("2013-01-01", "2017-07-11", "5211K83153", "TRIMBLE NETR9", "148018", "TRM29659.00")
-    + _si("2017-07-11", "2022-02-15", "3018426", "SEPT POLARX5", "148018", "TRM29659.00")
+    + _si(
+        "2003-11-11", "2013-01-01", "26093", "TRIMBLE 4000SSI", "148018", "TRM29659.00"
+    )
+    + _si(
+        "2013-01-01",
+        "2017-07-11",
+        "5211K83153",
+        "TRIMBLE NETR9",
+        "148018",
+        "TRM29659.00",
+    )
+    + _si(
+        "2017-07-11", "2022-02-15", "3018426", "SEPT POLARX5", "148018", "TRM29659.00"
+    )
     + _si("2022-06-12", None, "3018426", "SEPT POLARX5", "0000", "SEPCHOKE_B3E6")
 )
 
@@ -117,9 +128,7 @@ class TestVmeyProposesNoWrites:
 
     def test_the_triage_contains_no_uncommented_action(self):
         text = format_triage(_vmey())
-        offenders = [
-            ln for ln in text.splitlines() if ln.startswith("ACTION")
-        ]
+        offenders = [ln for ln in text.splitlines() if ln.startswith("ACTION")]
         assert offenders == [], f"would write to TOS: {offenders}"
 
     def test_the_disputed_station_info_date_is_still_reported(self):
@@ -141,8 +150,11 @@ class TestInstallDateComesFromTheUnitsOwnRun:
         # The walk-back must not blunt the check it exists to serve.
         tos = [TosJoin(16156, 14011, RECEIVER, "3018426", "2010-01-01", None)]
         rep = reconcile_eras(
-            "VMEY", VMEY_ARCHIVE, tos,
-            current_install=VMEY_INSTALL, station_info=VMEY_STATION_INFO,
+            "VMEY",
+            VMEY_ARCHIVE,
+            tos,
+            current_install=VMEY_INSTALL,
+            station_info=VMEY_STATION_INFO,
         )
         fixes = [f for f in rep.join_fixes if f.subtype == RECEIVER]
         assert len(fixes) == 1
@@ -155,13 +167,20 @@ class TestDivergenceGate:
     def test_kosk_one_day_gap_keeps_preferring_station_info(self):
         # The commissioning gap the preference was built for. Must stay silent.
         archive = [
-            ArchiveEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09")
+            ArchiveEra(
+                RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09"
+            )
         ]
-        si = [StationInfoEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-24", None)]
+        si = [
+            StationInfoEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-24", None)
+        ]
         tos = [TosJoin(4835, 5937, RECEIVER, "5548R50633", "2006-11-08", None)]
         rep = reconcile_eras(
-            "KOSK", archive, tos,
-            current_install={RECEIVER: "2019-09-25"}, station_info=si,
+            "KOSK",
+            archive,
+            tos,
+            current_install={RECEIVER: "2019-09-25"},
+            station_info=si,
         )
         assert len(rep.join_fixes) == 1
         fix = rep.join_fixes[0]
@@ -177,8 +196,11 @@ class TestDivergenceGate:
         si = [StationInfoEra(ANTENNA, "SEPCHOKE_B3E6", "9911", "2022-06-12", None)]
         tos = [TosJoin(19543, 23287, ANTENNA, "9911", "2015-01-01", None)]
         rep = reconcile_eras(
-            "VMEY", archive, tos,
-            current_install={ANTENNA: "2023-01-11"}, station_info=si,
+            "VMEY",
+            archive,
+            tos,
+            current_install={ANTENNA: "2023-01-11"},
+            station_info=si,
         )
         fix = rep.join_fixes[0]
         assert fix.archive_install == "2023-01-11"  # the archive, not station.info
@@ -194,8 +216,11 @@ class TestDivergenceGate:
         tos = [TosJoin(19543, 23287, ANTENNA, "9911", "2015-01-01", None)]
         text = format_triage(
             reconcile_eras(
-                "VMEY", archive, tos,
-                current_install={ANTENNA: "2023-01-11"}, station_info=si,
+                "VMEY",
+                archive,
+                tos,
+                current_install={ANTENNA: "2023-01-11"},
+                station_info=si,
             )
         )
         assert "DISPUTED" in text
@@ -216,12 +241,17 @@ class TestDivergenceGate:
         self, si_date, archive_date, expect_proven
     ):
         assert STATION_INFO_DIVERGENCE_TOLERANCE_DAYS == 31
-        archive = [ArchiveEra(RECEIVER, "SEPT POLARX5", "3018426", archive_date, "2026-08-18")]
+        archive = [
+            ArchiveEra(RECEIVER, "SEPT POLARX5", "3018426", archive_date, "2026-08-18")
+        ]
         si = [StationInfoEra(RECEIVER, "SEPT POLARX5", "3018426", si_date, None)]
         tos = [TosJoin(16156, 14011, RECEIVER, "3018426", "2000-01-01", None)]
         rep = reconcile_eras(
-            "X", archive, tos,
-            current_install={RECEIVER: archive_date}, station_info=si,
+            "X",
+            archive,
+            tos,
+            current_install={RECEIVER: archive_date},
+            station_info=si,
         )
         assert rep.join_fixes[0].archive_proven is expect_proven
 
@@ -233,7 +263,9 @@ class TestACommissioningGapIsNotABackdatedJoin:
         # ISAK, live: antenna join 2026-07-30, archive first data 2026-08-01.
         # Moving the join forward to first-data would be the error.
         archive = [
-            ArchiveEra(ANTENNA, "TRM159900.00", "2505010005", "2026-08-01", "2026-08-18")
+            ArchiveEra(
+                ANTENNA, "TRM159900.00", "2505010005", "2026-08-01", "2026-08-18"
+            )
         ]
         tos = [TosJoin(21715, 29351, ANTENNA, "2505010005", "2026-07-30", None)]
         rep = reconcile_eras(
@@ -244,7 +276,9 @@ class TestACommissioningGapIsNotABackdatedJoin:
     def test_a_years_wide_gap_still_proposes_the_fix(self):
         # KOSK: the join sat 13 years back, on a receiver replaced in 2019.
         archive = [
-            ArchiveEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09")
+            ArchiveEra(
+                RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09"
+            )
         ]
         tos = [TosJoin(4835, 5937, RECEIVER, "5548R50633", "2006-11-08", None)]
         rep = reconcile_eras(
@@ -258,7 +292,11 @@ class TestPlaceholderSerialsArePlacedByDate:
     @pytest.mark.parametrize(
         "value",
         [
-            None, "", "0000", "000000", "0",
+            None,
+            "",
+            "0000",
+            "000000",
+            "0",
             "antenna-VMEY-20230111",  # the TOS sentinel
             "antenna-VMEY-2023011",  # the same, truncated by RINEX A20
             "UNKNOWN",
@@ -278,8 +316,12 @@ class TestPlaceholderSerialsArePlacedByDate:
 
     def test_a_placeholder_era_outside_every_join_is_still_missing(self):
         # Placing by date must not become "never report an antenna".
-        archive = [ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2019-01-01", "2020-01-01")]
-        tos = [TosJoin(19543, 23287, ANTENNA, "antenna-VMEY-20230111", "2023-01-11", None)]
+        archive = [
+            ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2019-01-01", "2020-01-01")
+        ]
+        tos = [
+            TosJoin(19543, 23287, ANTENNA, "antenna-VMEY-20230111", "2023-01-11", None)
+        ]
         rep = reconcile_eras(
             "VMEY", archive, tos, current_install={ANTENNA: "2023-01-11"}
         )
@@ -288,8 +330,12 @@ class TestPlaceholderSerialsArePlacedByDate:
 
     def test_a_partial_overlap_is_still_missing(self):
         # Containment, not overlap: an era crossing a swap boundary needs eyes.
-        archive = [ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2022-01-01", "2024-01-01")]
-        tos = [TosJoin(19543, 23287, ANTENNA, "antenna-VMEY-20230111", "2023-01-11", None)]
+        archive = [
+            ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2022-01-01", "2024-01-01")
+        ]
+        tos = [
+            TosJoin(19543, 23287, ANTENNA, "antenna-VMEY-20230111", "2023-01-11", None)
+        ]
         rep = reconcile_eras(
             "VMEY", archive, tos, current_install={ANTENNA: "2023-01-11"}
         )
@@ -313,8 +359,8 @@ class TestPlaceholderSerialsArePlacedByDate:
             called.append(serial)
             return None
 
-        archive = [ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2019-01-01", "2020-01-01")]
-        reconcile_eras(
-            "X", archive, [], current_install={}, serial_lookup=lookup
-        )
+        archive = [
+            ArchiveEra(ANTENNA, "SEPCHOKE_B3E6", "0000", "2019-01-01", "2020-01-01")
+        ]
+        reconcile_eras("X", archive, [], current_install={}, serial_lookup=lookup)
         assert called == []

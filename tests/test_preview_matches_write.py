@@ -84,7 +84,9 @@ class TestPreviewEqualsWrite:
             resolved = resolve_corrections(rinex, "VMEY", only_fields={"ANT # / TYPE"})
             previewed = render_correction("ANT # / TYPE", resolved["ANT # / TYPE"])
         assert previewed.startswith("0000")
-        assert "antenna-VMEY" not in previewed, "the 21-char serial must never be written"
+        assert (
+            "antenna-VMEY" not in previewed
+        ), "the 21-char serial must never be written"
         # A20,A20: the type starts at column 21 with a clean separation.
         assert previewed[20:40].rstrip() == "SEPCHOKE_B3E6   SPKE".rstrip()
 
@@ -127,7 +129,9 @@ class TestResolveIsTheGate:
     def test_a_label_tos_cannot_build_is_absent_from_the_resolved_set(self, rinex):
         # header_fix drops these instead of reporting a fix that never happens.
         with _patched(_TOS):
-            out = resolve_corrections(rinex, "VMEY", only_fields={"REC # / TYPE / VERS"})
+            out = resolve_corrections(
+                rinex, "VMEY", only_fields={"REC # / TYPE / VERS"}
+            )
         assert out == {}
 
     def test_empty_tos_resolves_to_nothing(self, rinex):

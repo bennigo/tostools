@@ -105,8 +105,11 @@ def test_create_downgraded_when_basic_search_finds_orphan(monkeypatch):
         lambda client, serial, subtype: {"id_entity": 21734},
     )
     res = df.find_devices_by_serial(
-        client, "3160", subtype="gnss_receiver",
-        parents=[_parent(HOTJ, "HOTJ")], index=index,
+        client,
+        "3160",
+        subtype="gnss_receiver",
+        parents=[_parent(HOTJ, "HOTJ")],
+        index=index,
     )
     assert res.matches == []
     assert res.bucket == df.INCONCLUSIVE
@@ -125,8 +128,11 @@ def test_create_kept_when_basic_search_also_absent(monkeypatch):
 
     monkeypatch.setattr("tostools.devices.find_device", _absent)
     res = df.find_devices_by_serial(
-        client, "3160", subtype="gnss_receiver",
-        parents=[_parent(HOTJ, "HOTJ")], index=index,
+        client,
+        "3160",
+        subtype="gnss_receiver",
+        parents=[_parent(HOTJ, "HOTJ")],
+        index=index,
     )
     assert res.bucket == df.CREATE
     assert res.basic_search_found is None
@@ -143,7 +149,9 @@ def test_create_without_subtype_skips_basic_search_crosscheck(monkeypatch):
     by_child = {4910: [_join(HOTJ, 4910, "2012-06-27T00:00:00", None)]}
     res = df.find_devices_by_serial(
         client=_client({4910: _dev_hist("gnss_receiver", "AAA111")}),
-        serial="3160", parents=[_parent(HOTJ, "HOTJ")], index=_index(by_child),
+        serial="3160",
+        parents=[_parent(HOTJ, "HOTJ")],
+        index=_index(by_child),
     )
     assert res.bucket == df.CREATE
     assert called == []

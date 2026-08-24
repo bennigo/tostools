@@ -101,12 +101,14 @@ class TestReconcileEdgeCases:
     def test_clean_when_tos_matches_archive(self):
         """Open join already at the archive install date → no fix, no missing."""
         archive = [
-            ArchiveEra(RECEIVER, "TRIMBLE NETR9", "5548R50633",
-                       "2019-09-25", "2026-08-09"),
+            ArchiveEra(
+                RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-25", "2026-08-09"
+            ),
         ]
         tos = [TosJoin(4835, 5937, RECEIVER, "5548R50633", "2019-09-25", None)]
-        r = reconcile_eras("TEST", archive, tos,
-                           current_install={RECEIVER: "2019-09-25"})
+        r = reconcile_eras(
+            "TEST", archive, tos, current_install={RECEIVER: "2019-09-25"}
+        )
         assert r.is_clean
 
     def test_no_fix_when_join_starts_after_install(self):
@@ -122,11 +124,11 @@ class TestReconcileEdgeCases:
         assert r.join_fixes == []
 
     def test_serial_match_is_case_and_space_insensitive(self):
-        archive = [ArchiveEra(RECEIVER, "M", " 5548r50633 ",
-                              "2019-09-25", "2026-08-09")]
+        archive = [
+            ArchiveEra(RECEIVER, "M", " 5548r50633 ", "2019-09-25", "2026-08-09")
+        ]
         tos = [TosJoin(1, 2, RECEIVER, "5548R50633", "2019-09-25", None)]
-        r = reconcile_eras("T", archive, tos,
-                           current_install={RECEIVER: "2019-09-25"})
+        r = reconcile_eras("T", archive, tos, current_install={RECEIVER: "2019-09-25"})
         assert r.missing_eras == []
 
     def test_missing_install_date_skips_subtype(self):
@@ -139,7 +141,10 @@ class TestReconcileEdgeCases:
         """When the receiver fix is sourced elsewhere, the engine can skip it —
         but still detects the missing receiver era."""
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
             joinfix_subtypes=(ANTENNA,),
         )
         assert all(f.subtype == ANTENNA for f in r.join_fixes)
@@ -156,8 +161,12 @@ class TestSerialDupGuard:
     def test_reopen_bucket_becomes_create_join_adopt(self):
         hit = SerialHit(BUCKET_REOPEN, entity_id=9001, parent="B9", summary="detached")
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, serial_lookup=_lookup({"3160": hit, "5923": hit}),
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            serial_lookup=_lookup({"3160": hit, "5923": hit}),
         )
         polarx = next(m for m in r.missing_eras if m.serial == "3160")
         assert polarx.is_adopt and polarx.adopt_entity_id == 9001
@@ -166,11 +175,16 @@ class TestSerialDupGuard:
         assert "adopt existing detached devices" in text
 
     def test_create_bucket_emits_copy_paste_template(self):
-        hit = SerialHit(BUCKET_CREATE, entity_id=None, parent=None,
-                        summary="provably absent")
+        hit = SerialHit(
+            BUCKET_CREATE, entity_id=None, parent=None, summary="provably absent"
+        )
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, serial_lookup=_lookup({"3160": hit, "5923": hit}),
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            serial_lookup=_lookup({"3160": hit, "5923": hit}),
         )
         assert not any(m.is_adopt for m in r.missing_eras)
         text = format_triage(r)
@@ -180,11 +194,19 @@ class TestSerialDupGuard:
         assert "#ACTION <new_id> create-join 4356 2006-11-08 2019-09-24" in text
 
     def test_attached_bucket_surfaces_dupguard_warning(self):
-        hit = SerialHit(BUCKET_ATTACHED, entity_id=42, parent="OTHR",
-                        summary="Exists as id_entity=42, attached to OTHR.")
+        hit = SerialHit(
+            BUCKET_ATTACHED,
+            entity_id=42,
+            parent="OTHR",
+            summary="Exists as id_entity=42, attached to OTHR.",
+        )
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, serial_lookup=_lookup({"3160": hit, "5923": hit}),
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            serial_lookup=_lookup({"3160": hit, "5923": hit}),
         )
         text = format_triage(r)
         assert "attached elsewhere" in text
@@ -192,8 +214,12 @@ class TestSerialDupGuard:
 
     def test_no_lookup_reports_unclassified(self):
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, serial_lookup=None,
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            serial_lookup=None,
         )
         text = format_triage(r)
         assert "serial dup-guard not run" in text
@@ -202,14 +228,25 @@ class TestSerialDupGuard:
 class TestStationInfoEnrichment:
     def test_missing_era_carries_curated_model_and_composite_height(self):
         si = [
-            StationInfoEra(ANTENNA, "AERAT2775_42", "5923",
-                           "2006-06-29", "2019-09-24", composite_height="1.0440"),
-            StationInfoEra(RECEIVER, "SEPT POLARX2", "3160",
-                           "2006-06-29", "2019-09-24"),
+            StationInfoEra(
+                ANTENNA,
+                "AERAT2775_42",
+                "5923",
+                "2006-06-29",
+                "2019-09-24",
+                composite_height="1.0440",
+            ),
+            StationInfoEra(
+                RECEIVER, "SEPT POLARX2", "3160", "2006-06-29", "2019-09-24"
+            ),
         ]
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, station_info=si,
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            station_info=si,
         )
         ant = next(m for m in r.missing_eras if m.serial == "5923")
         assert ant.canonical_model == "AERAT2775_42"
@@ -233,15 +270,16 @@ class TestStationInfoDatePreference:
     def test_joinfix_prefers_station_info_install_date(self):
         # archive says the NETR9 install is 2019-09-25; station.info says 09-24.
         si = [
-            StationInfoEra(RECEIVER, "TRIMBLE NETR9", "5548R50633",
-                           "2019-09-24", None),
-            StationInfoEra(ANTENNA, "TRM57971.00", "1441137916",
-                           "2019-09-24", None),
+            StationInfoEra(RECEIVER, "TRIMBLE NETR9", "5548R50633", "2019-09-24", None),
+            StationInfoEra(ANTENNA, "TRM57971.00", "1441137916", "2019-09-24", None),
         ]
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS,
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
             current_install={RECEIVER: "2019-09-25", ANTENNA: "2019-09-25"},
-            station_id=4356, station_info=si,
+            station_id=4356,
+            station_info=si,
         )
         for f in r.join_fixes:
             assert f.archive_install == "2019-09-24"  # station.info, not archive
@@ -256,12 +294,22 @@ class TestStationInfoDatePreference:
         ]
         tos = [TosJoin(4571, 5525, ANTENNA, "1441137916", "2019-09-24", None)]
         si = [
-            StationInfoEra(ANTENNA, "AERAT2775_42", "5923",
-                           "2006-06-29", "2019-09-24", composite_height="1.0440"),
+            StationInfoEra(
+                ANTENNA,
+                "AERAT2775_42",
+                "5923",
+                "2006-06-29",
+                "2019-09-24",
+                composite_height="1.0440",
+            ),
         ]
         r = reconcile_eras(
-            "KOSK", archive, tos, current_install={ANTENNA: "2019-09-24"},
-            station_id=4356, station_info=si,
+            "KOSK",
+            archive,
+            tos,
+            current_install={ANTENNA: "2019-09-24"},
+            station_id=4356,
+            station_info=si,
         )
         ant = next(m for m in r.missing_eras if m.serial == "5923")
         assert ant.date_from == "2006-06-29" and ant.date_to == "2019-09-24"
@@ -274,8 +322,12 @@ class TestStationInfoDatePreference:
 
     def test_archive_dates_used_when_no_station_info(self):
         r = reconcile_eras(
-            "KOSK", KOSK_ARCHIVE, KOSK_TOS, current_install=KOSK_INSTALL,
-            station_id=4356, station_info=None,
+            "KOSK",
+            KOSK_ARCHIVE,
+            KOSK_TOS,
+            current_install=KOSK_INSTALL,
+            station_id=4356,
+            station_info=None,
         )
         ant = next(m for m in r.missing_eras if m.serial == "5923")
         assert ant.date_from == "2006-11-08"  # falls back to archive
