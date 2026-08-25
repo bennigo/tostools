@@ -13425,6 +13425,16 @@ def _print_attribute_catalog_report(report) -> None:
             label = f"  {u.label}" if u.label else ""
             print(f"    {u.code:30s}{label}")
 
+    if getattr(report, "broken_alias", None):
+        print(
+            f"\n‼ {len(report.broken_alias)} BROKEN ALIAS — a `form_label_only` "
+            "entry whose `api_code` TOS does not define. Such an entry is exempt "
+            "from the phantom check precisely because it has no code of its own, "
+            "so where it says the label maps to is the one claim left to verify:"
+        )
+        for a in report.broken_alias:
+            print(f"    [{a.scope}] {a.code:30s} → api_code {a.api_code} (undefined)")
+
     print(
         "\nA phantom code sharing a live code's Icelandic label is a rename, "
         "not a deletion — check each before editing the catalog."

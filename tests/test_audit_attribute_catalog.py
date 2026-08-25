@@ -304,3 +304,76 @@ class TestScopeAwareness:
         from tostools.audit_attribute_catalog import _defined_for_scope
 
         assert _defined_for_scope({"entity_types": ["station"]}, "nonesuch") is True
+
+
+class TestFormLabelOnlyEntries:
+    """A `form_label_only` entry documents a TOS WEB-FORM label that has no
+    /admin_attribute_rows code behind it — the monument aliases, where the
+    form's "Undirtegund"/"Tegund innviða" are the API's `subtype`/`model`.
+
+    Having no schema code is the POINT of such an entry, so reporting it as a
+    phantom every run is permanent known noise that a real typo then has to be
+    spotted against. The mapping it claims is checked instead.
+    """
+
+    def test_form_label_entry_is_not_a_phantom(self, tmp_path):
+        cat = _catalog(
+            tmp_path,
+            devices={
+                "infrastructure_subtype": {
+                    "icelandic_label": "Undirtegund",
+                    "form_label_only": True,
+                    "api_code": "subtype",
+                }
+            },
+        )
+        report = audit_attribute_catalog(
+            _schema(subtype="Undirtegund"), catalog_path=cat
+        )
+        assert report.phantom == []
+        assert report.broken_alias == []
+
+    def test_a_mapping_to_an_undefined_code_is_reported(self, tmp_path):
+        """The exemption buys an obligation: say where it maps, correctly."""
+        cat = _catalog(
+            tmp_path,
+            devices={
+                "infrastructure_type": {
+                    "icelandic_label": "Tegund innviða",
+                    "form_label_only": True,
+                    "api_code": "no_such_code",
+                }
+            },
+        )
+        report = audit_attribute_catalog(_schema(model="Tegund"), catalog_path=cat)
+        assert report.phantom == []
+        assert len(report.broken_alias) == 1
+        alias = report.broken_alias[0]
+        assert (alias.scope, alias.code, alias.api_code) == (
+            "devices",
+            "infrastructure_type",
+            "no_such_code",
+        )
+        assert report.has_findings, "a broken alias must not exit clean"
+
+    def test_form_label_entry_without_api_code_is_still_exempt(self, tmp_path):
+        """Nothing to verify — but it must not resurface as a phantom."""
+        cat = _catalog(
+            tmp_path,
+            devices={
+                "legacy_form_field": {"icelandic_label": "X", "form_label_only": True}
+            },
+        )
+        report = audit_attribute_catalog(_schema(marker="M"), catalog_path=cat)
+        assert report.phantom == []
+        assert report.broken_alias == []
+
+    def test_an_ordinary_entry_is_unaffected(self, tmp_path):
+        """The exemption must key on the flag, not leak to every entry."""
+        cat = _catalog(
+            tmp_path, devices={"invented_code": {"icelandic_label": "Undirtegund"}}
+        )
+        report = audit_attribute_catalog(
+            _schema(subtype="Undirtegund"), catalog_path=cat
+        )
+        assert [p.code for p in report.phantom] == ["invented_code"]

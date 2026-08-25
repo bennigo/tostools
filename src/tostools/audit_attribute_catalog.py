@@ -123,11 +123,27 @@ class UnlistedCode:
 
 
 @dataclass
+class BrokenAlias:
+    """A ``form_label_only`` entry whose ``api_code`` TOS does not define.
+
+    Such an entry is exempt from the phantom check because having no schema
+    code of its own is its whole purpose — it documents a web-form label. What
+    it must NOT get wrong is where it says the label maps to, since that claim
+    is what readers act on. This is the check that replaces the exemption.
+    """
+
+    scope: str
+    code: str
+    api_code: str
+
+
+@dataclass
 class CatalogAuditReport:
     """Everything the CLI renders, plus the counts that decide the exit code."""
 
     phantom: List[PhantomCode] = field(default_factory=list)
     unlisted: List[UnlistedCode] = field(default_factory=list)
+    broken_alias: List[BrokenAlias] = field(default_factory=list)
     catalog_codes: int = 0
     schema_codes: int = 0
     catalog_path: Optional[str] = None
@@ -138,7 +154,7 @@ class CatalogAuditReport:
 
     @property
     def has_findings(self) -> bool:
-        return bool(self.phantom or self.unlisted)
+        return bool(self.phantom or self.unlisted or self.broken_alias)
 
 
 def fetch_schema_codes(
@@ -241,6 +257,20 @@ def audit_attribute_catalog(
             if in_scope:
                 continue
             entry = entry or {}
+            # A `form_label_only` entry documents a TOS WEB-FORM label that has
+            # no /admin_attribute_rows code behind it — the monument aliases,
+            # where the form's "Undirtegund"/"Tegund innviða" are the API's
+            # `subtype`/`model`. Absence from the schema is the POINT of such an
+            # entry, not a defect, so reporting it as a phantom every run would
+            # be permanent known noise that a real typo then has to be spotted
+            # against. The mapping it claims is still checked below.
+            if entry.get("form_label_only"):
+                api_code = entry.get("api_code")
+                if api_code and api_code not in schema:
+                    report.broken_alias.append(
+                        BrokenAlias(scope=scope, code=code, api_code=api_code)
+                    )
+                continue
             label = (entry.get("icelandic_label") or "").strip() or None
             report.phantom.append(
                 PhantomCode(

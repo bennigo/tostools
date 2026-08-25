@@ -262,6 +262,8 @@ devices:
     why: ""
 
   infrastructure_subtype:
+    form_label_only: true # TOS web-form label, not an /admin_attribute_rows code
+    api_code: subtype # what the form label maps to API-side (same entity)
     icelandic_label: Undirtegund
     description: Sub-type of monument (form-required for monument; differs from devices' Tegund tækis — high-level class, e.g. "GPS undirstaða")
     classification: inherent
@@ -284,6 +286,8 @@ devices:
     why: "TOS form labels are crossed — Undirtegund carries the high-level monument class (default GPS undirstaða); Tegund innviða carries the model-equivalent (specific construction type). IS↔EN translation table needed for sitelog rendering — see infrastructure_type. API-side these live in `subtype` / `model`."
 
   infrastructure_type:
+    form_label_only: true # TOS web-form label, not an /admin_attribute_rows code
+    api_code: model # what the form label maps to API-side (same entity)
     icelandic_label: Tegund innviða
     description: Type of infrastructure — monument's "model" equivalent. Known IS values — GPS stál-fjórfótur (default) | GPS stál-staur | GPS stöng á þaki | GPS steyptur stöpull | Short Drilled Braced Monument (SDBM) | Þrífótur. Rendered as "Foundation" in IGS site log section 3.1.
     classification: inherent
@@ -466,7 +470,7 @@ devices:
     walked: false
     why: ""
 
-  radio_links_5ghz:
+  radiolinks_5ghz:
     icelandic_label: Radiolinkar á 5GHz
     description: Station identifiers reachable via 5GHz radio (semicolon-list)
     classification: TODO
@@ -481,7 +485,7 @@ devices:
     walked: false
     why: ""
 
-  radio_links_2_4ghz:
+  radiolinks_24ghz:
     icelandic_label: Radiolinkar á 2.4GHz
     description: Station identifiers reachable via 2.4GHz radio (semicolon-list)
     classification: TODO
@@ -629,7 +633,7 @@ devices:
 
   # --- Identifiers / cross-refs ---
 
-  galvos_number:
+  galvos:
     icelandic_label: GALVOS-númer
     description: GALVOS inventory number
     classification: TODO # inherent
@@ -674,7 +678,7 @@ devices:
     walked: false
     why: "this can in all cases be derived from model"
 
-  make:
+  type:
     icelandic_label: Gerð
     description: Make / kind (e.g. hitamælir, datalogger)
     classification: TODO
@@ -828,7 +832,7 @@ devices:
     walked: false
     why: ""
 
-  service_provider:
+  provider:
     icelandic_label: Þjónustufyrirtæki
     description: Service provider (e.g. Síminn, Vodafone) — modem providers
     classification: TODO
@@ -843,7 +847,7 @@ devices:
     walked: false
     why: "Modem provider; not relevant to GNSS data quality"
 
-  device_phone:
+  phone_number:
     icelandic_label: Símanúmer tækis
     description: Phone number assigned to the device (modems)
     classification: TODO
@@ -905,7 +909,7 @@ devices:
 
   # --- Hardware ---
 
-  cpu:
+  processor:
     icelandic_label: Örgjörvi
     description: CPU type
     classification: TODO
@@ -920,7 +924,7 @@ devices:
     walked: false
     why: ""
 
-  cpu_fan:
+  cpu_fan_model:
     icelandic_label: Örgjörvavifta
     description: CPU fan type
     classification: TODO
@@ -935,7 +939,7 @@ devices:
     walked: false
     why: ""
 
-  clock_speed:
+  cpu_clock_speed:
     icelandic_label: Klukkuhraði
     description: CPU clock speed (MHz)
     classification: TODO
@@ -995,7 +999,7 @@ devices:
     walked: false
     why: "Disk size matters for receivers buffering data, but probably not audit-relevant"
 
-  disk_type:
+  hdd_model:
     icelandic_label: Harður diskur
     description: Hard disk type
     classification: TODO
@@ -1040,7 +1044,7 @@ devices:
     walked: false
     why: ""
 
-  file_type:
+  filetype:
     icelandic_label: Skráartegund
     description: File type
     classification: TODO
@@ -1102,7 +1106,7 @@ devices:
     walked: false
     why: "Hydrological / borehole sensor metric"
 
-  sensor_adjustable:
+  sensor_is_adjustable:
     icelandic_label: Skynjari er stillanlegur
     description: Whether the sensor is adjustable (já/nei)
     classification: TODO
@@ -1117,7 +1121,7 @@ devices:
     walked: false
     why: ""
 
-  sensor_role:
+  operational_function:
     icelandic_label: Hlutverk
     description: Device role (e.g. Wet thermometer, Spare thermometer)
     classification: TODO
@@ -1132,7 +1136,7 @@ devices:
     walked: false
     why: "Meteorological / sensor classification"
 
-  pressure_offset:
+  barometer_offset:
     icelandic_label: Hliðrun loftþrýstings
     description: Air pressure offset
     classification: TODO
@@ -1147,7 +1151,7 @@ devices:
     walked: false
     why: "Meteorological"
 
-  bucket_volume_mm:
+  bucket_capacity_mm:
     icelandic_label: Rúmmál fötu (mm)
     description: Rain gauge bucket volume in mm
     classification: TODO
@@ -1162,7 +1166,7 @@ devices:
     walked: false
     why: "Rain gauge"
 
-  bucket_volume_kg:
+  bucket_capacity_kg:
     icelandic_label: Rúmmál fötu (kg)
     description: Rain gauge bucket volume in kg
     classification: TODO
@@ -1177,7 +1181,7 @@ devices:
     walked: false
     why: "Rain gauge"
 
-  camera_image_link:
+  images_uri:
     icelandic_label: Tengill á myndir
     description: URL to webcam images
     classification: TODO
@@ -1192,7 +1196,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_looks_at:
+  view_target:
     icelandic_label: Horfir á
     description: Camera target (e.g. Hekla, Jökulsá á Sólheimasandi)
     classification: TODO
@@ -1207,7 +1211,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_fov:
+  field_of_view:
     icelandic_label: Sjónsvið
     description: Camera field of view (degrees, 1-360)
     classification: TODO
@@ -1222,7 +1226,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_direction:
+  direction:
     icelandic_label: Átt
     description: Camera azimuth (degrees, 0-359)
     classification: TODO
@@ -1237,7 +1241,7 @@ devices:
     walked: false
     why: "Webcam (separate from antenna Áttarhorn)"
 
-  camera_image_link_other_lens:
+  images_uri_secondary:
     icelandic_label: Tengill á myndir (önnur linsa)
     description: Second-lens webcam image URL
     classification: TODO
@@ -1252,7 +1256,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_looks_at_other_lens:
+  view_target_secondary:
     icelandic_label: Horfir á (önnur linsa)
     description: Second-lens camera target
     classification: TODO
@@ -1267,7 +1271,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_fov_other_lens:
+  field_of_view_secondary:
     icelandic_label: Sjónsvið (önnur linsa)
     description: Second-lens camera FOV
     classification: TODO
@@ -1282,7 +1286,7 @@ devices:
     walked: false
     why: "Webcam"
 
-  camera_direction_other_lens:
+  direction_secondary:
     icelandic_label: Átt (önnur linsa)
     description: Second-lens camera direction
     classification: TODO
@@ -1372,7 +1376,7 @@ devices:
     walked: false
     why: "Sensor calibration"
 
-  calibration_coefficient_k:
+  calibration_constant_k:
     icelandic_label: Kvörðunarstuðull k
     description: Calibration coefficient k = 1/(R/R0)
     classification: TODO
@@ -1387,7 +1391,7 @@ devices:
     walked: false
     why: "Resistive sensor coefficient"
 
-  x25:
+  x25_type:
     icelandic_label: X25
     description: X25 protocol type (SGX, SGP)
     classification: TODO
@@ -1402,7 +1406,7 @@ devices:
     walked: false
     why: "Legacy network protocol"
 
-  units:
+  sensor_units:
     icelandic_label: Einingar
     description: Sensor measurement units
     classification: TODO
@@ -1417,7 +1421,7 @@ devices:
     walked: false
     why: "Sensor units"
 
-  output_units:
+  sensor_output_units:
     icelandic_label: Einingar úttaks
     description: Output units (e.g. mV/V)
     classification: TODO
@@ -1432,22 +1436,7 @@ devices:
     walked: false
     why: "Sensor output units"
 
-  sensitivity:
-    icelandic_label: Næmi
-    description: Sensor sensitivity
-    classification: TODO
-    tos_required_for: []
-    gps_required_for: [] # USER FILLS IN — strict superset of tos
-    default_value: ~ # USER OPTIONAL — what TOS records as the default
-    applies_to: []
-    gps_relevance: "no"
-    subtypes_observed: []
-    sample_values: []
-    n_devices: 0
-    walked: false
-    why: "Sensor metric"
-
-  measurement_range_min:
+  sensor_range_min:
     icelandic_label: Lágmark mælisviðs
     description: Sensor measurement range minimum
     classification: TODO
@@ -1462,7 +1451,7 @@ devices:
     walked: false
     why: "Sensor metric"
 
-  measurement_range_max:
+  sensor_range_max:
     icelandic_label: Hámark mælisviðs
     description: Sensor measurement range maximum
     classification: TODO
@@ -1477,7 +1466,7 @@ devices:
     walked: false
     why: "Sensor metric"
 
-  measurement_scales:
+  sensor_output_parameters:
     icelandic_label: Mælistikar
     description: Measurement scales (semicolon-list)
     classification: TODO
@@ -1507,7 +1496,7 @@ devices:
     walked: false
     why: "Optical sensor"
 
-  output_min:
+  sensor_output_range_min:
     icelandic_label: Lágmark úttaks
     description: Output minimum
     classification: TODO
@@ -1522,7 +1511,7 @@ devices:
     walked: false
     why: "Sensor"
 
-  output_max:
+  sensor_output_range_max:
     icelandic_label: Hámark úttaks
     description: Output maximum
     classification: TODO
@@ -1640,7 +1629,7 @@ locations:
     walked: false
     why: ""
 
-  notes:
+  note:
     icelandic_label: Glósur
     description: Notes about the location
     classification: mutable
@@ -1826,7 +1815,7 @@ stations:
     walked: false
     why: ""
 
-  wigos_number:
+  wigos:
     icelandic_label: WIGOS-númer
     description: WMO Integrated Global Observing System identifier
     classification: TODO # inherent once assigned
@@ -1922,7 +1911,7 @@ stations:
     walked: false
     why: "Continuous vs campaign — critical for processing pipeline. Mutable: a station's continuity can change over its lifetime."
 
-  short_name:
+  name_short:
     icelandic_label: Nafn stutt
     description: Short name for external systems
     classification: inherent
@@ -1934,7 +1923,7 @@ stations:
     walked: false
     why: ""
 
-  early_data_date:
+  date_legacy:
     icelandic_label: Fyrndardagsetning
     description: Date of earliest recorded data, before regular operation per date_start
     classification: TODO # inherent
@@ -1958,7 +1947,7 @@ stations:
     walked: false
     why: ""
 
-  bore_depth:
+  borehole_depth:
     icelandic_label: Dýpi borholu
     description: Borehole depth for strain meter
     classification: TODO
@@ -1969,30 +1958,6 @@ stations:
     gps_relevance: "no"
     walked: false
     why: "Strain meter, not GNSS"
-
-  station_phone:
-    icelandic_label: Símanúmer stöðvar
-    description: Station phone number
-    classification: TODO
-    tos_required_for: []
-    gps_required_for: [] # USER FILLS IN — strict superset of tos
-    default_value: ~ # USER OPTIONAL — what TOS records as the default
-    applies_to: [geophysical]
-    gps_relevance: "no"
-    walked: false
-    why: ""
-
-  station_ip:
-    icelandic_label: IP-tala stöðvar
-    description: Station IP address
-    classification: TODO
-    tos_required_for: []
-    gps_required_for: [] # USER FILLS IN — strict superset of tos
-    default_value: ~ # USER OPTIONAL — what TOS records as the default
-    applies_to: [geophysical]
-    gps_relevance: "no"
-    walked: false
-    why: ""
 
   note:
     icelandic_label: Glósur
@@ -2018,7 +1983,7 @@ stations:
     walked: false
     why: ""
 
-  galvos_number:
+  galvos:
     icelandic_label: GALVOS-númer
     description: GALVOS station identifier
     classification: TODO
@@ -2030,7 +1995,7 @@ stations:
     walked: false
     why: ""
 
-  galvos_location_code:
+  galvos_location_type_code:
     icelandic_label: GALVOS-staðarkóði
     description: GALVOS location code
     classification: TODO
@@ -2042,7 +2007,7 @@ stations:
     walked: false
     why: ""
 
-  owner_station_id:
+  station_identifier_owner:
     icelandic_label: Stöðvaauðkenni eiganda
     description: Owner-assigned station identifier (if not IMO-numbered)
     classification: TODO
@@ -2054,7 +2019,7 @@ stations:
     walked: false
     why: ""
 
-  service_announcement:
+  service_bulletin:
     icelandic_label: Þjónustutilkynning
     description: Service announcement string
     classification: TODO
@@ -2077,6 +2042,18 @@ stations:
     gps_relevance: "no"
     walked: false
     why: ""
+
+  external_data_type:
+    icelandic_label: Ytri gagnategund
+    description: External data type — classifies data sourced from outside VÍ
+    classification: TODO
+    tos_required_for: []
+    gps_required_for: [] # USER FILLS IN — strict superset of tos
+    default_value: ~ # USER OPTIONAL — what TOS records as the default
+    applies_to: [geophysical]
+    gps_relevance: "no"
+    walked: false
+    why: "Added 2026-08-25 from /admin_attribute_rows — defined in TOS and carried by live stations, but absent from the catalog, so unreachable under `tosGPS search`. No phantom pointed at it, so a rename could not have surfaced it."
 
   environment:
     icelandic_label: Umhverfi
@@ -2140,7 +2117,7 @@ stations:
     walked: false
     why: "Meteorological forecast area"
 
-  wmo_code:
+  wmo:
     icelandic_label: WMO-kóði
     description: WMO station code
     classification: TODO
@@ -2164,19 +2141,7 @@ stations:
     walked: false
     why: "Met-station classification"
 
-  vhm_reference:
-    icelandic_label: VHM tilvísun
-    description: VHM reference
-    classification: TODO
-    tos_required_for: []
-    gps_required_for: [] # USER FILLS IN — strict superset of tos
-    default_value: ~ # USER OPTIONAL — what TOS records as the default
-    applies_to: [geophysical]
-    gps_relevance: "no"
-    walked: false
-    why: ""
-
-  vi_weather_station_number:
+  imo:
     icelandic_label: VÍ veðurstöðvanúmer
     description: VÍ weather station number
     classification: TODO
@@ -2188,7 +2153,7 @@ stations:
     walked: false
     why: "Weather station ID"
 
-  precipitation_meter_height:
+  height_precipitation_gauge:
     icelandic_label: Hæð úrkomumælis
     description: Precipitation meter height (m)
     classification: TODO
@@ -2200,7 +2165,7 @@ stations:
     walked: false
     why: "Rain gauge"
 
-  thermometer_height:
+  height_thermometer:
     icelandic_label: Hæð hitamælis
     description: Thermometer height (m)
     classification: TODO
@@ -2212,7 +2177,7 @@ stations:
     walked: false
     why: "Met"
 
-  wind_meter_height:
+  height_anemometer:
     icelandic_label: Hæð vindmælis
     description: Wind meter height (m)
     classification: TODO
@@ -2224,7 +2189,7 @@ stations:
     walked: false
     why: "Met"
 
-  barometer_height:
+  altitude_barometer:
     icelandic_label: Hæð loftvogar
     description: Barometer height (m)
     classification: TODO
