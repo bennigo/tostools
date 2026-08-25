@@ -18,7 +18,12 @@ from tostools.search import (
 
 
 def _c(role_is="Eigandi stöðvar", organization="Veðurstofa Íslands", name="", email=""):
-    return {"role_is": role_is, "organization": organization, "name": name, "email": email}
+    return {
+        "role_is": role_is,
+        "organization": organization,
+        "name": name,
+        "email": email,
+    }
 
 
 # ── parsing ────────────────────────────────────────────────────────────────
@@ -44,7 +49,9 @@ def test_owner_org_matches_role_scoped():
 
 def test_owner_negation_is_universal():
     contacts = [_c(organization="Jarðvísindastofnun Háskóla Íslands")]
-    assert not contacts_satisfy(contacts, [parse_expression("contact.owner !~ Háskóla")])
+    assert not contacts_satisfy(
+        contacts, [parse_expression("contact.owner !~ Háskóla")]
+    )
     contacts = [_c(organization="Veðurstofa Íslands")]
     assert contacts_satisfy(contacts, [parse_expression("contact.owner !~ Háskóla")])
 
@@ -58,13 +65,19 @@ def test_role_scoping_excludes_other_roles():
     assert not contacts_satisfy(contacts, [parse_expression("contact.owner ~ Háskóla")])
     assert contacts_satisfy(contacts, [parse_expression("contact.operator ~ Háskóla")])
     # any-contact organization spans both roles.
-    assert contacts_satisfy(contacts, [parse_expression("contact.organization ~ Háskóla")])
+    assert contacts_satisfy(
+        contacts, [parse_expression("contact.organization ~ Háskóla")]
+    )
 
 
 def test_data_owner_role():
     contacts = [_c(role_is="Eigandi gagna", organization="Náttúrufræðistofnun Íslands")]
-    assert contacts_satisfy(contacts, [parse_expression("contact.data_owner ~ Náttúrufræði")])
-    assert not contacts_satisfy(contacts, [parse_expression("contact.owner ~ Náttúrufræði")])
+    assert contacts_satisfy(
+        contacts, [parse_expression("contact.data_owner ~ Náttúrufræði")]
+    )
+    assert not contacts_satisfy(
+        contacts, [parse_expression("contact.owner ~ Náttúrufræði")]
+    )
 
 
 def test_owner_null_is_absence():
@@ -75,7 +88,13 @@ def test_owner_null_is_absence():
 
 def test_owner_reads_organization_fallback_name():
     # Some contacts carry the org only in `name`.
-    contacts = [{"role_is": "Eigandi stöðvar", "organization": "", "name": "Jarðvísindastofnun Háskóla Íslands"}]
+    contacts = [
+        {
+            "role_is": "Eigandi stöðvar",
+            "organization": "",
+            "name": "Jarðvísindastofnun Háskóla Íslands",
+        }
+    ]
     assert contacts_satisfy(contacts, [parse_expression("contact.owner ~ Háskóla")])
 
 
@@ -104,8 +123,12 @@ def test_org_term_expands_abbreviation(monkeypatch):
     from tostools import search as sm
 
     monkeypatch.setattr(
-        sm, "_org_aliases",
-        lambda: {"ies": "Jarðvísindastofnun Háskóla Íslands", "jhí": "Jarðvísindastofnun Háskóla Íslands"},
+        sm,
+        "_org_aliases",
+        lambda: {
+            "ies": "Jarðvísindastofnun Háskóla Íslands",
+            "jhí": "Jarðvísindastofnun Háskóla Íslands",
+        },
     )
     assert sm._expand_org_term("IES") == "Jarðvísindastofnun Háskóla Íslands"
     assert sm._expand_org_term("jhí") == "Jarðvísindastofnun Háskóla Íslands"
@@ -117,7 +140,8 @@ def test_owner_selector_accepts_abbreviation(monkeypatch):
     from tostools import search as sm
 
     monkeypatch.setattr(
-        sm, "_org_aliases",
+        sm,
+        "_org_aliases",
         lambda: {"ies": "Jarðvísindastofnun Háskóla Íslands"},
     )
     contacts = [_c(organization="Jarðvísindastofnun Háskóla Íslands")]

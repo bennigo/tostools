@@ -36,8 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from .utils.logging import get_logger
 from .api.client_cache import SnapshotMiss
+from .utils.logging import get_logger
 
 logger = get_logger(__name__, logging.WARNING)
 
@@ -837,7 +837,14 @@ def devices_satisfy(
 # Visit (vitjun) predicates — the third selector kind
 # ---------------------------------------------------------------------------
 
-_OP_NEGATION = {"=": "!=", "!=": "=", "~": "!~", "!~": "~", "in": "not in", "not in": "in"}
+_OP_NEGATION = {
+    "=": "!=",
+    "!=": "=",
+    "~": "!~",
+    "!~": "~",
+    "in": "not in",
+    "not in": "in",
+}
 
 
 def _negate_predicate(pred: Predicate) -> Predicate:
@@ -866,7 +873,9 @@ def _visit_field_values(visit: dict, code: str) -> List[str]:
         return [str(v)] if v else []
     if code == "participants":
         return [
-            str(visit[k]) for k in ("participants", "participants_names") if visit.get(k)
+            str(visit[k])
+            for k in ("participants", "participants_names")
+            if visit.get(k)
         ]
     v = visit.get(code)
     return [str(v)] if v else []
@@ -1381,7 +1390,10 @@ class SearchResult:
         """
         cols: List[tuple] = []
         for pred in self.predicates:
-            if pred.namespace is not None and pred.namespace not in (VISIT_NAMESPACE, CONTACT_NAMESPACE):
+            if pred.namespace is not None and pred.namespace not in (
+                VISIT_NAMESPACE,
+                CONTACT_NAMESPACE,
+            ):
                 pair = (pred.namespace, pred.code)
                 if pair not in cols:
                     cols.append(pair)
@@ -1537,7 +1549,10 @@ def search_stations(
     # predicates can only be evaluated after it.
     station_preds = [p for p in predicates if p.namespace is None]
     device_preds = [
-        p for p in predicates if p.namespace is not None and p.namespace not in (VISIT_NAMESPACE, CONTACT_NAMESPACE)
+        p
+        for p in predicates
+        if p.namespace is not None
+        and p.namespace not in (VISIT_NAMESPACE, CONTACT_NAMESPACE)
     ]
     visit_preds = [p for p in predicates if p.namespace == VISIT_NAMESPACE]
     contact_preds = [p for p in predicates if p.namespace == CONTACT_NAMESPACE]
@@ -1582,7 +1597,9 @@ def search_stations(
             survivors = [
                 s
                 for s in survivors
-                if contacts_satisfy(contacts_by_id.get(s.get("id_entity"), []), contact_preds)
+                if contacts_satisfy(
+                    contacts_by_id.get(s.get("id_entity"), []), contact_preds
+                )
             ]
 
     # A device selector needs the walk even with no --device/--receiver

@@ -6561,11 +6561,7 @@ def _visit_search_main(args, profile=None) -> int:
 
     # ---- Profile gate + subtype pin (mirror _search_main) ---------------
     if profile is not None:
-        offenders = [
-            p
-            for p in predicates
-            if not profile.allows(p.namespace, p.code)
-        ]
+        offenders = [p for p in predicates if not profile.allows(p.namespace, p.code)]
         if offenders:
             for p in offenders:
                 print(
@@ -6670,7 +6666,7 @@ def _visit_search_main(args, profile=None) -> int:
         return 0
 
     if args.markers_only:
-        for m in (no_match if args.missing else list(matches)):
+        for m in no_match if args.missing else list(matches):
             print(m)
         return 0
 
@@ -6681,7 +6677,10 @@ def _visit_search_main(args, profile=None) -> int:
         table.add_column("marker", style="cyan")
         table.add_column("name")
         for m in no_match:
-            ent = next((e for e in fleet if (search_mod.open_value(e, "marker") or "?") == m), {})
+            ent = next(
+                (e for e in fleet if (search_mod.open_value(e, "marker") or "?") == m),
+                {},
+            )
             table.add_row(m, search_mod.open_value(ent, "name") or "")
         console.print(table)
         console.print(
@@ -15042,7 +15041,8 @@ def _search_main(argv, profile=None):
         offenders = [
             (p.namespace, p.code, p.selector)
             for p in predicates
-            if p.namespace not in (search_mod.VISIT_NAMESPACE, search_mod.CONTACT_NAMESPACE)
+            if p.namespace
+            not in (search_mod.VISIT_NAMESPACE, search_mod.CONTACT_NAMESPACE)
             and not profile.allows(p.namespace, p.code)
         ] + [
             (ns, code, raw)
@@ -15062,11 +15062,15 @@ def _search_main(argv, profile=None):
     predicates.extend(search_mod.sugar_predicates(args))
     for org in args.owner or []:
         predicates.append(
-            search_mod.Predicate("owner", "~", org, namespace=search_mod.CONTACT_NAMESPACE)
+            search_mod.Predicate(
+                "owner", "~", org, namespace=search_mod.CONTACT_NAMESPACE
+            )
         )
     for org in args.no_owner or []:
         predicates.append(
-            search_mod.Predicate("owner", "!~", org, namespace=search_mod.CONTACT_NAMESPACE)
+            search_mod.Predicate(
+                "owner", "!~", org, namespace=search_mod.CONTACT_NAMESPACE
+            )
         )
 
     # Scope: ONLY a profile pins a subtype. Plain `tos search` is the entity
@@ -15497,7 +15501,9 @@ def _selectors_main(args, profile=None) -> int:
         print(f"  {'station':<12} station attributes (use bare)")
         print(f"  {'subtypes':<12} device subtypes (the namespace before the dot)")
         print(f"  {'visit':<12} vitjanir record selectors (use as 'visit.<code>')")
-        print(f"  {'contact':<12} owner/operator org selectors (use as 'contact.<code>')")
+        print(
+            f"  {'contact':<12} owner/operator org selectors (use as 'contact.<code>')"
+        )
         for subtype in sel.canonical_subtypes():
             alias = sel.aliases_for(subtype)[0]
             print(f"  {alias:<12} {subtype} attributes (use as '{alias}.<code>')")
@@ -15576,7 +15582,12 @@ def _selectors_main(args, profile=None) -> int:
                     profile=profile,
                 )
             )
-    elif topic not in (sel.TOPIC_STATION, sel.TOPIC_SUBTYPES, sel.TOPIC_VISIT, sel.TOPIC_CONTACT):
+    elif topic not in (
+        sel.TOPIC_STATION,
+        sel.TOPIC_SUBTYPES,
+        sel.TOPIC_VISIT,
+        sel.TOPIC_CONTACT,
+    ):
         groups.append(
             sel.device_group(
                 topic,

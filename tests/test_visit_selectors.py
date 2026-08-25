@@ -18,7 +18,9 @@ from tostools.search import (
 )
 
 
-def _v(work=None, comment=None, remaining=None, vtype="remote", participants="bgo@vedur.is"):
+def _v(
+    work=None, comment=None, remaining=None, vtype="remote", participants="bgo@vedur.is"
+):
     return {
         "id": 1,
         "work": work,
@@ -68,7 +70,9 @@ def test_positive_existential():
 def test_negation_is_universal():
     # One visit matches, so !~ must be FALSE (a matching visit exists).
     visits = [_v(work="TOS reviewed, re-rinexed")]
-    assert not visits_satisfy(visits, [parse_expression('visit.work !~ "TOS reviewed"')])
+    assert not visits_satisfy(
+        visits, [parse_expression('visit.work !~ "TOS reviewed"')]
+    )
     # No matching visit → !~ holds (the "left to do" cross-check).
     visits = [_v(work="firmware uppfært")]
     assert visits_satisfy(visits, [parse_expression('visit.work !~ "TOS reviewed"')])
@@ -86,14 +90,23 @@ def test_same_visit_and_for_positives():
         _v(work="TOS reviewed", vtype="on_site"),
         _v(work="firmware", vtype="remote"),
     ]
-    assert visits_satisfy(
-        visits,
-        [parse_expression('visit.work ~ "TOS"'), parse_expression("visit.type = remote")],
-    ) is False
+    assert (
+        visits_satisfy(
+            visits,
+            [
+                parse_expression('visit.work ~ "TOS"'),
+                parse_expression("visit.type = remote"),
+            ],
+        )
+        is False
+    )
     visits = [_v(work="TOS reviewed", vtype="remote")]
     assert visits_satisfy(
         visits,
-        [parse_expression('visit.work ~ "TOS"'), parse_expression("visit.type = remote")],
+        [
+            parse_expression('visit.work ~ "TOS"'),
+            parse_expression("visit.type = remote"),
+        ],
     )
 
 
@@ -108,15 +121,15 @@ def test_visit_type_and_participants():
 
 def test_visit_work_null_is_universal_absence():
     assert visits_satisfy([_v(work=None)], [parse_expression("visit.work = null")])
-    assert not visits_satisfy(
-        [_v(work="x")], [parse_expression("visit.work = null")]
-    )
+    assert not visits_satisfy([_v(work="x")], [parse_expression("visit.work = null")])
     assert visits_satisfy([_v(work="x")], [parse_expression("visit.work != null")])
 
 
 def test_visit_regex():
     visits = [_v(work="TOS reviewed and corrected")]
-    assert visits_satisfy(visits, [parse_expression("visit.work ~ re:TOS (reviewed|corrected)")])
+    assert visits_satisfy(
+        visits, [parse_expression("visit.work ~ re:TOS (reviewed|corrected)")]
+    )
 
 
 def test_visit_is_a_discoverable_selectors_topic():

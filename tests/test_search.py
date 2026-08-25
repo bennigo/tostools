@@ -2032,7 +2032,12 @@ class TestStationCodeValidation:
         hydrological code and mock the catalog to NOT know about it.
         """
         fleet = self._fleet()
-        hydro = [dict(st, attributes=st["attributes"] + [_attr("vhm_reference_number", "123")]) for st in fleet]
+        hydro = [
+            dict(
+                st, attributes=st["attributes"] + [_attr("vhm_reference_number", "123")]
+            )
+            for st in fleet
+        ]
 
         from tostools.tos import _search_main
 
@@ -2040,8 +2045,12 @@ class TestStationCodeValidation:
             def list_stations(self, domain: str = "geophysical"):
                 return hydro if domain == "hydrological" else self._stations
 
-        with patch("tostools.api.tos_client.TOSClient", return_value=DomainFleetClient(fleet)):
-            with patch("tostools.search_selectors.catalog_station_codes", return_value={}):
+        with patch(
+            "tostools.api.tos_client.TOSClient", return_value=DomainFleetClient(fleet)
+        ):
+            with patch(
+                "tostools.search_selectors.catalog_station_codes", return_value={}
+            ):
                 rc = _search_main(["vhm_reference_number != null"])
         out = capsys.readouterr().err
         assert rc == 2
@@ -2197,7 +2206,6 @@ class TestProjectionColumns:
         assert r.visit_column_value({"id_entity": 999}, "type") == "—"
 
     def test_cli_projects_contact_and_visit_columns(self, capsys):
-        from tostools.api.client_cache import CachingClient
 
         fleet = self._fleet()
         fake = FakeClient(
