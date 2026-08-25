@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .utils.logging import get_logger
+from .api.client_cache import SnapshotMiss
 
 logger = get_logger(__name__, logging.WARNING)
 
@@ -936,6 +937,8 @@ def walk_visits(
             sid = futures[fut]
             try:
                 out[sid] = fut.result() or []
+            except SnapshotMiss:
+                raise  # a replay gap is deterministic, not a per-station flake
             except Exception as exc:  # noqa: BLE001 — per-station isolation
                 logger.warning("visit walk failed for id_entity=%s: %s", sid, exc)
                 out[sid] = []
@@ -1099,6 +1102,8 @@ def walk_contacts(
             sid = futures[fut]
             try:
                 out[sid] = fut.result() or []
+            except SnapshotMiss:
+                raise  # a replay gap is deterministic, not a per-station flake
             except Exception as exc:  # noqa: BLE001 — per-station isolation
                 logger.warning("contact walk failed for id_entity=%s: %s", sid, exc)
                 out[sid] = []
@@ -1185,6 +1190,54 @@ def fetch_fleet(client: Any, domain: str = "geophysical") -> List[dict]:
     return client.list_stations(domain=domain) or []
 
 
+#: The domains ``tos search`` can enumerate (matches ``list_stations``'s
+#: entity mapping — ``remote_sensing_platform`` resolves to the 'platform'
+#: entity type). Used by the cross-domain probe so an unknown-code error can
+#: point at where the code actually lives instead of stopping at "not here".
+SEARCH_DOMAINS = (
+    "geophysical",
+    "meteorological",
+    "hydrological",
+    "remote_sensing_platform",
+)
+
+
+def probe_code_domains(
+    client: Any, codes: Iterable[str], *, current_domain: str
+) -> Dict[str, Dict[str, int]]:
+    """Map unknown station codes to the domains that DO carry them.
+
+    Runs only on the validation-error path, so a valid query pays nothing.
+    Fetches every :data:`SEARCH_DOMAINS` other than ``current_domain`` (one
+    bulk call each) and counts how many entities carry each ``code``.
+    Best-effort: a domain whose fetch fails is skipped rather than masking
+    the usage error already being reported, and a code observed nowhere
+    simply does not appear in the result.
+
+    Returns ``{code: {domain: entity_count}}``.
+    """
+    wanted = {c for c in codes if c}
+    if not wanted:
+        return {}
+    found: Dict[str, Dict[str, int]] = {}
+    for domain in SEARCH_DOMAINS:
+        if domain == current_domain:
+            continue
+        try:
+            fleet = fetch_fleet(client, domain=domain)
+        except Exception:  # noqa: BLE001 — probe is best-effort enrichment
+            continue
+        counts: Dict[str, int] = {}
+        for st in fleet:
+            for a in st.get("attributes") or []:
+                c = a.get("code")
+                if c in wanted:
+                    counts[c] = counts.get(c, 0) + 1
+        for code, n in counts.items():
+            found.setdefault(code, {})[domain] = n
+    return found
+
+
 def station_open_devices(client: Any, station_id: int) -> List[dict]:
     """Currently-joined devices of one station — the UI device panel.
 
@@ -1247,6 +1300,8 @@ def walk_devices(
             sid = futures[fut]
             try:
                 out[sid] = fut.result()
+            except SnapshotMiss:
+                raise  # a replay gap is deterministic, not a per-station flake
             except Exception as exc:  # noqa: BLE001 — per-station isolation
                 logger.warning("device walk failed for id_entity=%s: %s", sid, exc)
                 out[sid] = []
