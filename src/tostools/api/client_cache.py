@@ -2,11 +2,11 @@
 
 ``tos search`` is used iteratively — run it, read the table, refine the
 selector, run again. Station attributes come from one bulk GET, but any
-device selector forces a per-station history walk (``1 + N_children``
-calls), so an unrefined loop pays that cost every time. This module wraps
-a TOS client so the two read calls the search engine makes —
-``list_stations`` and ``get_entity_history`` — are served from disk when
-they are fresh enough.
+device/visit/contact selector forces a per-station walk, so an unrefined
+loop pays that cost every time. This module wraps a TOS client so the
+read calls the search engine makes — ``list_stations``,
+``get_entity_history``, ``get_contacts`` and ``list_maintenance_visits`` —
+are served from disk when they are fresh enough.
 
 **Staleness is always reported, never inferred.** This output drives live
 TOS writes; a silently stale row is how you PATCH the wrong device. Every
@@ -51,7 +51,9 @@ logger = get_logger(__name__, logging.WARNING)
 DEFAULT_TTL_SECONDS = 900
 
 #: Bumped if the on-disk shape ever changes incompatibly.
-SNAPSHOT_VERSION = 1
+#: v2: added ``contacts`` + ``visits`` recording for the visit/contact
+#:     selector walks (``get_contacts`` / ``list_maintenance_visits``).
+SNAPSHOT_VERSION = 2
 
 
 class SnapshotMiss(RuntimeError):
@@ -109,7 +111,7 @@ def humanize_age(seconds: float) -> str:
 class CachingClient:
     """Wrap a TOS client with an on-disk read cache + snapshot recording.
 
-    Only the two read calls ``tos search`` makes are intercepted. Anything
+    The four read calls ``tos search`` makes are intercepted. Anything
     else falls through via ``__getattr__``, so this stays a transparent
     stand-in for the real client.
 
@@ -139,6 +141,8 @@ class CachingClient:
         self._oldest_hit: Optional[float] = None
         self._recorded_stations: Dict[str, Any] = {}
         self._recorded_entities: Dict[str, Any] = {}
+        self._recorded_contacts: Dict[str, Any] = {}
+        self._recorded_visits: Dict[str, Any] = {}
 
     # -- plumbing ---------------------------------------------------------
 
@@ -207,6 +211,37 @@ class CachingClient:
             self._recorded_entities[str(int(id_entity))] = payload
         return payload
 
+    def get_contacts(self, entity_id: int) -> List[dict]:
+        """Contacts for one entity, cached + recorded for snapshots.
+
+        Unlike ``get_entity_history``, an empty list is a real answer (a
+        station with no contacts), so it is always recorded and cached —
+        ``[]`` must not be mistaken for a miss.
+        """
+        key = f"contacts-{int(entity_id)}"
+        payload = self._read(key)
+        if payload is None:
+            payload = self._inner.get_contacts(entity_id)
+            with self._lock:
+                self.misses += 1
+            self._write(key, payload)
+        with self._lock:
+            self._recorded_contacts[str(int(entity_id))] = payload
+        return payload
+
+    def list_maintenance_visits(self, id_entity: int) -> List[dict]:
+        """Vitjanir for one entity, cached + recorded for snapshots."""
+        key = f"visits-{int(id_entity)}"
+        payload = self._read(key)
+        if payload is None:
+            payload = self._inner.list_maintenance_visits(id_entity)
+            with self._lock:
+                self.misses += 1
+            self._write(key, payload)
+        with self._lock:
+            self._recorded_visits[str(int(id_entity))] = payload
+        return payload
+
     # -- reporting --------------------------------------------------------
 
     def cache_note(self) -> Optional[str]:
@@ -239,6 +274,8 @@ class CachingClient:
                 "meta": meta,
                 "stations": dict(self._recorded_stations),
                 "entities": dict(self._recorded_entities),
+                "contacts": dict(self._recorded_contacts),
+                "visits": dict(self._recorded_visits),
             }
 
     def write_snapshot(self, path: Path, **meta: Any) -> Path:
@@ -265,6 +302,8 @@ class SnapshotClient:
             )
         self._stations = payload.get("stations") or {}
         self._entities = payload.get("entities") or {}
+        self._contacts = payload.get("contacts") or {}
+        self._visits = payload.get("visits") or {}
         self.created = payload.get("created")
         self.meta = payload.get("meta") or {}
         self.source = source
@@ -293,10 +332,33 @@ class SnapshotClient:
             )
         return self._entities[key]
 
+    def get_contacts(self, entity_id: int) -> List[dict]:
+        """Replay contacts. A key absent from the snapshot is a hard miss."""
+        key = str(int(entity_id))
+        if key not in self._contacts:
+            raise SnapshotMiss(
+                f"snapshot has no contacts for id_entity={key} — it was taken "
+                "with a narrower query than this one. Re-take it with the "
+                "wider query, or drop --from-snapshot."
+            )
+        return self._contacts[key]
+
+    def list_maintenance_visits(self, id_entity: int) -> List[dict]:
+        """Replay vitjanir. A key absent from the snapshot is a hard miss."""
+        key = str(int(id_entity))
+        if key not in self._visits:
+            raise SnapshotMiss(
+                f"snapshot has no visits for id_entity={key} — it was taken "
+                "with a narrower query than this one. Re-take it with the "
+                "wider query, or drop --from-snapshot."
+            )
+        return self._visits[key]
+
     def snapshot_note(self) -> str:
         """Provenance line — always printed, staleness is the whole point."""
         where = f" {self.source}" if self.source else ""
+        total = len(self._entities) + len(self._contacts) + len(self._visits)
         return (
             f"snapshot{where}: recorded {self.created or 'unknown'} "
-            f"({len(self._entities)} entities) — NO live TOS read"
+            f"({total} walked entities) — NO live TOS read"
         )

@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tostools.api.client_cache import SnapshotMiss
 from tostools.search import (
     ANY_DEVICE,
     DeviceSpec,
@@ -2009,8 +2010,34 @@ class TestStationCodeValidation:
     def test_cli_refuses_with_exit_2(self, capsys):
         rc, out = _run_cli(["zzz_not_a_code = null"], self._fleet(), capsys=capsys)
         assert rc == 2
-        assert "not a station attribute code" in out
+        assert "is not a geophysical station attribute" in out
         assert "--attribute-list" in out
+
+    def test_cli_points_at_the_domain_the_code_lives_in(self, capsys):
+        """An attribute that exists only on another domain is reported with
+        its home domain, not left as a dead-end 'did you mean'.
+
+        ``vhm_reference_number`` is now catalog-known and would validate
+        cleanly (returning a silent 0-match), so we use a fleet-only
+        hydrological code and mock the catalog to NOT know about it.
+        """
+        fleet = self._fleet()
+        hydro = [dict(st, attributes=st["attributes"] + [_attr("vhm_reference_number", "123")]) for st in fleet]
+
+        from tostools.tos import _search_main
+
+        class DomainFleetClient(FakeClient):
+            def list_stations(self, domain: str = "geophysical"):
+                return hydro if domain == "hydrological" else self._stations
+
+        with patch("tostools.api.tos_client.TOSClient", return_value=DomainFleetClient(fleet)):
+            with patch("tostools.search_selectors.catalog_station_codes", return_value={}):
+                rc = _search_main(["vhm_reference_number != null"])
+        out = capsys.readouterr().err
+        assert rc == 2
+        assert "vhm_reference_number" in out
+        assert "hydrological" in out
+        assert "--domain hydrological" in out
 
     def test_cli_typo_no_longer_matches_the_whole_fleet(self, capsys):
         """The regression this exists to prevent."""
@@ -2060,3 +2087,48 @@ class TestStationCodeValidation:
         assert known_station_codes(replayed, catalog_codes=[]) == known_station_codes(
             fleet, catalog_codes=[]
         )
+
+
+class TestSnapshotMissPropagation:
+    """A replay gap must abort the walk, never read as 'no devices/visits'.
+
+    The walk loops isolate per-station *transport* failures (empty list + a
+    warning) so one flaky station cannot sink a fleet search. A SnapshotMiss
+    is different: it is deterministic — the snapshot genuinely lacks the
+    data this query needs — so swallowing it would turn a wrong answer
+    ("no contacts") into a real-looking result. It must propagate.
+    """
+
+    def _snapshot_without_walks(self, tmp_path):
+        from tostools.api.client_cache import CachingClient, SnapshotClient
+
+        fleet = [
+            _station(100, "VMEY", "Vestmannaeyjar", in_epos="true"),
+            _station(101, "RHOF", "Raufarhöfn", in_epos="true"),
+        ]
+        cached = CachingClient(FakeClient(fleet), ttl=0, enabled=False, server="f:1")
+        cached.list_stations(domain="geophysical")
+        path = tmp_path / "snap.json"
+        cached.write_snapshot(path, criteria=["marker = vmey"])
+        return SnapshotClient.load(path)
+
+    def test_visit_walk_propagates_snapshot_miss(self, tmp_path):
+        from tostools.search import walk_visits
+
+        replay = self._snapshot_without_walks(tmp_path)
+        with pytest.raises(SnapshotMiss, match="no visits"):
+            walk_visits(replay, [100, 101])
+
+    def test_contact_walk_propagates_snapshot_miss(self, tmp_path):
+        from tostools.search import walk_contacts
+
+        replay = self._snapshot_without_walks(tmp_path)
+        with pytest.raises(SnapshotMiss, match="no contacts"):
+            walk_contacts(replay, [100, 101])
+
+    def test_device_walk_propagates_snapshot_miss(self, tmp_path):
+        from tostools.search import walk_devices
+
+        replay = self._snapshot_without_walks(tmp_path)
+        with pytest.raises(SnapshotMiss, match="no history"):
+            walk_devices(replay, [100, 101])

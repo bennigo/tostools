@@ -15180,16 +15180,31 @@ def _search_main(argv, profile=None):
         # not a fetch failure (1).
         if progress is not None:
             sys.stderr.write("\n")
+        # Point at the domain the code DOES live in, so a hydrological
+        # attribute asked on the default (geophysical) domain is one
+        # '--domain <x>' away rather than a dead end.
+        cross = search_mod.probe_code_domains(
+            client, [code for code, _ in exc.unknown], current_domain=args.domain
+        )
         for code, suggestions in exc.unknown:
-            hint = (
-                f" Did you mean {' / '.join(repr(s) for s in suggestions)}?"
-                if suggestions
-                else ""
-            )
+            domains = cross.get(code)
+            if domains:
+                where = "; ".join(
+                    f"{dom} ({n} station{'s' if n != 1 else ''})"
+                    for dom, n in sorted(domains.items())
+                )
+                hint = (
+                    f" It lives in another domain: {where}. Re-run with "
+                    f"--domain {'/'.join(sorted(domains))}."
+                )
+            elif suggestions:
+                hint = f" Did you mean {' / '.join(repr(s) for s in suggestions)}?"
+            else:
+                hint = ""
             print(
-                f"{_prog} search: {code!r} is not a station attribute code — "
-                f"no {exc.domain} station carries it and the catalog does not "
-                f"list it.{hint}",
+                f"{_prog} search: {code!r} is not a {exc.domain} station "
+                f"attribute — no {exc.domain} station carries it and the "
+                f"catalog does not list it.{hint}",
                 file=sys.stderr,
             )
         print(

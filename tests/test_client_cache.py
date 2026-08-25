@@ -25,11 +25,15 @@ from tostools.api.client_cache import (
 class CountingClient:
     """Inner client that records how often each read was actually made."""
 
-    def __init__(self, stations=None, entities=None):
+    def __init__(self, stations=None, entities=None, contacts=None, visits=None):
         self._stations = stations if stations is not None else [{"id_entity": 1}]
         self._entities = entities or {}
+        self._contacts = contacts or {}
+        self._visits = visits or {}
         self.station_calls = 0
         self.entity_calls = 0
+        self.contact_calls = 0
+        self.visit_calls = 0
 
     def list_stations(self, domain="geophysical"):
         self.station_calls += 1
@@ -38,6 +42,14 @@ class CountingClient:
     def get_entity_history(self, id_entity):
         self.entity_calls += 1
         return self._entities.get(int(id_entity), {"id_entity": int(id_entity)})
+
+    def get_contacts(self, entity_id):
+        self.contact_calls += 1
+        return self._contacts.get(int(entity_id), [])
+
+    def list_maintenance_visits(self, id_entity):
+        self.visit_calls += 1
+        return self._visits.get(int(id_entity), [])
 
     def unrelated_method(self):
         return "passthrough"
@@ -214,6 +226,55 @@ class TestSnapshot:
         c.get_entity_history(3)
         payload = c.snapshot_payload()
         assert "3" in payload["entities"]
+
+    def test_records_contacts_and_visits(self, cache_dir, tmp_path):
+        """The visit/contact selector walks must round-trip through a
+        snapshot too — they are filters the EPOS cross-check uses."""
+        inner = CountingClient(
+            contacts={5: [{"role_is": "Eigandi stöðvar", "organization": "IMO"}]},
+            visits={5: [{"id": 1, "work": "TOS reviewed"}]},
+        )
+        c = CachingClient(inner, cache_dir=cache_dir)
+        c.list_stations()
+        assert c.get_contacts(5)[0]["organization"] == "IMO"
+        assert c.list_maintenance_visits(5)[0]["work"] == "TOS reviewed"
+
+        path = c.write_snapshot(tmp_path / "snap.json", criteria=["visit.all ~ TOS"])
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        assert payload["contacts"]["5"][0]["organization"] == "IMO"
+        assert payload["visits"]["5"][0]["work"] == "TOS reviewed"
+
+    def test_replays_contacts_and_visits(self, cache_dir, tmp_path):
+        """SnapshotClient must serve the two walk calls without network."""
+        inner = CountingClient(
+            contacts={5: [{"organization": "IMO"}]},
+            visits={5: [{"work": "TOS reviewed"}]},
+        )
+        c = CachingClient(inner, cache_dir=cache_dir)
+        c.list_stations()
+        c.get_contacts(5)
+        c.list_maintenance_visits(5)
+        path = c.write_snapshot(tmp_path / "snap.json", criteria=["x = y"])
+        before = (inner.contact_calls, inner.visit_calls)
+
+        replay = SnapshotClient.load(path)
+        assert replay.get_contacts(5)[0]["organization"] == "IMO"
+        assert replay.list_maintenance_visits(5)[0]["work"] == "TOS reviewed"
+        assert (inner.contact_calls, inner.visit_calls) == before
+
+    def test_missing_contacts_raise_not_empty(self, cache_dir, tmp_path):
+        """A snapshot that never walked a station's contacts must not
+        replay as 'this station has no contacts'."""
+        path, _ = self._record(cache_dir, tmp_path)
+        replay = SnapshotClient.load(path)
+        with pytest.raises(SnapshotMiss, match="no contacts"):
+            replay.get_contacts(5)
+
+    def test_missing_visits_raise_not_empty(self, cache_dir, tmp_path):
+        path, _ = self._record(cache_dir, tmp_path)
+        replay = SnapshotClient.load(path)
+        with pytest.raises(SnapshotMiss, match="no visits"):
+            replay.list_maintenance_visits(5)
 
     def test_version_mismatch_is_rejected(self):
         with pytest.raises(ValueError, match="unsupported snapshot version"):
