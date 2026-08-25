@@ -2045,15 +2045,15 @@ stations:
 
   external_data_type:
     icelandic_label: Ytri gagnategund
-    description: External data type — classifies data sourced from outside VÍ
-    classification: TODO
+    description: Data for this station arrives from an EXTERNAL source rather than our own acquisition — observed value 'rinex' on KRAC, MYVA, THRC, TORK
+    classification: mutable
     tos_required_for: []
     gps_required_for: [] # USER FILLS IN — strict superset of tos
     default_value: ~ # USER OPTIONAL — what TOS records as the default
     applies_to: [geophysical]
-    gps_relevance: "no"
+    gps_relevance: "yes"
     walked: false
-    why: "Added 2026-08-25 from /admin_attribute_rows — defined in TOS and carried by live stations, but absent from the catalog, so unreachable under `tosGPS search`. No phantom pointed at it, so a rename could not have surfaced it."
+    why: "Added 2026-08-25 from /admin_attribute_rows — defined in TOS and carried by live GPS stations, but absent from the catalog. No phantom pointed at it, so a rename could not have surfaced it. GPS-RELEVANT: this is TOS's record of the same fact receivers encodes as `health_check = passive` / `operational_status = external` in stations.cfg — all four carriers (KRAC, MYVA, THRC, TORK) are passive there, MYVA also external. Candidate cross-check for a future cfg<->TOS reconcile."
 
   environment:
     icelandic_label: Umhverfi
@@ -2140,6 +2140,18 @@ stations:
     gps_relevance: "no"
     walked: false
     why: "Met-station classification"
+
+  vhm_reference_number:
+    icelandic_label: VHM tilvísun
+    description: VHM reference number (hydrological register). Carried by hydrological stations, not geophysical ones
+    classification: inherent
+    tos_required_for: []
+    gps_required_for: [] # USER FILLS IN — strict superset of tos
+    default_value: ~ # USER OPTIONAL — what TOS records as the default
+    applies_to: [hydrological]
+    gps_relevance: "no"
+    walked: false
+    why: "Added 2026-08-25 to align the catalog with TOS. Replaces the phantom `vhm_reference`, a name TOS never defined. NOT a GPS attribute — 2824 hydrological stations carry it and zero geophysical ones, so it is reached with `tos search --domain hydrological`, never under `tosGPS`."
 
   imo:
     icelandic_label: VÍ veðurstöðvanúmer
