@@ -119,12 +119,22 @@ class FakeClient:
         self,
         stations: List[dict],
         devices_by_station: Optional[Dict[int, List[dict]]] = None,
+        contacts_by_station: Optional[Dict[int, List[dict]]] = None,
+        visits_by_station: Optional[Dict[int, List[dict]]] = None,
     ):
         self._stations = stations
         self._devices = devices_by_station or {}
+        self._contacts = contacts_by_station or {}
+        self._visits = visits_by_station or {}
 
     def list_stations(self, domain: str = "geophysical") -> List[dict]:
         return self._stations
+
+    def get_contacts(self, entity_id: int) -> List[dict]:
+        return self._contacts.get(int(entity_id), [])
+
+    def list_maintenance_visits(self, id_entity: int) -> List[dict]:
+        return self._visits.get(int(id_entity), [])
 
     def get_entity_history(self, id_entity: int) -> Optional[dict]:
         # Station → children_connections (open joins only needed by engine)
@@ -2132,3 +2142,93 @@ class TestSnapshotMissPropagation:
         replay = self._snapshot_without_walks(tmp_path)
         with pytest.raises(SnapshotMiss, match="no history"):
             walk_devices(replay, [100, 101])
+
+
+class TestProjectionColumns:
+    """--show contact.* / --show visit.* project the walked values.
+
+    They were filters-only before; the columns must render the matching
+    contact field / visit field, deduped, without re-walking when absent.
+    """
+
+    def test_contact_and_visit_columns_extracted_from_show(self):
+        from tostools.search import SearchResult
+
+        r = SearchResult(
+            show_codes=["contact.owner", "visit.type", "iers_domes_number"],
+        )
+        assert r.contact_columns == ["owner"]
+        assert r.visit_columns == ["type"]
+
+    def test_contact_values_role_scoped_and_deduped(self):
+        from tostools.search import SearchResult
+
+        r = SearchResult(
+            contacts_by_id={
+                100: [
+                    {"role_is": "Eigandi stöðvar", "organization": "NATT"},
+                    {"role_is": "Rekstraraðili", "organization": "NATT"},
+                ]
+            }
+        )
+        st = {"id_entity": 100}
+        # role-scoped: owner only reads the owner contact's org
+        assert r.contact_values(st, "owner") == ["NATT"]
+        # any-contact field spans both roles, deduped to one NATT
+        assert r.contact_values(st, "organization") == ["NATT"]
+        assert r.contact_column_value(st, "owner") == "NATT"
+        assert r.contact_column_value({"id_entity": 999}, "owner") == "—"
+
+    def test_visit_values_flatten_and_dedupe(self):
+        from tostools.search import SearchResult
+
+        r = SearchResult(
+            visits_by_id={
+                100: [
+                    {"work": "TOS reviewed", "maintenance_type": "remote"},
+                    {"work": "firmware", "maintenance_type": "remote"},
+                ]
+            }
+        )
+        st = {"id_entity": 100}
+        assert r.visit_values(st, "type") == ["remote"]
+        assert r.visit_values(st, "work") == ["TOS reviewed", "firmware"]
+        assert r.visit_column_value(st, "type") == "remote"
+        assert r.visit_column_value({"id_entity": 999}, "type") == "—"
+
+    def test_cli_projects_contact_and_visit_columns(self, capsys):
+        from tostools.api.client_cache import CachingClient
+
+        fleet = self._fleet()
+        fake = FakeClient(
+            fleet,
+            contacts_by_station={
+                100: [
+                    {
+                        "role_is": "Eigandi stöðvar",
+                        "organization": "Veðurstofa Íslands",
+                    }
+                ]
+            },
+            visits_by_station={
+                100: [{"work": "TOS reviewed", "maintenance_type": "remote"}]
+            },
+        )
+        with patch("tostools.api.tos_client.TOSClient", return_value=fake):
+            from tostools.tos import _search_main
+
+            rc = _search_main(
+                ["marker = VMEY", "--show", "contact.owner", "--show", "visit.type"]
+            )
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "CONTACT.OWNER" in out
+        assert "VISIT.TYPE" in out
+        assert "Veðurstofa Íslands" in out
+        assert "remote" in out
+
+    def _fleet(self):
+        return [
+            _station(100, "VMEY", "Vestmannaeyjar", in_epos="true"),
+            _station(101, "RHOF", "Raufarhöfn", in_epos="true"),
+        ]

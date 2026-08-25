@@ -15305,6 +15305,14 @@ def _search_main(argv, profile=None):
                         )
                         for ns, code in result.device_columns
                     },
+                    "contact_attributes": {
+                        f"contact.{code}": result.contact_values(st, code)
+                        for code in result.contact_columns
+                    },
+                    "visit_attributes": {
+                        f"visit.{code}": result.visit_values(st, code)
+                        for code in result.visit_columns
+                    },
                     "devices": (
                         [
                             _device_summary(d)
@@ -15354,6 +15362,10 @@ def _search_main(argv, profile=None):
         table.add_column(code.upper(), no_wrap=True)
     for namespace, code in result.device_columns:
         table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
+    for code in result.contact_columns:
+        table.add_column(f"contact.{code}".upper(), no_wrap=True)
+    for code in result.visit_columns:
+        table.add_column(f"visit.{code}".upper(), no_wrap=True)
     if result.device_filters_active and not result.history:
         table.add_column("MATCHED DEVICES", no_wrap=True)
 
@@ -15377,6 +15389,10 @@ def _search_main(argv, profile=None):
                     row.append(
                         result.device_column_value(st, namespace, code, at=seg_from)
                     )
+                for code in result.contact_columns:
+                    row.append(result.contact_column_value(st, code))
+                for code in result.visit_columns:
+                    row.append(result.visit_column_value(st, code))
                 rows.append(row)
                 marks.append(
                     all(
@@ -15416,6 +15432,10 @@ def _search_main(argv, profile=None):
             row.append(search_mod.value_at(st, code, result.at) or "—")
         for namespace, code in result.device_columns:
             row.append(result.device_column_value(st, namespace, code))
+        for code in result.contact_columns:
+            row.append(result.contact_column_value(st, code))
+        for code in result.visit_columns:
+            row.append(result.visit_column_value(st, code))
         if result.device_filters_active:
             devices = result.devices_by_id.get(st.get("id_entity"), [])
             hits = []

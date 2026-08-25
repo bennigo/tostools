@@ -1375,9 +1375,9 @@ class SearchResult:
     def device_columns(self) -> List[tuple]:
         """DEVICE columns as ``(namespace, code)``: predicates + --show.
 
-        Visit and contact selectors are excluded — they are filters, not
-        projection columns (``--show visit.*`` / ``--show contact.*`` are
-        not yet a thing).
+        Visit and contact selectors are excluded here — they get their own
+        projection columns (see :attr:`contact_columns` /
+        :attr:`visit_columns`).
         """
         cols: List[tuple] = []
         for pred in self.predicates:
@@ -1394,6 +1394,43 @@ class SearchResult:
             if pair not in cols:
                 cols.append(pair)
         return cols
+
+    @property
+    def contact_columns(self) -> List[str]:
+        """CONTACT projection columns — ``--show contact.*``.
+
+        Contact selectors are filters first; ``--show`` makes them
+        projection columns too (the owner/operator org is a thing you want
+        to *see*, not just filter on).
+        """
+        cols: List[str] = []
+        for raw in self.show_codes:
+            if "." not in raw:
+                continue
+            pair = parse_selector(raw)
+            if pair[0] == CONTACT_NAMESPACE and pair[1] not in cols:
+                cols.append(pair[1])
+        return cols
+
+    @property
+    def visit_columns(self) -> List[str]:
+        """VISIT projection columns — ``--show visit.*``."""
+        cols: List[str] = []
+        for raw in self.show_codes:
+            if "." not in raw:
+                continue
+            pair = parse_selector(raw)
+            if pair[0] == VISIT_NAMESPACE and pair[1] not in cols:
+                cols.append(pair[1])
+        return cols
+
+    def _dedupe(self, values: Iterable[str]) -> List[str]:
+        """Preserve-order dedupe for a projection cell."""
+        seen: List[str] = []
+        for v in values:
+            if v not in seen:
+                seen.append(v)
+        return seen
 
     @property
     def device_selectors_active(self) -> bool:
@@ -1416,6 +1453,29 @@ class SearchResult:
         )
         rendered = [str(v) if v is not None else "—" for v in values]
         return ", ".join(rendered) if rendered else "—"
+
+    def contact_values(self, station: dict, code: str) -> List[str]:
+        """Raw (deduped) values for one contact column on one station."""
+        return self._dedupe(
+            _contact_values(self.contacts_by_id.get(station.get("id_entity"), []), code)
+        )
+
+    def visit_values(self, station: dict, code: str) -> List[str]:
+        """Raw (deduped) values for one visit column on one station."""
+        vals: List[str] = []
+        for v in self.visits_by_id.get(station.get("id_entity"), []):
+            vals.extend(_visit_field_values(v, code))
+        return self._dedupe(vals)
+
+    def contact_column_value(self, station: dict, code: str) -> str:
+        """Rendered cell for one contact column."""
+        vals = self.contact_values(station, code)
+        return ", ".join(vals) if vals else "—"
+
+    def visit_column_value(self, station: dict, code: str) -> str:
+        """Rendered cell for one visit column."""
+        vals = self.visit_values(station, code)
+        return ", ".join(vals) if vals else "—"
 
     def timeline(self, station: dict) -> List[tuple]:
         """Segment a station's timeline at every boundary of every column.
@@ -1490,35 +1550,40 @@ def search_stations(
     survivors = filter_by_predicates(fleet, station_preds, at=at, history=history)
 
     # A visit selector walks the vitjun list — one call per surviving
-    # station, same isolation shape as the device walk below.
+    # station, same isolation shape as the device walk below. A --show
+    # visit.* column needs the same walk even with no visit predicate.
+    show_visit_cols = any(c.startswith(VISIT_NAMESPACE + ".") for c in raw_show)
+    show_contact_cols = any(c.startswith(CONTACT_NAMESPACE + ".") for c in raw_show)
     visits_by_id: Dict[int, List[dict]] = {}
-    if visit_preds:
+    if visit_preds or show_visit_cols:
         visits_by_id = walk_visits(
             client,
             [s.get("id_entity") for s in survivors if s.get("id_entity")],
             max_workers=max_workers,
             progress=progress,
         )
-        survivors = [
-            s
-            for s in survivors
-            if visits_satisfy(visits_by_id.get(s.get("id_entity"), []), visit_preds)
-        ]
+        if visit_preds:
+            survivors = [
+                s
+                for s in survivors
+                if visits_satisfy(visits_by_id.get(s.get("id_entity"), []), visit_preds)
+            ]
 
     # A contact selector walks the contact list (owner/operator orgs).
     contacts_by_id: Dict[int, List[dict]] = {}
-    if contact_preds:
+    if contact_preds or show_contact_cols:
         contacts_by_id = walk_contacts(
             client,
             [s.get("id_entity") for s in survivors if s.get("id_entity")],
             max_workers=max_workers,
             progress=progress,
         )
-        survivors = [
-            s
-            for s in survivors
-            if contacts_satisfy(contacts_by_id.get(s.get("id_entity"), []), contact_preds)
-        ]
+        if contact_preds:
+            survivors = [
+                s
+                for s in survivors
+                if contacts_satisfy(contacts_by_id.get(s.get("id_entity"), []), contact_preds)
+            ]
 
     # A device selector needs the walk even with no --device/--receiver
     # filter — projecting receiver.firmware_version is reason enough.
