@@ -9,7 +9,6 @@
 
 import json
 import logging
-import sys
 from datetime import datetime
 
 import requests
@@ -21,6 +20,7 @@ from . import gps_metadata_functions as gpsf
 # Import new modular components
 from .api._http import canonical_tos_url
 from .api.tos_client import TOSClient
+from .exceptions import TOSConnectionError
 from .io.file_utils import read_gzip_file as new_read_gzip_file
 from .io.file_utils import read_text_file as new_read_text_file
 from .io.file_utils import read_zzipped_file as new_read_zzipped_file
@@ -138,7 +138,15 @@ def search_station(
                     url_rest,
                     error,
                 )
-                sys.exit(1)
+                # Raise, don't sys.exit(1). This is library code imported by 11
+                # modules (rinex/corrector.py, rinex/validator.py,
+                # api/tos_client.py, ...); exiting here killed an entire
+                # multi-hour --fix-headers or re-rinex run over one transient
+                # TOS blip, and did it as SystemExit — a BaseException that
+                # sails straight past `except Exception`.
+                raise TOSConnectionError(
+                    f"Failed to establish connection to {url_rest}"
+                ) from error
 
             response.raise_for_status()
             if response.content:
@@ -886,9 +894,19 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
             device = devices_response.json()
             module_logger.debug("device: %s", gpsf.json_print(device))
             # module_logger.warning("device {}".format(device))
-        except:
-            module_logger.error("failed to establish connection to {}".format(url_rest))
-            sys.exit(1)
+        except (requests.RequestException, ValueError) as error:
+            # Was a BARE `except:` + sys.exit(1) — it swallowed KeyboardInterrupt
+            # and SystemExit too, so Ctrl-C during a long run looked like a
+            # connection failure. Narrow to what this block can actually
+            # produce: transport errors from requests, and ValueError from
+            # .json() on a non-JSON body. Raise rather than exit so one
+            # unreachable device does not end a whole run.
+            module_logger.error(
+                "failed to fetch device history from %s: %s", request_url, error
+            )
+            raise TOSConnectionError(
+                f"failed to fetch device history from {request_url}"
+            ) from error
 
         if device["code_entity_subtype"] in devices_used:
             module_logger.debug(

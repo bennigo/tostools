@@ -21,6 +21,7 @@ from .core.site_log import (  # generate_igs_sitelog_filename re-exported for re
     find_previous_site_log,
     generate_igs_sitelog_filename,
 )
+from .exceptions import TOSConnectionError
 from .legacy import gps_metadata_functions as gpsf
 
 # Use the comprehensive legacy site log generator
@@ -331,7 +332,7 @@ _PLAIN_ALIASES = {
 }
 
 
-def main():
+def _dispatch():
     """
     quering metadata from tos and comparing to relevant rinex files
     """
@@ -4700,5 +4701,21 @@ def _handle_verify_only_command(metadata_type, stations):
         print("=" * 80, file=sys.stderr)
 
 
+def main():
+    """Console-script entry point.
+
+    Thin wrapper over :func:`_dispatch`: library code now RAISES
+    :class:`TOSConnectionError` on an unreachable TOS instead of calling
+    ``sys.exit(1)`` from inside a helper, so a long-running caller can decide
+    whether one failed request ends the run. An operator at a terminal should
+    still get a one-line error and exit 1 rather than a traceback.
+    """
+    try:
+        return _dispatch()
+    except TOSConnectionError as exc:
+        print(f"tosGPS: {exc}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

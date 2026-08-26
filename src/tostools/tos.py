@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from .exceptions import TOSConnectionError
+
 KNOWN_SUBCOMMANDS = {
     "owners",
     "device",
@@ -16011,7 +16013,7 @@ def _print_top_level_help() -> None:
     )
 
 
-def main(argv=None):
+def _dispatch(argv=None):
     """Entry point — dispatches to `tos <subcommand> ...`.
 
     ``tos --help`` / ``tos -h`` prints a custom umbrella help listing every
@@ -16207,6 +16209,24 @@ def display_device_record(
                 f"({g.time_from} → {g.time_to})",
                 file=file,
             )
+
+
+def main(argv=None):
+    """Console-script entry point.
+
+    Thin wrapper over :func:`_dispatch` whose only job is to turn a
+    :class:`TOSConnectionError` back into a clean exit code. Library code now
+    RAISES on an unreachable TOS instead of calling ``sys.exit(1)`` itself, so
+    a long-running caller can decide whether one failed request should end the
+    run — but an operator at a terminal should still see a one-line error and
+    exit 1, not a traceback. Keeping the public name ``main`` matters:
+    ``receivers.cli.cfg`` imports and calls it directly.
+    """
+    try:
+        return _dispatch(argv)
+    except TOSConnectionError as exc:
+        print(f"tos: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
