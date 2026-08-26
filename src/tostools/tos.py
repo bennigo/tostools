@@ -3442,7 +3442,6 @@ def _station_set_attribute(
                 file=sys.stderr,
             )
             return 2
-        verb = "PATCH"
         if writer.dry_run:
             print(
                 f"DRY RUN: would PATCH {code} on {station} "
@@ -3460,7 +3459,9 @@ def _station_set_attribute(
         )
     else:
         writer.add_attribute_value(station_id, code, value, date)
-        print(f"added {code}={value!r} on {station} (id_entity={station_id}, date_from={date})")
+        print(
+            f"added {code}={value!r} on {station} (id_entity={station_id}, date_from={date})"
+        )
     return 0
 
 
@@ -3477,8 +3478,12 @@ def _add_station_set_parser(sub) -> None:
         ),
     )
     p_set.add_argument("station", help="Station marker (e.g. AUST).")
-    p_set.add_argument("code", help="Attribute code (e.g. description, inscription, note).")
-    p_set.add_argument("value", help="Attribute value (quote it if it contains spaces).")
+    p_set.add_argument(
+        "code", help="Attribute code (e.g. description, inscription, note)."
+    )
+    p_set.add_argument(
+        "value", help="Attribute value (quote it if it contains spaces)."
+    )
     _add_station_write_arguments(p_set)
 
 
