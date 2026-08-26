@@ -1352,6 +1352,18 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
             else:
                 print("✓ No discrepancies found")
 
+            # Deterministic marker verdict — "is this marker mismatch a typo?"
+            mv = comparison.get("marker_verdict")
+            if mv:
+                icon = {"typo": "✅", "foreign": "🚫", "unconfirmed": "⚠️"}.get(
+                    mv.get("verdict"), "ℹ️"
+                )
+                print(
+                    f"  marker verdict: {icon} {mv.get('verdict')} — "
+                    f"{mv.get('reason', '')}",
+                    file=sys.stderr,
+                )
+
             # Apply fixes if requested
             if args.fix and comparison.get("corrections"):
                 print(
