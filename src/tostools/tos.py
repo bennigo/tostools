@@ -3366,6 +3366,8 @@ def _station_main(argv):
     )
     _add_archive_arguments(p_rcv)
 
+    _add_station_set_parser(sub)
+    _add_station_describe_parser(sub)
     _add_station_add_parser(sub)
 
     args = p.parse_args(argv)
@@ -3378,10 +3380,210 @@ def _station_main(argv):
         return _station_show_main(args)
     if args.verb == "receivers":
         return _station_receivers_main(args)
+    if args.verb == "set":
+        return _station_set_main(args)
+    if args.verb == "describe":
+        return _station_describe_main(args)
     if args.verb == "add":
         return _station_add_main(args)
 
     return 2
+
+
+def _station_date_start(client, station_id: int) -> Optional[str]:
+    """The station's ``date_start`` attribute value (YYYY-MM-DD), or None."""
+    hist = client.get_entity_history(station_id) or {}
+    for a in hist.get("attributes") or []:
+        if a.get("code") == "date_start":
+            v = (a.get("value") or "").strip()
+            if v:
+                return v[:10]
+    return None
+
+
+def _station_set_attribute(
+    *,
+    station: str,
+    code: str,
+    value: str,
+    date: Optional[str],
+    client,
+    writer,
+) -> int:
+    """Write one station attribute (idempotent), defaulting the date to
+    the station's ``date_start``. Returns an exit code.
+
+    An existing OPEN value with identical content is a no-op; a different
+    open value is PATCHed in place; an absent code is ADDed open.
+    """
+    station_id = _resolve_parent_id(client, station_marker=station)
+    if station_id is None:
+        print(f"tos station: no station with marker {station!r}", file=sys.stderr)
+        return 2
+
+    date = (date or _station_date_start(client, station_id) or "now")[:10]
+
+    existing = writer.get_attribute_values(station_id, code)
+    open_row = next((a for a in existing if not a.get("date_to")), None)
+
+    if open_row is not None and str(open_row.get("value") or "") == value:
+        print(
+            f"no-op: {station} {code} already {value!r} "
+            f"(open since {(open_row.get('date_from') or '')[:10]})"
+        )
+        return 0
+
+    if open_row is not None:
+        id_av = open_row.get("id_attribute_value")
+        if id_av is None:
+            print(
+                f"tos station: existing {code} row on {station} has no "
+                "id_attribute_value (partial payload)",
+                file=sys.stderr,
+            )
+            return 2
+        verb = "PATCH"
+        if writer.dry_run:
+            print(
+                f"DRY RUN: would PATCH {code} on {station} "
+                f"(id_entity={station_id}) value → {value!r}"
+            )
+        else:
+            writer.patch_attribute_value(int(id_av), value=value)
+            print(f"PATCHed {code}={value!r} on {station} (id_entity={station_id})")
+        return 0
+
+    if writer.dry_run:
+        print(
+            f"DRY RUN: would add {code}={value!r} on {station} "
+            f"(id_entity={station_id}, date_from={date})"
+        )
+    else:
+        writer.add_attribute_value(station_id, code, value, date)
+        print(f"added {code}={value!r} on {station} (id_entity={station_id}, date_from={date})")
+    return 0
+
+
+def _add_station_set_parser(sub) -> None:
+    """Register ``tos station set <STN> <code> <value>`` — write one attribute."""
+    p_set = sub.add_parser(
+        "set",
+        help="Write one station attribute (e.g. 'tos station set AUST description '…'').",
+        description=(
+            "Write a single station attribute. Dates from the station's "
+            "``date_start`` by default (--date overrides). Idempotent: an "
+            "existing open value with the same content is a no-op; a "
+            "different open value is patched in place. Dry-run by default."
+        ),
+    )
+    p_set.add_argument("station", help="Station marker (e.g. AUST).")
+    p_set.add_argument("code", help="Attribute code (e.g. description, inscription, note).")
+    p_set.add_argument("value", help="Attribute value (quote it if it contains spaces).")
+    _add_station_write_arguments(p_set)
+
+
+def _add_station_describe_parser(sub) -> None:
+    """Register ``tos station describe <STN>`` — sugar for ``set description``."""
+    p_desc = sub.add_parser(
+        "describe",
+        help="Write a station's description (sugar for 'set description').",
+        description=(
+            "Write the station ``description`` attribute from --text, --file, "
+            "or stdin. Dates from the station's ``date_start`` by default."
+        ),
+    )
+    p_desc.add_argument("station", help="Station marker (e.g. AUST).")
+    p_desc.add_argument(
+        "--text",
+        dest="text",
+        default=None,
+        help="Description text (inline).",
+    )
+    p_desc.add_argument(
+        "--file",
+        dest="file",
+        default=None,
+        help="Read the description from a UTF-8 text file.",
+    )
+    _add_station_write_arguments(p_desc)
+
+
+def _add_station_write_arguments(p) -> None:
+    """Shared --date / --no-dry-run / --server / --port flags for station writes."""
+    p.add_argument(
+        "--date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Date the value from (default: the station's date_start).",
+    )
+    p.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        help="Commit the write (default is dry-run).",
+    )
+    p.add_argument(
+        "--server",
+        default="vi-api.vedur.is",
+        help="TOS API host (default: vi-api.vedur.is).",
+    )
+    p.add_argument("--port", type=int, default=443)
+
+
+def _station_set_main(args) -> int:
+    """``tos station set <STN> <code> <value>`` — write one station attribute."""
+    from .api.tos_client import TOSClient
+    from .api.tos_writer import TOSWriter
+
+    scheme = "https" if args.port == 443 else "http"
+    base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+    client = TOSClient(base_url=base_url)
+    writer = TOSWriter(base_url=base_url, dry_run=not args.no_dry_run)
+    return _station_set_attribute(
+        station=args.station,
+        code=args.code,
+        value=args.value,
+        date=args.date,
+        client=client,
+        writer=writer,
+    )
+
+
+def _station_describe_main(args) -> int:
+    """``tos station describe <STN>`` — write the ``description`` attribute."""
+    from .api.tos_client import TOSClient
+    from .api.tos_writer import TOSWriter
+
+    if args.file:
+        try:
+            value = Path(args.file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"tos station describe: {exc}", file=sys.stderr)
+            return 2
+    elif args.text is not None:
+        value = args.text
+    else:
+        value = sys.stdin.read().strip()
+
+    if not value:
+        print(
+            "tos station describe: empty description — pass --text, --file, "
+            "or pipe text on stdin",
+            file=sys.stderr,
+        )
+        return 2
+
+    scheme = "https" if args.port == 443 else "http"
+    base_url = f"{scheme}://{args.server}:{args.port}/tos/internal"
+    client = TOSClient(base_url=base_url)
+    writer = TOSWriter(base_url=base_url, dry_run=not args.no_dry_run)
+    return _station_set_attribute(
+        station=args.station,
+        code="description",
+        value=value,
+        date=args.date,
+        client=client,
+        writer=writer,
+    )
 
 
 def _add_station_add_parser(sub) -> None:
