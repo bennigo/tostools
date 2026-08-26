@@ -511,7 +511,13 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
             "name": "Veðurstofa Íslands",
             "address": "Bústaðarvegur 7-9, 105 Reykjavík, Ísland",
             "comment": "",
-            "phone_primary": "5226000",
+            # Country code REQUIRED: an IGS site log is read worldwide, and a
+            # bare Icelandic number is not dialable from abroad. Matches what
+            # legacy.gps_metadata_functions.dialable_tos_phone() produces, and
+            # is idempotent under it (values starting with "+" pass through
+            # unchanged), so routing this dict through that helper later cannot
+            # yield "+354 +354 5226000".
+            "phone_primary": "+354 5226000",
             "abbreviation": imo_addition["abbreviation"],
             "name_en": imo_addition["name_en"],
             "email": imo_addition["email"],
@@ -527,7 +533,13 @@ def get_contacts(id_entity_parent, url_rest, loglevel=logging.WARNING):
             "name": "Veðurstofa Íslands",
             "address": "Bústaðarvegur 7-9, 105 Reykjavík, Ísland",
             "comment": "",
-            "phone_primary": "5226000",
+            # Country code REQUIRED: an IGS site log is read worldwide, and a
+            # bare Icelandic number is not dialable from abroad. Matches what
+            # legacy.gps_metadata_functions.dialable_tos_phone() produces, and
+            # is idempotent under it (values starting with "+" pass through
+            # unchanged), so routing this dict through that helper later cannot
+            # yield "+354 +354 5226000".
+            "phone_primary": "+354 5226000",
             "abbreviation": imo_addition["abbreviation"],
             "name_en": imo_addition["name_en"],
             "email": imo_addition["email"],
