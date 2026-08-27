@@ -40,8 +40,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from tostools.devices import LEGACY_GPS_ATTRIBUTE_CODES, SITELOG_GPS_ATTRIBUTE_CODES
 
 FROM = "2020-01-01T00:00:00"
@@ -337,9 +335,12 @@ class TestOneDefinitionFeedsEveryCaller:
         assert "GAL" not in rows[0]
         assert "serial_number" in rows[0]
 
-    def test_no_hardcoded_key_list_remains_in_either_copy(self):
+    def test_no_hardcoded_key_list_remains(self):
         """Belt and braces: the divergence was two hardcoded lists, so assert
-        neither module rebuilt one.
+        the surviving module has not rebuilt one.
+
+        Checked both copies until `legacy/gps_metadata_qc.py` was deleted in
+        F1 step 4; one copy is the point of that deletion.
 
         The literal checked is `"serial_number",` — the first element of BOTH
         the wide and the narrow list. An earlier version of this test looked for
@@ -349,9 +350,8 @@ class TestOneDefinitionFeedsEveryCaller:
         import pathlib
 
         import tostools.gps_metadata_qc as current
-        import tostools.legacy.gps_metadata_qc as legacy
 
-        for mod in (current, legacy):
+        for mod in (current,):
             src = pathlib.Path(mod.__file__).read_text()
             assert (
                 "SITELOG_GPS_ATTRIBUTE_CODES" in src
@@ -359,24 +359,3 @@ class TestOneDefinitionFeedsEveryCaller:
             assert (
                 '"serial_number",' not in src
             ), f"{mod.__name__} appears to have re-hardcoded an attribute list"
-
-
-class TestTheTwoCopiesStillAgree:
-    """Transitional guard — delete with `legacy/gps_metadata_qc.py` in F1 step 4.
-
-    Same method that made step 1 safe: while both copies exist, an edit to one
-    is a divergence, and it should fail here rather than in a published log
-    months later.
-    """
-
-    @pytest.mark.parametrize("session_end", [None, "2026-01-01T00:00:00"])
-    @pytest.mark.parametrize("device", [_receiver, _antenna], ids=["receiver", "ant"])
-    def test_identical_output(self, device, session_end):
-        legacy_mod = pytest.importorskip("tostools.legacy.gps_metadata_qc")
-        from tostools.gps_metadata_qc import device_attribute_history as modern
-
-        assert modern(device(), FROM, session_end, logging.CRITICAL) == (
-            legacy_mod.device_attribute_history(
-                device(), FROM, session_end, logging.CRITICAL
-            )
-        )

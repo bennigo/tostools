@@ -29,8 +29,6 @@ from __future__ import annotations
 import inspect
 import logging
 
-import pytest
-
 SUBTYPES = (
     "gnss_receiver",
     "antenna",
@@ -129,24 +127,4 @@ class TestTosClientUsesTheSurvivingCopy:
         assert "from ..gps_metadata_qc import device_attribute_history" in src
         assert (
             "from ..legacy.gps_metadata_qc import device_attribute_history" not in src
-        )
-
-
-class TestTheTwoCopiesStillAgree:
-    """Transitional guard — delete with `legacy/gps_metadata_qc.py` in F1 step 4.
-
-    While both copies exist, an edit to one is a divergence. This makes that
-    fail here instead of in production months later, which is exactly how the
-    fork got this far.
-    """
-
-    @pytest.mark.parametrize("subtype", SUBTYPES)
-    @pytest.mark.parametrize("numeric", ["0.1234", "0", "-1.5", ""])
-    def test_identical_output_for(self, subtype, numeric):
-        legacy_mod = pytest.importorskip("tostools.legacy.gps_metadata_qc")
-        from tostools.gps_metadata_qc import device_structure as modern
-
-        device = _device(subtype, numeric)
-        assert _call(modern, dict(device)) == _call(
-            legacy_mod.device_structure, dict(device)
         )

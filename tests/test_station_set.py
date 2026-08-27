@@ -21,7 +21,9 @@ def _client_with_date_start(date_start: str) -> MagicMock:
 
 
 def test_date_start_read():
-    assert _station_date_start(_client_with_date_start("1993-06-08"), 4235) == "1993-06-08"
+    assert (
+        _station_date_start(_client_with_date_start("1993-06-08"), 4235) == "1993-06-08"
+    )
 
 
 def test_missing_date_start_returns_none():
@@ -37,11 +39,17 @@ def test_add_when_absent(capsys):
     writer.get_attribute_values.return_value = []
     with patch("tostools.tos._resolve_parent_id", return_value=4235):
         rc = _station_set_attribute(
-            station="AUST", code="description", value="text", date=None,
-            client=client, writer=writer,
+            station="AUST",
+            code="description",
+            value="text",
+            date=None,
+            client=client,
+            writer=writer,
         )
     assert rc == 0
-    writer.add_attribute_value.assert_called_once_with(4235, "description", "text", "1993-06-08")
+    writer.add_attribute_value.assert_called_once_with(
+        4235, "description", "text", "1993-06-08"
+    )
 
 
 def test_noop_when_identical(capsys):
@@ -49,12 +57,21 @@ def test_noop_when_identical(capsys):
     writer = MagicMock()
     writer.dry_run = False
     writer.get_attribute_values.return_value = [
-        {"id_attribute_value": 1, "value": "text", "date_from": "1993-06-08", "date_to": None}
+        {
+            "id_attribute_value": 1,
+            "value": "text",
+            "date_from": "1993-06-08",
+            "date_to": None,
+        }
     ]
     with patch("tostools.tos._resolve_parent_id", return_value=4235):
         rc = _station_set_attribute(
-            station="AUST", code="description", value="text", date=None,
-            client=client, writer=writer,
+            station="AUST",
+            code="description",
+            value="text",
+            date=None,
+            client=client,
+            writer=writer,
         )
     assert rc == 0
     writer.patch_attribute_value.assert_not_called()
@@ -67,12 +84,21 @@ def test_patch_when_changed(capsys):
     writer = MagicMock()
     writer.dry_run = False
     writer.get_attribute_values.return_value = [
-        {"id_attribute_value": 1, "value": "old", "date_from": "1993-06-08", "date_to": None}
+        {
+            "id_attribute_value": 1,
+            "value": "old",
+            "date_from": "1993-06-08",
+            "date_to": None,
+        }
     ]
     with patch("tostools.tos._resolve_parent_id", return_value=4235):
         rc = _station_set_attribute(
-            station="AUST", code="description", value="new", date=None,
-            client=client, writer=writer,
+            station="AUST",
+            code="description",
+            value="new",
+            date=None,
+            client=client,
+            writer=writer,
         )
     assert rc == 0
     writer.patch_attribute_value.assert_called_once_with(1, value="new")
@@ -85,7 +111,13 @@ def test_explicit_date_overrides_default():
     writer.get_attribute_values.return_value = []
     with patch("tostools.tos._resolve_parent_id", return_value=4235):
         _station_set_attribute(
-            station="AUST", code="description", value="text", date="2020-01-01",
-            client=client, writer=writer,
+            station="AUST",
+            code="description",
+            value="text",
+            date="2020-01-01",
+            client=client,
+            writer=writer,
         )
-    writer.add_attribute_value.assert_called_once_with(4235, "description", "text", "2020-01-01")
+    writer.add_attribute_value.assert_called_once_with(
+        4235, "description", "text", "2020-01-01"
+    )

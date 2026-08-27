@@ -125,20 +125,71 @@ class TestNarrowCodesKeepTheEquipmentEras:
 
 
 class TestTheCallSiteIsPinned:
-    """The pin is a `codes=` argument, so nothing about the wide DEFAULT
-    protects it — only this does. Mutation: drop the argument at
-    `gps_metadata_qc.get_device_sessions` and this goes red."""
+    """The era-resolution direction must resolve to the NARROW list.
 
-    def test_get_device_sessions_passes_the_narrow_list(self):
-        import inspect
+    This used to assert on source text (``"codes=LEGACY_GPS_ATTRIBUTE_CODES"
+    in src``), because the pin lived as a literal at the call site and nothing
+    else protected it. The pin is now ``get_device_sessions``'s own default, so
+    it can no longer be lost by editing a call site — and a source-text guard
+    would go red on any harmless refactor while still missing a real
+    behavioural change.
 
-        from tostools.gps_metadata_qc import get_device_sessions
+    Asserting which codes actually reach ``device_attribute_history`` is
+    strictly stronger. Mutation: change the default to
+    ``SITELOG_GPS_ATTRIBUTE_CODES`` and this goes red.
+    """
 
-        src = inspect.getsource(get_device_sessions)
-        assert "codes=LEGACY_GPS_ATTRIBUTE_CODES" in src, (
-            "the era-resolution path must pin the narrow attribute list; "
-            "the wide default splits sessions on constellation boundaries"
+    def _codes_seen_when(self, monkeypatch, **kwargs):
+        """Run get_device_sessions offline and capture the codes it forwards."""
+        import tostools.gps_metadata_qc as qc
+
+        seen = []
+
+        def _spy(device, start, end, loglevel=None, *, codes=None):
+            seen.append(codes)
+            return []
+
+        monkeypatch.setattr(qc, "device_attribute_history", _spy)
+
+        class _Resp:
+            @staticmethod
+            def json():
+                return {"code_entity_subtype": "gnss_receiver", "attributes": []}
+
+        monkeypatch.setattr(qc.requests, "get", lambda *a, **k: _Resp())
+
+        history = {
+            "children_connections": [
+                {
+                    "id_entity_child": 1,
+                    "time_from": "2020-01-01T00:00:00",
+                    "time_to": None,
+                }
+            ]
+        }
+        qc.get_device_sessions(history, "https://example.invalid/tos", **kwargs)
+        return seen
+
+    def test_default_resolves_to_the_narrow_era_list(self, monkeypatch):
+        seen = self._codes_seen_when(monkeypatch)
+        assert seen, "device_attribute_history was never reached"
+        assert list(seen[0]) == list(LEGACY_GPS_ATTRIBUTE_CODES), (
+            "the era-resolution path must resolve to the narrow attribute list; "
+            "the wide list splits sessions on constellation boundaries, after "
+            "which corrector falls back to the most recent equipment"
         )
+
+    def test_an_explicit_wide_list_is_honoured(self, monkeypatch):
+        """The site-log direction must be able to ask for the wide set.
+
+        This is what lets ONE implementation serve both directions, and so what
+        unblocks deleting legacy/gps_metadata_qc.py (F1 step 4).
+        """
+        from tostools.devices import SITELOG_GPS_ATTRIBUTE_CODES
+
+        seen = self._codes_seen_when(monkeypatch, codes=SITELOG_GPS_ATTRIBUTE_CODES)
+        assert list(seen[0]) == list(SITELOG_GPS_ATTRIBUTE_CODES)
+        assert "GAL" in seen[0], "constellations must survive for §3.3"
 
     def test_the_wide_default_is_unchanged_for_everyone_else(self):
         """The pin must not have been implemented by reverting the default —

@@ -142,7 +142,11 @@ def compare_rinex_to_tos(
                     str(receiver_info.get("firmware_version") or "").strip() or None
                 ),
             )
-            if rinex_rec.is_known and tos_rec.is_known and rinex_rec.key != tos_rec.key:
+            both_known = rinex_rec.is_known and tos_rec.is_known
+            comparison_result["receiver_confirmed"] = (
+                both_known and rinex_rec.key == tos_rec.key
+            )
+            if both_known and rinex_rec.key != tos_rec.key:
                 comparison_result["discrepancies"]["receiver"] = {
                     "rinex": str(rinex_rec),
                     "tos": str(tos_rec),
@@ -475,6 +479,53 @@ def compare_rinex_to_tos(
                 comparison_result["foreign_site"]["action"],
                 ", ".join(dropped),
             )
+
+    # MARKER-VERDICT — deterministic classification of a MARKER NAME mismatch,
+    # so a caller can act without a human in the loop:
+    #
+    #   typo        — the receiver serial or the coordinates tie the file to
+    #                 THIS station, so the marker header is just wrong and
+    #                 rewriting it is safe.
+    #   foreign     — another site's data (coordinates beyond the correction
+    #                 bound); never rewrite anything.
+    #   unconfirmed — neither signal; the marker write is dropped (the
+    #                 discrepancy is kept so a blocking gate still fires) and a
+    #                 human must decide.
+    #
+    # Only MARKER NAME is gated: it is the identity claim (rewriting a foreign
+    # 4-char id onto our marker asserts the file is ours). MARKER NUMBER is
+    # policy (IERS DOMES only; strip a 4-char id) and is already guarded by the
+    # foreign-site gate + domes_or_skip — a strip is never an identity claim.
+    if comparison_result.get("foreign_site"):
+        comparison_result["marker_verdict"] = {
+            "verdict": "foreign",
+            "reason": (
+                "file sits {:.0f} m from this station — another site's data; "
+                "move or remove it, never rewrite a header"
+            ).format(comparison_result["foreign_site"]["distance_m"]),
+        }
+    elif "marker" in comparison_result["discrepancies"]:
+        if comparison_result.get("receiver_confirmed"):
+            verdict, reason = (
+                "typo",
+                "receiver serial matches TOS — this station's data, so the "
+                "marker header is wrong",
+            )
+        elif "coordinates" in comparison_result.get("matches", {}):
+            verdict, reason = (
+                "typo",
+                "coordinates match TOS within tolerance — this station's data, "
+                "so the marker header is wrong",
+            )
+        else:
+            verdict, reason = (
+                "unconfirmed",
+                "marker differs but neither the receiver serial nor the "
+                "coordinates confirm this station — review before rewriting",
+            )
+        comparison_result["marker_verdict"] = {"verdict": verdict, "reason": reason}
+        if verdict != "typo":
+            comparison_result["corrections"].pop("MARKER NAME", None)
 
     logger.info(
         f"Comparison found {len(comparison_result['discrepancies'])} discrepancies"
