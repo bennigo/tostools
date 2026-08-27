@@ -503,6 +503,25 @@ def _resolve_parent_id(
     Returns the parent's ``id_entity`` or ``None`` if no exact match.
     """
     if station_marker:
+        # Live station search first — /basic_search/'s fuzzy index mis-indexes
+        # some markers (e.g. HELC, id 16095, marker 'helc' is absent from it),
+        # mirroring the audit_station / find_station_by_marker migration.
+        for hit in client.search_stations(station_marker):
+            hit_marker = next(
+                (
+                    a.get("value")
+                    for a in (hit.get("attributes") or [])
+                    if a.get("code") == "marker" and a.get("date_to") is None
+                ),
+                None,
+            )
+            if (
+                hit_marker
+                and hit_marker.lower() == station_marker.lower()
+                and hit.get("id_entity")
+            ):
+                return int(hit["id_entity"])
+
         needle = station_marker.lower()
         for hit in client.basic_search(needle):
             if hit.get("code") != "marker":

@@ -563,6 +563,28 @@ def _resolve_station_entity(
         return history
     if not name:
         raise ValueError("audit_station requires either id_entity or name")
+
+    # Try the LIVE station search endpoint first (the same one the TOS web
+    # UI's station filter uses). /basic_search/'s fuzzy index lags entity
+    # creation AND mis-indexes some markers outright — HELC (id 16095) stores
+    # marker 'helc' but is absent from /basic_search/ entirely, so the audit/
+    # verify path could not resolve it while find_station_by_marker (already
+    # migrated to the live endpoint for the VOTT case) could. Mirror that
+    # migration here: live marker search first, legacy fuzzy index as fallback.
+    for hit in client.search_stations(name):
+        hit_marker = next(
+            (
+                a.get("value")
+                for a in (hit.get("attributes") or [])
+                if a.get("code") == "marker" and a.get("date_to") is None
+            ),
+            None,
+        )
+        if hit_marker and hit_marker.lower() == name.lower() and hit.get("id_entity"):
+            history = client.get_entity_history(int(hit["id_entity"]))
+            if history:
+                return history
+
     hits = client.basic_search(name)
     # TOS stores station markers as lowercase ("rhof") regardless of how
     # operators type them. Compare case-insensitively so the natural
