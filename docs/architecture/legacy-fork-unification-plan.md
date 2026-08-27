@@ -1,7 +1,47 @@
 # Unifying the `legacy/` fork — scope and order
 
-**Status**: F1 steps 1-3 done (2026-08-23); F1 step 4 blocked on F2; F2 not
-started. Written 2026-08-23 after the redundancy sweep that deleted
+**Status**: **F1 COMPLETE (2026-08-27)** — `legacy/gps_metadata_qc.py` (994 L)
+deleted. F2 not started.
+
+> **Step 4 turned out NOT to be coupled to F2**, contrary to this document's
+> earlier conclusion. The reasoning that made it look blocked was that
+> `legacy/gps_metadata_functions.py` (the live site-log renderer) imports the
+> legacy QC module and uses five symbols from it. Tracing which symbols
+> `site_log` *actually* reaches changed the answer:
+>
+> | symbol | used by `site_log`? | fork delta |
+> |---|---|---|
+> | `get_station_metadata` | yes | logger shim only |
+> | `URL_REST_TOS` | yes | identical (verified) |
+> | `wgs84toitrf08` | yes | identical transform (verified) |
+> | `search_station` | no | logger shim + `sys.exit` → `TOSConnectionError` |
+> | `get_device_sessions` | **no** — only `domes_info_form`, which is **dead** (its sole reference is a commented-out line in `test_tostool.py`) | the `codes` fork |
+>
+> The whole hazard lived in `get_device_sessions`, and the renderer never calls
+> it. What made the repoint safe regardless: `codes` is now an explicit
+> parameter on the top-level `get_device_sessions`, defaulting to the NARROW
+> era list, so one implementation serves both directions. The dead
+> `domes_info_form` call passes the wide list explicitly to preserve its
+> behaviour exactly.
+>
+> Note `get_device_sessions` **mutates** `devices_history` in place
+> (`connection["device"] = attribute`), so its discarded return value at that
+> call site does not make it a no-op — worth knowing before anyone "cleans up"
+> the unused result.
+>
+> Verified: the 71 site-log tests pass identically before and after the repoint;
+> full suite 2242 passed / 0 failed. The `codes` guard in
+> `test_era_resolution_uses_narrow_codes.py` was rewritten from a source-text
+> assertion to a behavioural one (it now spies on the codes reaching
+> `device_attribute_history`) and mutation-tested: flipping the default to the
+> wide list turns it red.
+>
+> The `get_contacts` precondition this document names — "before that merge,
+> either drop the hardcoded fallback or give it the `+354` prefix" — was
+> satisfied separately in `b02597c`.
+
+Written 2026-08-23 after the redundancy sweep that deleted
+`legacy/gps_rinex.py` and the abandoned `tostools/cli/` package. Written 2026-08-23 after the redundancy sweep that deleted
 `legacy/gps_rinex.py` and the abandoned `tostools/cli/` package.
 
 > **Overlaps an untracked doc.** `docs/security-streamlining-remediation-plan.md`
@@ -276,7 +316,7 @@ is the `get_logger` shim, so that one is a safe swap.
    (`synthesis-legacy-divergence.md`), pre-existing on the legacy copy and the
    reason the renderer uses the newer slicer. Pinned by
    `test_widening_the_codes_moves_period_boundaries_not_just_keys`.
-4. Delete `legacy/gps_metadata_qc.py` once importer-free. **Not yet reachable —
+4. ~~Delete `legacy/gps_metadata_qc.py` once importer-free.~~ **DONE 2026-08-27** — see the status note at the top for why this was not, in fact, blocked on F2. Original (superseded) reasoning follows. **Not yet reachable —
    and it is not blocked on step 2.** `api/tos_client.py` no longer imports it,
    but `legacy/gps_metadata_functions.py:24` still does, at module level, and
    that module is the **live site-log renderer**. It uses five other symbols

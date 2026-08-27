@@ -859,16 +859,47 @@ def get_device_history(device_sessions, loglevel=logging.WARNING):
     return station_history
 
 
-def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
-    """Synthesise per-device sessions for the EQUIPMENT-ERA consumers.
+def get_device_sessions(
+    devices_history, url_rest, loglevel=logging.WARNING, *, codes=None
+):
+    """Synthesise per-device sessions.
 
     Feeds ``gps_metadata`` and, through it, the archive header retrofit,
-    ``gps_rinex`` QC, ``tosGPS timespan`` and GAMIT ``station.info``. See the
-    ``codes=`` pin at the ``device_attribute_history`` call below — the narrow
-    attribute list is load-bearing here, not an oversight.
+    ``gps_rinex`` QC, ``tosGPS timespan`` and GAMIT ``station.info``. The
+    default ``codes`` is the NARROW equipment-era list, and that is
+    load-bearing, not an oversight — see below.
+
+    ``codes`` is the attribute-code list carried onto each session. It is not
+    merely a filter: ``device_attribute_history`` gates on
+    ``if item["code"] in key_list``, so a WIDER list lets more attribute rows
+    move ``date_from``/``date_to``. On a device with a mid-tenure GAL toggle the
+    session start moves onto the toggle date and the pre-GAL window vanishes
+    (this kernel's documented Bug 1). Downstream, ``corrector`` then finds no
+    session covering an older file and falls back to the most recent equipment —
+    the wrong era, written into a historical RINEX header, silently.
+
+    Hence two directions with opposite needs, which is the whole reason this
+    function is forked between ``gps_metadata_qc`` and
+    ``legacy/gps_metadata_qc``:
+
+    * **equipment-era resolution** (this module's callers) needs the NARROW
+      ``LEGACY_GPS_ATTRIBUTE_CODES`` — the default here, preserving the pin
+      added in ``8fa822c``.
+    * **the site-log renderer** needs the WIDE ``SITELOG_GPS_ATTRIBUTE_CODES``,
+      or §3.3 Satellite System and §4 Alignment from True N fall out of every
+      published log — and that loss looks like a metadata gap, not a code
+      regression.
+
+    Making ``codes`` an explicit parameter lets ONE implementation serve both,
+    which is what unblocks deleting the legacy copy (F1 step 4). A caller that
+    needs the wide list must now say so; nothing is decided by which module you
+    happened to import.
     """
 
     from .devices import LEGACY_GPS_ATTRIBUTE_CODES
+
+    if codes is None:
+        codes = LEGACY_GPS_ATTRIBUTE_CODES
 
     module_logger = get_logger(__name__, loglevel)
 
@@ -947,7 +978,7 @@ def get_device_sessions(devices_history, url_rest, loglevel=logging.WARNING):
                 connection["time_from"],
                 connection["time_to"],
                 loglevel=logging.CRITICAL,
-                codes=LEGACY_GPS_ATTRIBUTE_CODES,
+                codes=codes,
             )
 
             module_logger.debug(

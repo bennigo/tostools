@@ -1280,9 +1280,7 @@ def _handle_rinex_subcommand(args, stations, url, log_level):
             # use the receiver serial (hardware identity), not just coordinates.
             tos_session = dict(station_data)
             tos_session.update(device_sessions[-1])
-            tos_session.setdefault(
-                "domes", station_data.get("iers_domes_number", "")
-            )
+            tos_session.setdefault("domes", station_data.get("iers_domes_number", ""))
 
         except Exception as e:
             print(f"Error retrieving station data: {e}", file=sys.stderr)

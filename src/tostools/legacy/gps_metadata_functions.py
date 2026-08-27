@@ -19,9 +19,15 @@ from gtimes import timefunc as tf
 from gtimes.timefunc import datefRinex
 from tabulate import tabulate
 
+# F1 step 4: this is the LIVE site-log renderer, and it now takes its QC
+# helpers from the top-level module so `legacy/gps_metadata_qc.py` can be
+# deleted. site_log() uses exactly three symbols from here —
+# get_station_metadata (logger-shim diff only), URL_REST_TOS and
+# wgs84toitrf08 (both verified identical) — so a published log is
+# unaffected. See docs/architecture/legacy-fork-unification-plan.md.
+from .. import gps_metadata_qc as gpsqc
 from ..device import PUBLISHED_UNKNOWN_ANTENNA_SERIAL, is_synthetic_serial
 from ..utils.data_quality import IssueSeverity, IssueType, data_quality_manager
-from . import gps_metadata_qc as gpsqc
 
 
 def normalize_icelandic_for_gamit(text):
@@ -1588,7 +1594,19 @@ def domes_info_form(station_identifier, loglevel=logging.WARNING):
     station, devices_history = gpsqc.get_station_metadata(
         station_identifier, gpsqc.URL_REST_TOS, loglevel=loglevel
     )
-    gpsqc.get_device_sessions(devices_history, gpsqc.URL_REST_TOS, loglevel=loglevel)
+    # codes= is explicit because the top-level get_device_sessions defaults
+    # to the NARROW era list, while this path historically got the wide
+    # site-log list from the legacy copy's default. The call mutates
+    # devices_history in place (connection["device"]), so the discarded
+    # return value does not make it a no-op.
+    from ..devices import SITELOG_GPS_ATTRIBUTE_CODES
+
+    gpsqc.get_device_sessions(
+        devices_history,
+        gpsqc.URL_REST_TOS,
+        loglevel=loglevel,
+        codes=SITELOG_GPS_ATTRIBUTE_CODES,
+    )
 
     # devices_used = ["gnss_receiver", "antenna", "radome", "monument"]
     module_logger.info("station: %s", json_print(station))

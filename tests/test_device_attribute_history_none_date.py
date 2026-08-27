@@ -5,7 +5,8 @@ Regression for the DYNC bug: ``sorted(sub_sessions)`` compared (date_from, date_
 tuples and, when two shared a date_from, fell through to comparing date_to where one
 was None -> ``str < None`` -> TypeError. The TOS client swallowed it and fell back
 to a flattened single-period dict, silently degrading the per-period device history.
-Both the active (legacy) path and the non-legacy module are covered.
+Covered the legacy and top-level copies while both existed; legacy/gps_metadata_qc.py
+was deleted in F1 step 4, so the guard now runs against the single surviving copy.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import logging
 import pytest
 
 from tostools.gps_metadata_qc import device_attribute_history as dah_current
-from tostools.legacy.gps_metadata_qc import device_attribute_history as dah_legacy
 
 
 def _attr(code, value, date_from, date_to):
@@ -63,7 +63,7 @@ def _device():
     }
 
 
-@pytest.mark.parametrize("dah", [dah_legacy, dah_current], ids=["legacy", "current"])
+@pytest.mark.parametrize("dah", [dah_current], ids=["current"])
 def test_no_crash_and_periods_built(dah):
     # session_start = receiver install, distinct from the attribute date_from.
     conns = dah(_device(), "2019-06-01T11:16:00", None, logging.CRITICAL)
