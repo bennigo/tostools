@@ -115,6 +115,10 @@ def _format_known_models(table: Dict[str, str], header: str) -> str:
     return "\n".join(lines)
 
 
+# Public alias — receivers.cli.cfg renders the known-model list in its --help epilog.
+format_known_models = _format_known_models
+
+
 def validate_model(subtype: str, raw: str) -> str:
     """Return the IGS-standard model string for *raw*, or raise ``ValueError``.
 

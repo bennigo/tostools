@@ -60,6 +60,11 @@ def _parse_daily_rinex_date(name: str, station: str) -> Optional[datetime]:
     return datetime(year, 1, 1) + timedelta(days=doy - 1)
 
 
+# Public alias — receivers.rinex.header_fix parses daily RINEX names with this in two
+# places; it is a stable, useful primitive, not an internal detail.
+parse_daily_rinex_date = _parse_daily_rinex_date
+
+
 def _parse_hourly_raw_date(name: str, station: str) -> Optional[datetime]:
     """
     Parse the observation timestamp from a 1 Hz raw filename.
