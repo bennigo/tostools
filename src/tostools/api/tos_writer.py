@@ -149,6 +149,11 @@ def _load_from_pass(pass_spec: str) -> Optional[str]:
         return None
 
 
+# Public alias — receivers.cfg.telemetry_probe needs this; a downstream package should not
+# have to import an underscore name to read a password from `pass`.
+load_password_from_pass = _load_from_pass
+
+
 def _load_credentials_from_cfg(
     cfg_path: Optional[Path] = None,
 ) -> tuple[Optional[str], Optional[str]]:
