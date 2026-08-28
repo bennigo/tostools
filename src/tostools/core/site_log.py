@@ -87,6 +87,8 @@ def build_site_log(
     monument_number: str = "00",
     country_code: str = "ISL",
     loglevel: int = logging.WARNING,
+    station_metadata: Optional[Dict[str, Any]] = None,
+    device_sessions: Optional[Any] = None,
 ) -> str:
     """Render a station's IGS site log — the ONE way to do it.
 
@@ -110,6 +112,14 @@ def build_site_log(
     best-effort: on any failure the renderer falls back to its legacy
     TOS-contact rendering, which produces a *different* §11, so a warning is
     logged rather than the difference passing unnoticed.
+
+    ``station_metadata`` / ``device_sessions`` are pre-fetched metadata, passed straight
+    through to the renderer. Both default to ``None``, which keeps the existing
+    behaviour exactly: the renderer does its own live TOS fetch. Supplying them
+    is what lets a caller that already holds the metadata — or a test — render
+    a site log without touching the network. The renderer has advertised these
+    parameters since it was unified; nothing threaded them, so ``client`` was
+    injectable at this layer while the layer below still phoned production.
 
     NOTE the renderer is ``legacy.gps_metadata_functions.site_log``, not
     :func:`generate_igs_site_log` above — see this module's docstring.
@@ -150,6 +160,8 @@ def build_site_log(
         agencies=agencies,
         monument_number=monument_number,
         country_code=country_code.upper(),
+        station=station_metadata,
+        device_sessions=device_sessions,
     )
 
 
