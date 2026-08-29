@@ -1,0 +1,805 @@
+     AUST00ISL Site Information Form (site log v2.0)
+     International GNSS Service
+     See Instructions at:
+       https://files.igs.org/pub/station/general/sitelog_instr_v2.0.txt
+
+
+0.   Form
+
+     Prepared by (full name)  : GNSS Operator (gnss-epos@vedur.is)
+     Date Prepared            : <DATE-PREPARED>
+     Report Type              : NEW
+     If Update:
+      Previous Site Log       : 
+      Modified/Added Sections : 1
+
+
+1.   Site Identification of the GNSS Monument
+
+     Site Name                : Austmannsbunga
+     Nine Character ID        : AUST00ISL
+     Monument Inscription     : 
+     IERS DOMES Number        : 
+     CDP Number               : (A4)
+     Monument Description     : STEEL MAST
+       Height of the Monument : 0.971 m
+       Monument Foundation    : STEEL RODS
+       Foundation Depth       : (m)
+     Marker Description       : (CHISELLED CROSS/DIVOT/BRASS NAIL/etc)
+     Date Installed           : 1993-06-08T00:00Z
+     Geologic Characteristic  : BEDROCK
+       Bedrock Type           : IGNEOUS
+       Bedrock Condition      : WEATHERED
+       Fracture Spacing       : (0 cm/1-10 cm/11-50 cm/51-200 cm/over 200 cm)
+       Fault zones nearby     : TRUE
+         Distance/activity    : (multiple lines)
+     Additional Information   : (multiple lines)
+
+
+2.   Site Location Information
+
+     City or Town             : Austmannsbunga
+     State or Province        : N/A
+     Country or Region        : ISL
+     Tectonic Plate           : NORTH AMERICAN
+     Approximate Position (ITRF)
+       X coordinate (m)       : 2680945.422
+       Y coordinate (m)       : -927342.430
+       Z coordinate (m)       : 5694999.277
+       Latitude (N is +)      : +634027.77
+       Longitude (E is +)     : -0190450.04
+       Elevation (m,ellips.)  : 1438.4
+     Additional Information   : (multiple lines)
+
+
+3.   GNSS Receiver Information
+
+3.1  Receiver Type            : TRIMBLE 4000ST
+     Satellite System         : GPS
+     Serial Number            : 2361
+     Firmware Version         : NP 4.64 / SP 1.15
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 1993-06-10T00:00Z
+     Date Removed             : 1993-06-14T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.2  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 26093
+     Firmware Version         : NP 7.29 / SP 3.07
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2000-03-26T00:00Z
+     Date Removed             : 2000-04-03T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.3  Receiver Type            : TRIMBLE 4000SST
+     Satellite System         : GPS
+     Serial Number            : 2459
+     Firmware Version         : 4.83 / 1.15
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2000-07-06T00:00Z
+     Date Removed             : 2000-07-10T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.4  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 25148
+     Firmware Version         : NP 7.29 / SP 3.07
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2001-03-26T00:00Z
+     Date Removed             : 2001-04-03T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.5  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 15404
+     Firmware Version         : NP 7.19 / SP 3.04
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2001-06-12T00:00Z
+     Date Removed             : 2001-06-14T12:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.6  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 26094
+     Firmware Version         : NP 7.29 / SP 3.07      
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2002-05-22T00:00Z
+     Date Removed             : 2002-05-26T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.7  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 25148
+     Firmware Version         : NP 7.29 / SP 3.07
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2003-03-04T00:00Z
+     Date Removed             : 2003-03-10T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.8  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 25992
+     Firmware Version         : NP 7.19 / SP 3.04
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2003-06-18T00:00Z
+     Date Removed             : 2003-06-21T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.9  Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 25148
+     Firmware Version         : NP 7.29 / SP 3.07
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2004-01-27T00:00Z
+     Date Removed             : 2004-01-31T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.10 Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 14629
+     Firmware Version         : 7.19
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2004-02-03T00:00Z
+     Date Removed             : 2004-02-09T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.11 Receiver Type            : TRIMBLE 4000SSI
+     Satellite System         : GPS
+     Serial Number            : 14629
+     Firmware Version         : 7.19
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2004-06-14T00:00Z
+     Date Removed             : 2004-06-19T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.12 Receiver Type            : TRIMBLE 5700
+     Satellite System         : GPS
+     Serial Number            : 0220325904
+     Firmware Version         : 2.01
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2005-02-17T00:00Z
+     Date Removed             : 2005-02-23T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.13 Receiver Type            : TRIMBLE 5700
+     Satellite System         : GPS
+     Serial Number            : 0220331856
+     Firmware Version         : 2.01
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2006-03-13T00:00Z
+     Date Removed             : 2006-03-17T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.14 Receiver Type            : TRIMBLE R7
+     Satellite System         : GPS
+     Serial Number            : 0220330305
+     Firmware Version         : 2.01
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2007-03-05T00:00Z
+     Date Removed             : 2007-03-20T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.15 Receiver Type            : TRIMBLE NETRS
+     Satellite System         : GPS
+     Serial Number            : 000000
+     Firmware Version         : 1.1-3
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2008-07-18T00:00Z
+     Date Removed             : 2008-07-21T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.16 Receiver Type            : TRIMBLE R7
+     Satellite System         : GPS
+     Serial Number            : 0220390338
+     Firmware Version         : 2.30
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2009-03-22T00:00Z
+     Date Removed             : 2009-03-31T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.17 Receiver Type            : TRIMBLE NETRS
+     Satellite System         : GPS
+     Serial Number            : 4752143431
+     Firmware Version         : 1.2-5
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2010-04-28T00:00Z
+     Date Removed             : 2011-06-13T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.18 Receiver Type            : TRIMBLE NETR9
+     Satellite System         : GPS+GLO
+     Serial Number            : 000000
+     Firmware Version         : 4.41
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2011-06-21T00:00Z
+     Date Removed             : 2012-09-17T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.19 Receiver Type            : TRIMBLE NETR9
+     Satellite System         : GPS+GLO+SBAS
+     Serial Number            : 000000
+     Firmware Version         : 4.41
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2012-09-17T00:00Z
+     Date Removed             : 2013-12-09T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.20 Receiver Type            : TRIMBLE NETR9
+     Satellite System         : GPS+GLO
+     Serial Number            : 000000
+     Firmware Version         : 4.81
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2014-06-01T00:00Z
+     Date Removed             : 2014-09-30T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.21 Receiver Type            : TRIMBLE NETR9
+     Satellite System         : GPS+GLO
+     Serial Number            : 5212K83333
+     Firmware Version         : NP 4.81 / SP 4.81
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2016-02-12T14:00Z
+     Date Removed             : 2019-01-20T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.22 Receiver Type            : SEPT POLARX5
+     Satellite System         : GPS+GLO
+     Serial Number            : 3047787
+     Firmware Version         : 5.5.0
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2019-06-05T00:00Z
+     Date Removed             : 2026-08-26T00:00Z
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.23 Receiver Type            : SEPT POLARX5
+     Satellite System         : GPS+GLO
+     Serial Number            : 3047787
+     Firmware Version         : 5.7.0
+     Elevation Cutoff Setting : 0 deg
+     Date Installed           : 2026-08-26T00:00Z
+     Date Removed             : CCYY-MM-DDThh:mmZ
+     Temperature Stabiliz.    : (deg C) +/- (deg C)
+     Additional Information   : (multiple lines)
+
+3.x  Receiver Type            : (A20, from rcvr_ant.tab; see instructions)
+     Satellite System         : (GPS+GLO+GAL+BDS+QZSS+IRNSS+SBAS)
+     Serial Number            : (A20, but note the first A5 is used in SINEX)
+     Firmware Version         : (A11)
+     Elevation Cutoff Setting : (deg)
+     Date Installed           : (CCYY-MM-DDThh:mmZ)
+     Date Removed             : (CCYY-MM-DDThh:mmZ)
+     Temperature Stabiliz.    : (none or tolerance in degrees C)
+     Additional Information   : (multiple lines)
+
+
+4.   GNSS Antenna Information
+
+4.1  Antenna Type             : TRM14532.00     NONE
+     Serial Number            : 7008
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.0000
+     Marker->ARP North Ecc(m) :   -0.0055
+     Marker->ARP East Ecc(m)  :   -0.0034
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 1993-06-10T00:00Z
+     Date Removed             : 1993-06-14T00:00Z
+     Additional Information   : (multiple lines)
+
+4.2  Antenna Type             : TRM14532.00     NONE
+     Serial Number            : 0000
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.8580
+     Marker->ARP North Ecc(m) :   -0.0055
+     Marker->ARP East Ecc(m)  :   -0.0034
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 1994-05-26T00:00Z
+     Date Removed             : 1994-05-29T00:00Z
+     Additional Information   : (multiple lines)
+
+4.3  Antenna Type             : TRM33429.00+GP  NONE
+     Serial Number            : 156516
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.0000
+     Marker->ARP North Ecc(m) :   -0.0034
+     Marker->ARP East Ecc(m)  :   -0.0024
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2000-03-26T00:00Z
+     Date Removed             : 2000-04-03T00:00Z
+     Additional Information   : (multiple lines)
+
+4.4  Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 156024
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.8433
+     Marker->ARP North Ecc(m) :   -0.0035
+     Marker->ARP East Ecc(m)  :   -0.0025
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2000-07-06T00:00Z
+     Date Removed             : 2000-07-08T00:00Z
+     Additional Information   : (multiple lines)
+
+4.5  Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 156024
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.0000
+     Marker->ARP North Ecc(m) :   -0.0035
+     Marker->ARP East Ecc(m)  :   -0.0025
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2000-07-08T00:00Z
+     Date Removed             : 2000-07-10T00:00Z
+     Additional Information   : (multiple lines)
+
+4.6  Antenna Type             : TRM33429.00+GP  NONE
+     Serial Number            : 156516
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   1.0636
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2001-03-26T00:00Z
+     Date Removed             : 2001-04-03T00:00Z
+     Additional Information   : (multiple lines)
+
+4.7  Antenna Type             : TRM29659.00     NONE
+     Serial Number            : 190269
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.0000
+     Marker->ARP North Ecc(m) :   0.0003
+     Marker->ARP East Ecc(m)  :   -0.0024
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2001-06-12T00:00Z
+     Date Removed             : 2001-06-14T00:00Z
+     Additional Information   : (multiple lines)
+
+4.8  Antenna Type             : TRM29659.00     NONE
+     Serial Number            : 190269
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.0000
+     Marker->ARP North Ecc(m) :   0.0003
+     Marker->ARP East Ecc(m)  :   -0.0024
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2001-06-14T00:00Z
+     Date Removed             : 2001-06-14T12:00Z
+     Additional Information   : (multiple lines)
+
+4.9  Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 168784
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   1.0262
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2002-05-22T00:00Z
+     Date Removed             : 2002-05-26T00:00Z
+     Additional Information   : (multiple lines)
+
+4.10 Antenna Type             : TRM33429.00+GP  NONE
+     Serial Number            : 156516
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   1.3771
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2003-03-04T00:00Z
+     Date Removed             : 2003-03-10T00:00Z
+     Additional Information   : (multiple lines)
+
+4.11 Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 171774
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   1.9250
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2003-06-18T00:00Z
+     Date Removed             : 2003-06-21T00:00Z
+     Additional Information   : (multiple lines)
+
+4.12 Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 171774
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2004-01-27T00:00Z
+     Date Removed             : 2004-01-31T00:00Z
+     Additional Information   : (multiple lines)
+
+4.13 Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 221333
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2004-02-03T00:00Z
+     Date Removed             : 2004-02-09T00:00Z
+     Additional Information   : (multiple lines)
+
+4.14 Antenna Type             : TRM33429.20+GP  NONE
+     Serial Number            : 171774
+     Antenna Reference Point  : BPA
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2004-06-14T00:00Z
+     Date Removed             : 2004-06-19T00:00Z
+     Additional Information   : (multiple lines)
+
+4.15 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 12605840
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2005-02-17T00:00Z
+     Date Removed             : 2005-02-23T00:00Z
+     Additional Information   : (multiple lines)
+
+4.16 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 12605840
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2006-03-13T00:00Z
+     Date Removed             : 2006-03-17T00:00Z
+     Additional Information   : (multiple lines)
+
+4.17 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 0000
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2007-03-05T00:00Z
+     Date Removed             : 2007-03-20T00:00Z
+     Additional Information   : (multiple lines)
+
+4.18 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 196282
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2008-07-18T00:00Z
+     Date Removed             : 2008-07-21T00:00Z
+     Additional Information   : (multiple lines)
+
+4.19 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 223471
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2009-03-22T00:00Z
+     Date Removed             : 2009-03-31T00:00Z
+     Additional Information   : (multiple lines)
+
+4.20 Antenna Type             : TRM41249.00     NONE
+     Serial Number            : 60220780
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2010-04-28T00:00Z
+     Date Removed             : 2011-09-19T00:00Z
+     Additional Information   : (multiple lines)
+
+4.21 Antenna Type             : TRM57971.00     NONE
+     Serial Number            : 0000
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2011-09-19T00:00Z
+     Date Removed             : 2014-10-17T00:00Z
+     Additional Information   : (multiple lines)
+
+4.22 Antenna Type             : TRM57971.00     NONE
+     Serial Number            : 0000
+     Antenna Reference Point  : BAM
+     Marker->ARP Up Ecc. (m)  :   0.9710
+     Marker->ARP North Ecc(m) :   0.0001
+     Marker->ARP East Ecc(m)  :   -0.0001
+     Alignment from True N    : 0.0
+     Antenna Radome Type      : NONE
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : 2014-10-17T00:00Z
+     Date Removed             : CCYY-MM-DDThh:mmZ
+     Additional Information   : (multiple lines)
+
+4.x  Antenna Type             : (A20, from rcvr_ant.tab; see instructions)
+     Serial Number            : (A*, but note the first A5 is used in SINEX)
+     Antenna Reference Point  : (BPA/BCR/XXX from "antenna.gra"; see instr.)
+     Marker->ARP Up Ecc. (m)  : (F8.4)
+     Marker->ARP North Ecc(m) : (F8.4)
+     Marker->ARP East Ecc(m)  : (F8.4)
+     Alignment from True N    : (deg; + is clockwise/east)
+     Antenna Radome Type      : (A4 from rcvr_ant.tab; see instructions)
+     Radome Serial Number     : 
+     Antenna Cable Type       : (vendor & type number)
+     Antenna Cable Length     : (m)
+     Date Installed           : (CCYY-MM-DDThh:mmZ)
+     Date Removed             : (CCYY-MM-DDThh:mmZ)
+     Additional Information   : (multiple lines)
+
+
+5.   Surveyed Local Ties
+
+5.x  Tied Marker Name         : 
+     Tied Marker Usage        : (SLR/VLBI/LOCAL CONTROL/FOOTPRINT/etc)
+     Tied Marker CDP Number   : (A4)
+     Tied Marker DOMES Number : (A9)
+     Differential Components from GNSS Marker to the tied monument (ITRS)
+       dx (m)                 : (m)
+       dy (m)                 : (m)
+       dz (m)                 : (m)
+     Accuracy (mm)            : (mm)
+     Survey method            : (GPS CAMPAIGN/TRILATERATION/TRIANGULATION/etc)
+     Date Measured            : (CCYY-MM-DDThh:mmZ)
+     Additional Information   : (multiple lines)
+
+
+6.   Frequency Standard
+
+6.x  Standard Type            : (INTERNAL or EXTERNAL H-MASER/CESIUM/etc)
+       Input Frequency        : (if external)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+
+7.   Collocation Information
+
+7.x  Instrumentation Type     : (GPS/GLONASS/DORIS/PRARE/SLR/VLBI/TIME/etc)
+       Status                 : (PERMANENT/MOBILE)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+
+8.   Meteorological Instrumentation
+
+8.1.x  Humidity Sensor Model  : 
+       Manufacturer           : 
+       Serial Number          : 
+       Data Sampling Interval : (sec)
+       Accuracy (% rel h)     : (% rel h)
+       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)
+       Height Diff to Ant     : (m)
+       Calibration date       : (CCYY-MM-DD)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+8.2.x  Pressure Sensor Model  : 
+       Manufacturer           : 
+       Serial Number          : 
+       Data Sampling Interval : (sec)
+       Accuracy               : (hPa)
+       Height Diff to Ant     : (m)
+       Calibration date       : (CCYY-MM-DD)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+8.3.x  Temp. Sensor Model     : 
+       Manufacturer           : 
+       Serial Number          : 
+       Data Sampling Interval : (sec)
+       Accuracy               : (deg C)
+       Aspiration             : (UNASPIRATED/NATURAL/FAN/etc)
+       Height Diff to Ant     : (m)
+       Calibration date       : (CCYY-MM-DD)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+8.4.x  Water Vapor Radiometer : 
+       Manufacturer           : 
+       Serial Number          : 
+       Distance to Antenna    : (m)
+       Height Diff to Ant     : (m)
+       Calibration date       : (CCYY-MM-DD)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Notes                  : (multiple lines)
+
+8.5.x  Other Instrumentation  : (multiple lines)
+
+
+9.   Local Ongoing Conditions Possibly Affecting Computed Position
+
+9.1.x  Radio Interferences    : (TV/CELL PHONE ANTENNA/RADAR/etc)
+       Observed Degradations  : (SN RATIO/DATA GAPS/etc)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Additional Information : (multiple lines)
+
+9.2.x  Multipath Sources      : (METAL ROOF/DOME/VLBI ANTENNA/etc)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Additional Information : (multiple lines)
+
+9.3.x  Signal Obstructions    : (TREES/BUILDINGS/etc)
+       Effective Dates        : (CCYY-MM-DD/CCYY-MM-DD)
+       Additional Information : (multiple lines)
+
+
+10.  Local Episodic Effects Possibly Affecting Data Quality
+
+10.x  Date                    : (CCYY-MM-DD/CCYY-MM-DD)
+      Event                   : (TREE CLEARING/CONSTRUCTION/etc)
+
+
+11.  On-Site, Point of Contact Agency Information
+
+     Agency                   : Icelandic Meteorological Office
+                              : Infrastructure Division
+     Preferred Abbreviation   : IMO
+     Mailing Address          : Bústaðarvegur 7-9
+                              : 105 Reykjavík
+                              : Iceland
+     Primary Contact
+       Contact Name           : GNSS Operator
+       Telephone (primary)    : +354 5226000
+       Telephone (secondary)  : 
+       Fax                    : 
+       E-mail                 : gnss-epos@vedur.is
+     Secondary Contact
+       Contact Name           : 
+       Telephone (primary)    : 
+       Telephone (secondary)  : 
+       Fax                    : 
+       E-mail                 : 
+     Additional Information   : (multiple lines)
+
+
+
+
+12.  Responsible Agency (if different from 11.)
+
+     Agency                   : (multiple lines)
+     Preferred Abbreviation   : (A10)
+     Mailing Address          : (multiple lines)
+     Primary Contact
+       Contact Name           : 
+       Telephone (primary)    : 
+       Telephone (secondary)  : 
+       Fax                    : 
+       E-mail                 : 
+     Secondary Contact
+       Contact Name           : 
+       Telephone (primary)    : 
+       Telephone (secondary)  : 
+       Fax                    : 
+       E-mail                 : 
+     Additional Information   : (multiple lines)
+
+
+13.  More Information
+
+     Primary Data Center      : IMO
+     Secondary Data Center    : 
+     URL for More Information : https://en.vedur.is
+     Hardcopy on File
+       Site Map               : (Y or URL)
+       Site Diagram           : (Y or URL)
+       Horizon Mask           : (Y or URL)
+       Monument Description   : (Y or URL)
+       Site Pictures          : (Y or URL)
+     Additional Information   : (multiple lines)
+     Antenna Graphics with Dimensions
+
+
