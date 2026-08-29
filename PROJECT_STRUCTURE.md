@@ -50,8 +50,21 @@ tostools/
 
 ### `scripts/` - Utility Scripts
 - **update_standards.py** - Automated GPS/GNSS standards management
-- **generate_reference_data.py** - Reference data generation
-- **validate_modular_system.py** - System validation utilities
+- **capture_oracle.py** - Capture composer-oracle snapshots from a recorded cassette
+- **compare_synthesis.py** - Compare legacy vs composer device-session synthesis
+- **export_station_equipment.py** - Export current per-station equipment to CSV
+- **harvest_attribute_codes.py** - Harvest TOS attribute codes into the catalog
+- **dev/** - Mutation harnesses for the output oracles (`mutate_sitelog_oracle.py`,
+  `mutate_station_history_oracle.py`); see each file's header before editing a guard
+
+> `generate_reference_data.py` and `validate_modular_system.py` were removed
+> 2026-08-29. They were the v0.2.5-era legacy-vs-modular comparison harness and
+> had been broken at import since `core.site_log.generate_igs_site_log` was
+> deleted for having no production caller — so they validated a renderer nothing
+> ran. That job is now done by the test-suite oracles
+> (`tests/test_composer_oracle.py`, `tests/test_sitelog_oracle.py`,
+> `tests/test_station_history_oracle.py`), which run in CI against the code that
+> actually executes.
 
 ### `import_scripts/` - Database Import Tools
 - Meteorological station import utilities
