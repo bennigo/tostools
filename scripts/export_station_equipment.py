@@ -22,7 +22,12 @@ import pandas as pd
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from tostools.legacy import gps_metadata_qc as gpsqc
+# F1 (2026-08-27) deleted `legacy/gps_metadata_qc.py`; there is now exactly ONE
+# `gps_metadata_qc`, at the top level, and it carries both symbols this script
+# calls with unchanged signatures. `getStationList` is a separate question and
+# is left alone — its live copy is the `legacy` one (and the two are
+# byte-identical regardless).
+from tostools import gps_metadata_qc as gpsqc
 from tostools.legacy.gps_metadata_functions import getStationList
 
 
