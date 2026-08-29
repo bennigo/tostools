@@ -15036,11 +15036,12 @@ def _search_main(argv, profile=None):
             "accepted. Takes the same selector grammar as an expression's "
             "left-hand side, so device selectors work: "
             "--show receiver.firmware_version,receiver.software_version. "
-            "The 'coord.' namespace projects computed coordinates — one "
-            "geofunc frame, three columns (--show coord.itrf2008 → "
+            "The 'coords.' namespace projects computed coordinates — one "
+            "geofunc frame, three columns (--show coords.itrf2008 → "
             "ITRF2008.X/.Y/.Z): wgs84 (lon/lat/h), itrf2008/itrf2014/"
             "itrf2020 (X/Y/Z ECEF), isn93/isn2004/isn2016 (E/N Lambert). "
-            "TOS lat/lon/altitude are treated as WGS 84."
+            "TOS lat/lon/altitude are treated as WGS 84. 'coord.' accepted "
+            "as an alias."
         ),
     )
     time_grp = p.add_argument_group("time")
@@ -15264,12 +15265,11 @@ def _search_main(argv, profile=None):
                 raw = raw.strip()
                 if not raw:
                     continue
-                if raw.startswith(search_mod.COORD_NAMESPACE + "."):
-                    frame = raw[len(search_mod.COORD_NAMESPACE) + 1 :].strip().lower()
+                frame = search_mod.parse_coord_selector(raw)
+                if frame is not None:
                     if not frame:
                         raise ValueError(
-                            f"selector {raw!r} has no frame after "
-                            f"'{search_mod.COORD_NAMESPACE}.'"
+                            f"selector {raw!r} has no frame after 'coords.'"
                         )
                     search_mod.coord_frame(frame)  # validates; raises KeyError
                     if frame not in coord_frames:

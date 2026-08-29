@@ -76,6 +76,20 @@ def coord_frame_names() -> List[str]:
 
     return list(frame_names())
 
+
+def parse_coord_selector(raw: str) -> Optional[str]:
+    """Frame name if ``raw`` is a ``coords.<frame>`` selector, else ``None``.
+
+    Accepts both the canonical ``coords.`` and the singular ``coord.`` alias;
+    returns the frame name lowercased. The caller validates it against the
+    geofunc registry (an unknown frame raises ``KeyError`` from
+    :func:`coord_frame`).
+    """
+    for pfx in (COORD_NAMESPACE + ".", "coord."):
+        if raw.startswith(pfx):
+            return raw[len(pfx):].strip().lower()
+    return None
+
 # ---------------------------------------------------------------------------
 # Value normalization
 # ---------------------------------------------------------------------------
@@ -217,11 +231,12 @@ CONTACT_FIELD_CODES = ("organization", "name", "email")
 #: Every code the ``contact.`` namespace accepts.
 CONTACT_CODES = frozenset(CONTACT_ROLE_CODES + CONTACT_FIELD_CODES)
 
-#: The coordinate-frame namespace — ``--show coord.<frame>`` projects a
+#: The coordinate-frame namespace — ``--show coords.<frame>`` projects a
 #: station's lat/lon/altitude into a geofunc frame (three columns, one per
 #: axis). Projection-only: ``parse_selector`` rejects it, so it can never
-#: appear in a filter expression.
-COORD_NAMESPACE = "coord"
+#: appear in a filter expression. The singular ``coord.`` is accepted as an
+#: alias (both have been typed); ``coords.`` is canonical.
+COORD_NAMESPACE = "coords"
 
 #: The contact fields that read an ORGANISATION — these get abbreviation
 #: expansion (``contact.owner ~ IES`` resolves to the full org name).

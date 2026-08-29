@@ -2315,7 +2315,7 @@ class TestCoordColumns:
 
     def test_cli_table(self, capsys):
         rc, out = _run_cli(
-            ["marker = REYK", "--show", "coord.itrf2008,coord.isn2016"],
+            ["marker = REYK", "--show", "coords.itrf2008,coords.isn2016"],
             self._fleet(),
             capsys=capsys,
         )
@@ -2326,9 +2326,19 @@ class TestCoordColumns:
         assert "ISN2016" in out
         assert "2556148.998" in out
 
+    def test_cli_singular_alias(self, capsys):
+        # 'coord.' (singular) is accepted as an alias for 'coords.'.
+        rc, out = _run_cli(
+            ["marker = REYK", "--show", "coord.itrf2008"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "ITRF2008" in out
+
     def test_cli_json(self, capsys):
         rc, out = _run_cli(
-            ["marker = REYK", "--show", "coord.itrf2008", "--json"],
+            ["marker = REYK", "--show", "coords.itrf2008", "--json"],
             self._fleet(),
             capsys=capsys,
         )
@@ -2340,7 +2350,7 @@ class TestCoordColumns:
 
     def test_cli_unknown_frame_rc2(self, capsys):
         rc, out = _run_cli(
-            ["marker = REYK", "--show", "coord.bogus"],
+            ["marker = REYK", "--show", "coords.bogus"],
             self._fleet(),
             capsys=capsys,
         )
@@ -2348,9 +2358,9 @@ class TestCoordColumns:
         assert "unknown coordinate frame" in out
 
     def test_cli_coord_in_expression_rc2(self, capsys):
-        # coord.* is projection-only — it must not parse as a filter predicate.
+        # coords.* is projection-only — it must not parse as a filter predicate.
         rc, out = _run_cli(
-            ["coord.itrf2008 = 1"],
+            ["coords.itrf2008 = 1"],
             self._fleet(),
             capsys=capsys,
         )
