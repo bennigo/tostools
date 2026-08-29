@@ -77,7 +77,33 @@ import pytest
 
 from tostools.core.site_log import build_site_log
 
-SNAPSHOTS = Path(__file__).resolve().parent / "_oracle_outputs" / "sitelog"
+TESTS_DIR = Path(__file__).resolve().parent
+SNAPSHOTS = TESTS_DIR / "_oracle_outputs" / "sitelog"
+
+#: §11/§12/§13 are rendered from `agencies.yaml`, a DEPLOYED config file that
+#: `core.agencies` resolves from `$GPS_CONFIG_PATH` (else `~/.config/gpsconfig`).
+#: On a developer laptop that file exists; on a CI runner it does not, and
+#: `AgencyResolver` then falls back to an empty resolver — so §11 renders
+#: differently and every snapshot here fails.
+#:
+#: That is exactly what happened: the first push turned CI red with six
+#: failures and `§11 has no mailing address at all: ['(multiple lines)']`.
+#: The snapshots had silently encoded the author's host config.
+#:
+#: Pointing GPS_CONFIG_PATH at a committed fixture makes the oracle
+#: self-contained without weakening it — the REAL resolution path still runs,
+#: it just reads a file the repo controls.
+FIXTURE_CONFIG = TESTS_DIR / "fixtures" / "gpsconfig"
+
+
+@pytest.fixture(autouse=True)
+def _pin_agency_config(monkeypatch):
+    """Resolve `agencies.yaml` from the repo, not from the host."""
+    assert (FIXTURE_CONFIG / "agencies.yaml").exists(), (
+        f"agency fixture missing at {FIXTURE_CONFIG} — the oracle would "
+        f"silently snapshot the empty-resolver §11"
+    )
+    monkeypatch.setenv("GPS_CONFIG_PATH", str(FIXTURE_CONFIG))
 
 #: Stations whose rendered log is locked. See the module docstring for why
 #: each one is here; do not add a station without a branch it exercises.

@@ -1,0 +1,92 @@
+# Agency reference data for EPOS dissemination.
+#
+# Drives the RINEX header OBSERVER / AGENCY and the IGS site-log §11/§12/§13, keyed by
+# the Icelandic TOS owner organization (contact.owner.organization). It holds exactly
+# what the TOS *contact entity* cannot: English + Icelandic agency names, abbreviations,
+# a URL, and the generic GNSS-team contact/email — TOS contacts have a single Icelandic
+# `name` and no english-name / abbreviation / url field.
+#
+# Model (see receivers/docs/architecture/epos-observer-agency-and-sitelog.md):
+#   TOS roles say WHO plays each part; this file says HOW to render that agency.
+#   - owner (Eigandi stöðvar)      -> RINEX AGENCY + site-log §12 Responsible
+#   - operator (Rekstraraðili)     -> §11 On-Site POC   (defaults.operator_agency if absent)
+#   - data-owner (Eigandi gagna)   -> §13 Primary Data Center (defaults.data_center_agency if absent)
+#
+# `abbrev`/`english_name` are the English forms used in the international IGS/EPOS site log
+# (Preferred Abbreviation, Agency); `observer`/`agency_label` are the RINEX header strings.
+# `address` is a list of mailing-address lines. Deployed to ~/.config/gpsconfig/agencies.yaml
+# (GPS_CONFIG_PATH), synced from gps-config-data — same mechanism as stations.cfg / sync.yaml.
+
+defaults:
+  # Where a station has no operator / data-owner contact role in TOS, IMO is the
+  # On-Site POC (§11) and Primary Data Center (§13) — IMO operates + hosts the fleet.
+  operator_agency: "Veðurstofa Íslands"
+  data_center_agency: "Veðurstofa Íslands"
+  # §13 "URL for More Information" for every station until a dedicated GNSS info page exists.
+  url: "https://en.vedur.is"
+
+agencies:
+  "Veðurstofa Íslands":
+    english_name: "Icelandic Meteorological Office"
+    icelandic_name: "Veðurstofa Íslands"
+    department_en: "Infrastructure Division"
+    department_is: "Innviðasvið"
+    abbrev: "IMO" # English preferred abbreviation (site log)
+    abbrev_is: "VÍ"
+    observer: "GNSSatIMO" # RINEX OBSERVER
+    agency_label: "Vedurstofa Islands" # RINEX AGENCY (<=40 chars); TODO confirm EN vs this ASCII form
+    address:
+      - "Bústaðarvegur 7-9"
+      - "105 Reykjavík"
+      - "Iceland"
+    contact_name: "GNSS Operator"
+    # Country code REQUIRED: this renders into IGS site-log §11 "Telephone
+    # (primary)" and is published to M3G, an international registry — a bare
+    # "5226000" is not dialable from outside Iceland. Every log published up
+    # to 2026-08-23 carries the bare form (see vmey00isl_20260820.log).
+    # Matches what TOS org contact #1256 renders via the legacy contact path.
+    phone: "+354 5226000"
+    email: "gnss-epos@vedur.is" # not in TOS (org contact #1256 has an empty email)
+    url: "https://en.vedur.is"
+
+  # Landmælingar Íslands merged in 2024 into Náttúrufræðistofnun Íslands
+  # (Natural Science Institute of Iceland). Keyed by the CURRENT TOS owner org
+  # string (updated from "Landmælingar Íslands" 2026-08-23).
+  "Náttúrufræðistofnun Íslands":
+    english_name: "Natural Science Institute of Iceland"
+    icelandic_name: "Náttúrufræðistofnun Íslands"
+    department_en: "Land Survey"
+    department_is: "Landmælingar"
+    abbrev: "NSII" # English preferred abbreviation (site log)
+    abbrev_is: "NATT"
+    dc_label: "NATT" # site-log §13 Data Center short name (else defaults to abbrev)
+    observer: "GNSSatNATT" # RINEX OBSERVER (user directive: GNSSat<IS abbrev>)
+    agency_label: "NATT" # RINEX AGENCY
+    address:
+      - "Smiðjuvellir 28"
+      - "300 Akranes"
+      - "Iceland"
+    contact_name: "Land Survey"
+    phone: "+354 4309000"
+    email: "gnss@natt.is"
+    url: "https://www.natt.is/en" # TODO: dedicated NATT URL if any
+
+  # Institute of Earth Sciences, University of Iceland (GRIV / TKJ2 / TKJS).
+  # TODO: confirm abbreviation + OBSERVER/AGENCY strings + contact.
+  "Jarðvísindastofnun Háskóla Íslands":
+    english_name: "Institute of Earth Sciences, University of Iceland"
+    icelandic_name: "Jarðvísindastofnun Háskóla Íslands"
+    department_en: ""
+    department_is: ""
+    abbrev: "IES" # TODO confirm
+    abbrev_is: "JHÍ" # TODO confirm
+    observer: "GNSSatIES" # TODO confirm
+    agency_label: "IES" # TODO confirm
+    address:
+      - "Sturlugata 7"
+      - "102 Reykjavík"
+      - "Iceland"
+    contact_name: "TODO — IES contact"
+    phone: ""
+    email: "TODO — IES email"
+    url: "https://en.vedur.is"
