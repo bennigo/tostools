@@ -297,6 +297,13 @@ def _guard_position_correction(rinex_file, corrections, logger, loglevel):
         return corrections
     if current is None or target is None:
         return corrections
+    # (0,0,0) is the "position never filled" placeholder — the converter wrote
+    # the origin because the raw carried no position metadata. That is a MISSING
+    # position, not "recorded elsewhere": allow the TOS fill rather than refuse.
+    # (Trimble raw for 2010-2012 at FIM2 hit exactly this: 260 files with a
+    # zero position, ~6362 km from the station, that the guard was refusing.)
+    if math.dist(current, (0.0, 0.0, 0.0)) < 1.0:
+        return corrections
     distance = math.dist(current, target)
     if distance <= MAX_POSITION_CORRECTION_M:
         return corrections
