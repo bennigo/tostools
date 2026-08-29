@@ -52,7 +52,8 @@ import pytest
 
 from tostools import gps_metadata_qc as gpsqc
 
-SNAPSHOTS = Path(__file__).resolve().parent / "_oracle_outputs" / "station_history"
+TESTS_DIR = Path(__file__).resolve().parent
+SNAPSHOTS = TESTS_DIR / "_oracle_outputs" / "station_history"
 
 #: Stations spanning the shapes the renderer has to survive: RHOF (3 clean
 #: eras), AUST (the high-session-count fixture), VMEY (separate non-zero
@@ -249,13 +250,111 @@ def test_english_contact_language() -> None:
 #      composition happens in the TEST process, so the non-determinism is
 #      already baked into the pickled dict before the subprocess starts.
 #
-# A real guard has to re-run the COMPOSITION (not the render) across processes,
-# which needs the raw TOS payloads plumbed into a subprocess. Worth doing; not
-# done here.
-#
-# What stands in the meantime: the six snapshots in this file. A regression
-# makes them fail intermittently rather than never — flaky, but not silent.
+# A real guard has to re-run the COMPOSITION (not the render) across processes.
+# That is what `test_the_render_is_not_hash_seed_dependent` below does — the
+# raw TOS payloads are already in the cassette, so the subprocess replays it
+# and composes there. CONFIRMED to catch the real regression: with the sort
+# reverted, seed 1 renders differently from seeds 0/2/3/4/5.
 # ---------------------------------------------------------------------------
+
+#: The cassette the determinism guard replays. It belongs to another test in
+#: this file — a deliberate, named coupling: the guard needs RAW TOS payloads
+#: for a station with enough attribute periods to expose the bug, and recording
+#: a second identical cassette would only double the maintenance.
+_AUST_CASSETTE = (
+    TESTS_DIR
+    / "cassettes"
+    / "test_station_history_oracle"
+    / "test_working_implementation_matches_snapshot[AUST-table].yaml"
+)
+
+#: Seeds to compose under. WHICH seeds expose an unsorted iteration is
+#: data-dependent — with the fix reverted exactly one of 0-5 (seed 1) diverged
+#: — so this samples rather than proves. Widening costs ~1.5 s per seed.
+_HASH_SEEDS = ("0", "1", "2", "3", "4", "5")
+
+
+def test_the_render_is_not_hash_seed_dependent(tmp_path) -> None:
+    """The composition must not depend on PYTHONHASHSEED. Checked across processes.
+
+    See the block comment above for the bug. This is the guard the three
+    cheaper attempts listed there could not be: set iteration order is fixed
+    for the life of an interpreter, so nothing in-process can vary it, and
+    pickling the COMPOSED station bakes the non-determinism in before the
+    subprocess starts. Replaying the cassette moves the composition into the
+    subprocess, which is the whole trick.
+
+    `record_mode="none"` means any request absent from the cassette raises, so
+    this cannot quietly reach production TOS despite running outside the
+    suite's socket guard.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    assert _AUST_CASSETTE.exists(), (
+        f"cassette missing: {_AUST_CASSETTE}\n"
+        f"This guard replays another test's cassette; re-record with\n"
+        f"  pytest tests/test_station_history_oracle.py --record-mode=once"
+    )
+
+    driver = tmp_path / "compose_and_render.py"
+    driver.write_text(
+        textwrap.dedent(
+            """
+            import contextlib, hashlib, io, logging, sys
+            import vcr
+            from tostools import gps_metadata_qc as gpsqc
+            import tostools.gps_metadata_functions as m
+
+            with vcr.use_cassette(
+                sys.argv[1],
+                record_mode="none",
+                match_on=["method", "scheme", "host", "path", "query", "body"],
+                allow_playback_repeats=True,
+            ):
+                station = gpsqc.gps_metadata(
+                    "AUST", gpsqc.URL_REST_TOS, loglevel=logging.CRITICAL
+                )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                m.print_station_history(
+                    station, raw_format=False, loglevel=logging.CRITICAL
+                )
+            out = buf.getvalue()
+            assert out.strip(), "rendered nothing"
+            sys.stderr.write(hashlib.sha1(out.encode()).hexdigest())
+            """
+        )
+    )
+
+    digests = {}
+    for seed in _HASH_SEEDS:
+        proc = subprocess.run(
+            [sys.executable, str(driver), str(_AUST_CASSETTE)],
+            capture_output=True,
+            text=True,
+            env={
+                "PYTHONHASHSEED": seed,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PATH": os.environ.get("PATH", ""),
+                "HOME": os.environ.get("HOME", ""),
+                "PYTHONPATH": os.pathsep.join(sys.path),
+            },
+        )
+        assert proc.returncode == 0, (
+            f"compose+render failed under PYTHONHASHSEED={seed}:\n"
+            f"{proc.stderr[-2000:]}"
+        )
+        digests[seed] = proc.stderr.strip()[:40]
+        assert digests[seed], f"seed {seed} produced no digest"
+
+    assert len(set(digests.values())) == 1, (
+        f"composition differs across hash seeds {digests} — an unordered set "
+        f"is back in the device_attribute_history chain. Every snapshot in "
+        f"this file is now flaky rather than wrong, and operator table columns "
+        f"change run to run."
+    )
 
 
 
