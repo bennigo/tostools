@@ -11,6 +11,11 @@ tmp/
 # tests/_oracle_outputs holds JSON snapshots that *are* committed (byte-equality
 # oracles for the composer migration; see tests/fixtures/README.md).
 !tests/_oracle_outputs/*.json
+# ...and the site-log oracle's snapshots, which are RENDERED SITE LOGS and so
+# carry the published `.log` extension the blanket rule above excludes. Without
+# this negation the snapshots are silently uncommittable and the oracle fails on
+# a fresh clone with "Snapshot missing" — a gate that never guards anything.
+!tests/_oracle_outputs/sitelog/*.log
 *.D
 *.D.Z
 
