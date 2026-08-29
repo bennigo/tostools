@@ -26,6 +26,7 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 IMPL = REPO / "src/tostools/gps_metadata_functions.py"
 LEGACY = REPO / "src/tostools/legacy/gps_metadata_functions.py"
+COMPOSER = REPO / "src/tostools/gps_metadata_qc.py"
 ORACLE = "tests/test_station_history_oracle.py"
 SNAPSHOTS = REPO / "tests/_oracle_outputs/station_history"
 SNAPSHOT_BACKUP = REPO / "tests/_oracle_outputs/.station_history_backup"
@@ -103,6 +104,24 @@ MUTATIONS = [
         True,
         IMPL,
     ),
+    (
+        # The determinism guard. This is the mutation that three earlier
+        # candidate guards all SURVIVED — each passed with the sort reverted,
+        # which is why they were deleted rather than kept green. The surviving
+        # guard replays the cassette INSIDE a subprocess, so the composition
+        # (not just the render) happens under a varied PYTHONHASHSEED.
+        #
+        # Note it is a SAMPLING guard: with the sort reverted only seed 1 of
+        # 0-5 diverges. If this ever reports NOT DETECTED, widen `_HASH_SEEDS`
+        # before concluding the guard is broken — the divergent seed set is
+        # data-dependent and can shift with the cassette or the Python build.
+        "the composer iterates sub-sessions in set order again",
+        '    for sub_session in sorted(sub_sessions, key=lambda s: (s[0] or "", s[1] or "9999")):',
+        "    for sub_session in sub_sessions:",
+        "test_the_render_is_not_hash_seed_dependent",
+        False,
+        COMPOSER,
+    ),
 ]
 
 
@@ -137,7 +156,11 @@ def _refuse_if_pytest_is_running():
 
 _refuse_if_pytest_is_running()
 
-ORIGINALS = {IMPL: IMPL.read_text(), LEGACY: LEGACY.read_text()}
+ORIGINALS = {
+    IMPL: IMPL.read_text(),
+    LEGACY: LEGACY.read_text(),
+    COMPOSER: COMPOSER.read_text(),
+}
 
 
 def restore():
