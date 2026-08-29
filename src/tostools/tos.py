@@ -15044,6 +15044,16 @@ def _search_main(argv, profile=None):
             "as an alias."
         ),
     )
+    p.add_argument(
+        "--only",
+        action="store_true",
+        help=(
+            "Project ONLY the columns requested via --show (plus the fixed "
+            "MARKER/NAME). Predicate codes that would otherwise be shown "
+            "automatically (e.g. IN_NETWORK_EPOS from --epos) are suppressed. "
+            "Affects both the table and --json."
+        ),
+    )
     time_grp = p.add_argument_group("time")
     time_grp.add_argument(
         "--at",
@@ -15433,6 +15443,7 @@ def _search_main(argv, profile=None):
             at=args.at,
             history=args.history,
             coord_frames=coord_frames,
+            project_only=args.only,
         )
     except SnapshotMiss as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)

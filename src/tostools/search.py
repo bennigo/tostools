@@ -1414,6 +1414,7 @@ class SearchResult:
     at: Optional[str] = None
     history: bool = False
     coord_frames: List[str] = field(default_factory=list)
+    project_only: bool = False
 
     @property
     def device_filters_active(self) -> bool:
@@ -1424,12 +1425,14 @@ class SearchResult:
         """STATION columns: bare predicate codes + bare --show selectors.
 
         Dotted selectors are device columns and are excluded here — see
-        :attr:`device_columns`.
+        :attr:`device_columns`. With :attr:`project_only`, predicate codes
+        are NOT projected — only the bare ``--show`` selectors are.
         """
         codes: List[str] = []
-        for pred in self.predicates:
-            if pred.namespace is None and pred.code not in codes:
-                codes.append(pred.code)
+        if not self.project_only:
+            for pred in self.predicates:
+                if pred.namespace is None and pred.code not in codes:
+                    codes.append(pred.code)
         for raw in self.show_codes:
             if "." in raw:
                 continue
@@ -1443,17 +1446,19 @@ class SearchResult:
 
         Visit and contact selectors are excluded here — they get their own
         projection columns (see :attr:`contact_columns` /
-        :attr:`visit_columns`).
+        :attr:`visit_columns`). With :attr:`project_only`, predicate device
+        selectors are NOT projected — only the ``--show`` ones are.
         """
         cols: List[tuple] = []
-        for pred in self.predicates:
-            if pred.namespace is not None and pred.namespace not in (
-                VISIT_NAMESPACE,
-                CONTACT_NAMESPACE,
-            ):
-                pair = (pred.namespace, pred.code)
-                if pair not in cols:
-                    cols.append(pair)
+        if not self.project_only:
+            for pred in self.predicates:
+                if pred.namespace is not None and pred.namespace not in (
+                    VISIT_NAMESPACE,
+                    CONTACT_NAMESPACE,
+                ):
+                    pair = (pred.namespace, pred.code)
+                    if pair not in cols:
+                        cols.append(pair)
         for raw in self.show_codes:
             if "." not in raw:
                 continue
@@ -1628,6 +1633,7 @@ def search_stations(
     at: Optional[str] = None,
     history: bool = False,
     coord_frames: Optional[List[str]] = None,
+    project_only: bool = False,
 ) -> SearchResult:
     """Run the full pipeline: bulk fetch → attribute filter → device walk.
 
@@ -1758,4 +1764,5 @@ def search_stations(
         at=at,
         history=history,
         coord_frames=list(coord_frames or []),
+        project_only=project_only,
     )

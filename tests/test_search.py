@@ -2366,3 +2366,48 @@ class TestCoordColumns:
         )
         assert rc == 2
         assert "unknown device namespace" in out
+
+    def _epos_fleet_with_coords(self):
+        return [
+            _station(
+                100,
+                "REYK",
+                "Reykjavík",
+                in_epos="true",
+                extra=[
+                    _attr("lat", _REYK["lat"]),
+                    _attr("lon", _REYK["lon"]),
+                    _attr("altitude", _REYK["altitude"]),
+                ],
+            )
+        ]
+
+    def test_only_suppresses_predicate_columns(self, capsys):
+        fleet = self._epos_fleet_with_coords()
+        # Default: predicate code (in_network_epos) is projected.
+        rc, out = _run_cli(
+            ["--epos", "--show", "coords.itrf2008"], fleet, capsys=capsys
+        )
+        assert rc == 0
+        assert "IN_NETWORK_EPOS" in out
+        # --only: predicate column suppressed, --show columns remain.
+        rc, out = _run_cli(
+            ["--epos", "--show", "coords.itrf2008", "--only"],
+            fleet,
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "IN_NETWORK_EPOS" not in out
+        assert "ITRF2008" in out
+
+    def test_only_json_drops_predicate_attributes(self, capsys):
+        fleet = self._epos_fleet_with_coords()
+        rc, out = _run_cli(
+            ["--epos", "--show", "coords.itrf2008", "--only", "--json"],
+            fleet,
+            capsys=capsys,
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        attrs = payload["stations"][0]["attributes"]
+        assert "in_network_epos" not in attrs
