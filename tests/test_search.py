@@ -2382,23 +2382,27 @@ class TestCoordColumns:
             )
         ]
 
-    def test_only_suppresses_predicate_columns(self, capsys):
+    def test_show_restricts_to_listed_columns(self, capsys):
         fleet = self._epos_fleet_with_coords()
-        # Default: predicate code (in_network_epos) is projected.
+        # --show restricts: predicate column suppressed, --show columns shown.
         rc, out = _run_cli(
             ["--epos", "--show", "coords.itrf2008"], fleet, capsys=capsys
         )
         assert rc == 0
-        assert "IN_NETWORK_EPOS" in out
-        # --only: predicate column suppressed, --show columns remain.
-        rc, out = _run_cli(
-            ["--epos", "--show", "coords.itrf2008", "--only"],
-            fleet,
-            capsys=capsys,
-        )
-        assert rc == 0
         assert "IN_NETWORK_EPOS" not in out
         assert "ITRF2008" in out
+
+    def test_no_show_still_projects_predicates(self, capsys):
+        fleet = self._epos_fleet_with_coords()
+        rc, out = _run_cli(["--epos"], fleet, capsys=capsys)
+        assert rc == 0
+        assert "IN_NETWORK_EPOS" in out
+
+    def test_only_without_show_suppresses_predicates(self, capsys):
+        fleet = self._epos_fleet_with_coords()
+        rc, out = _run_cli(["--epos", "--only"], fleet, capsys=capsys)
+        assert rc == 0
+        assert "IN_NETWORK_EPOS" not in out
 
     def test_only_json_drops_predicate_attributes(self, capsys):
         fleet = self._epos_fleet_with_coords()

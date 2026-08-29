@@ -15031,27 +15031,26 @@ def _search_main(argv, profile=None):
         default=None,
         metavar="SELECTOR",
         help=(
-            "Extra attribute to render as a table column (predicate codes "
-            "are always shown). Repeatable, and comma-separated lists are "
-            "accepted. Takes the same selector grammar as an expression's "
-            "left-hand side, so device selectors work: "
-            "--show receiver.firmware_version,receiver.software_version. "
-            "The 'coords.' namespace projects computed coordinates — one "
-            "geofunc frame, three columns (--show coords.itrf2008 → "
-            "ITRF2008.X/.Y/.Z): wgs84 (lon/lat/h), itrf2008/itrf2014/"
-            "itrf2020 (X/Y/Z ECEF), isn93/isn2004/isn2016 (E/N Lambert). "
-            "TOS lat/lon/altitude are treated as WGS 84. 'coord.' accepted "
-            "as an alias."
+            "Columns to project. When --show is given, ONLY these columns "
+            "(plus the fixed MARKER/NAME) are rendered — predicate codes "
+            "are NOT auto-projected, so add any filter value you want to "
+            "see (e.g. --show coord.wgs84,in_network_epos). Repeatable and "
+            "comma-separated; same selector grammar as expressions: bare "
+            "attribute, device selectors (receiver.X), contact.*, visit.*, "
+            "and coords.<frame> (one geofunc frame → three columns, e.g. "
+            "--show coords.itrf2008 → ITRF2008.X/.Y/.Z): wgs84 (lon/lat/h), "
+            "itrf2008/itrf2014/itrf2020 (X/Y/Z ECEF), isn93/isn2004/isn2016 "
+            "(E/N Lambert). TOS lat/lon/altitude are treated as WGS 84; "
+            "'coord.' is an accepted alias."
         ),
     )
     p.add_argument(
         "--only",
         action="store_true",
         help=(
-            "Project ONLY the columns requested via --show (plus the fixed "
-            "MARKER/NAME). Predicate codes that would otherwise be shown "
-            "automatically (e.g. IN_NETWORK_EPOS from --epos) are suppressed. "
-            "Affects both the table and --json."
+            "Without --show: suppress the auto-projected predicate columns "
+            "(e.g. 'tos search --epos --only' lists just MARKER/NAME). "
+            "Implied by --show, which already restricts to its columns."
         ),
     )
     time_grp = p.add_argument_group("time")
@@ -15443,7 +15442,7 @@ def _search_main(argv, profile=None):
             at=args.at,
             history=args.history,
             coord_frames=coord_frames,
-            project_only=args.only,
+            project_only=args.only or bool(args.show),
         )
     except SnapshotMiss as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
