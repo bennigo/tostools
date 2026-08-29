@@ -281,9 +281,7 @@ def device_attribute_history(
     # The same None-safe sort is already applied to the second `sub_sessions`
     # set below (an open period has date_to=None, which is not orderable against
     # a string) — this is that fix applied to the twin that was missed.
-    for sub_session in sorted(
-        sub_sessions, key=lambda s: (s[0] or "", s[1] or "9999")
-    ):
+    for sub_session in sorted(sub_sessions, key=lambda s: (s[0] or "", s[1] or "9999")):
         module_logger.info("sub_session: %s", sub_session)
 
         # NOTE: only want session within session_start and session_end
