@@ -444,6 +444,44 @@ def parse_expression(expr: str) -> Predicate:
     return Predicate(code=code, op=op, value=stripped, namespace=namespace)
 
 
+def split_expression_list(raw: str) -> List[str]:
+    """Split a comma-separated expression list on commas OUTSIDE quotes/brackets.
+
+    ``--show`` already accepts comma-separated selectors; this gives the
+    positional expression list the same ergonomics, so
+    ``'visit.all !~ "EPOS disseminated", tectonic_plate ~ "Eurasia"'``
+    becomes two expressions. A comma inside a quoted value
+    (``name ~ "a, b"``) or an in-list value (``subtype = [GPS stöð, SIL stöð]``)
+    is NOT a separator.
+    """
+    parts: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    depth = 0  # square-bracket nesting
+    for ch in raw:
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch == "[":
+            depth += 1
+            buf.append(ch)
+        elif ch == "]":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    parts.append("".join(buf).strip())
+    return [p for p in parts if p]
+
+
 def open_value(entity: dict, code: str) -> Optional[str]:
     """Value of the currently-open period for ``code``, or None.
 

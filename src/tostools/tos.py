@@ -6782,7 +6782,8 @@ def _visit_search_main(args, profile=None) -> int:
     predicates = []
     try:
         for expr in args.expressions:
-            predicates.append(search_mod.parse_expression(expr))
+            for part in search_mod.split_expression_list(expr):
+                predicates.append(search_mod.parse_expression(part))
     except ValueError as exc:
         print(f"{_prog} visit search: {exc}", file=sys.stderr)
         return 2
@@ -15261,7 +15262,8 @@ def _search_main(argv, profile=None):
     coord_frames = []
     try:
         for expr in args.expressions:
-            predicates.append(search_mod.parse_expression(expr))
+            for part in search_mod.split_expression_list(expr):
+                predicates.append(search_mod.parse_expression(part))
         # --show takes the same selector grammar as an expression's LHS.
         # Validate here so an unknown namespace is a usage error rather
         # than an empty column. The 'coord.' namespace is projection-only

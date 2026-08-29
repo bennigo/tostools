@@ -46,6 +46,7 @@ from tostools.search import (
     predicate_matches_devices,
     require_station_selector,
     search_stations,
+    split_expression_list,
     text_matches,
     validate_station_codes,
     value_at,
@@ -2415,3 +2416,55 @@ class TestCoordColumns:
         payload = json.loads(out)
         attrs = payload["stations"][0]["attributes"]
         assert "in_network_epos" not in attrs
+
+
+class TestSplitExpressionList:
+    def test_plain(self):
+        assert split_expression_list("a = 1") == ["a = 1"]
+
+    def test_comma_separated(self):
+        assert split_expression_list(
+            'visit.all !~ "EPOS disseminated", tectonic_plate ~ "Eurasia"'
+        ) == ['visit.all !~ "EPOS disseminated"', 'tectonic_plate ~ "Eurasia"']
+
+    def test_comma_in_quotes_stays(self):
+        assert split_expression_list('name ~ "a, b"') == ['name ~ "a, b"']
+
+    def test_list_value_stays(self):
+        assert split_expression_list("subtype = [GPS stöð, SIL stöð]") == [
+            "subtype = [GPS stöð, SIL stöð]"
+        ]
+
+    def test_empty_entries_dropped(self):
+        assert split_expression_list("a = 1, , b = 2") == ["a = 1", "b = 2"]
+
+
+class TestCommaSeparatedExpressionCli:
+    def _fleet(self):
+        return [
+            _station(
+                100,
+                "VMEY",
+                "Vestmannaeyjar",
+                in_epos="true",
+                extra=[_attr("tectonic_plate", "Eurasia")],
+            ),
+            _station(
+                101,
+                "RHOF",
+                "Raufarhöfn",
+                in_epos="true",
+                extra=[_attr("tectonic_plate", "North America")],
+            ),
+        ]
+
+    def test_two_filters_one_argument(self, capsys):
+        rc, out = _run_cli(
+            ['in_network_epos = true, tectonic_plate ~ "Eurasia"',
+             "--show", "marker,name,tectonic_plate"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        assert "VMEY" in out
+        assert "RHOF" not in out
