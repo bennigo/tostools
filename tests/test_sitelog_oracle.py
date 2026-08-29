@@ -86,6 +86,14 @@ _DATE_PREPARED_PLACEHOLDER = "<DATE-PREPARED>"
 
 #: IGS v2.0 top-level sections. A log missing any of these is not a site log,
 #: whatever it byte-compares equal to.
+#:
+#: §11's entry doubles as an "agencies were resolved" check, and that is
+#: deliberate rather than incidental: the resolved rendering emits
+#: "11.  On-Site…" (two spaces) while the legacy TOS-contact FALLBACK emits
+#: "11.   On-Site…" (three). So any render that lost agency resolution fails
+#: here. `test_agency_resolution_did_not_silently_fall_back` states the same
+#: rule semantically, so a future cosmetic change to §11's header cannot leave
+#: the fallback un-guarded.
 _REQUIRED_SECTIONS = (
     "0.   Form",
     "1.   Site Identification of the GNSS Monument",
@@ -347,6 +355,83 @@ def test_agency_resolution_did_not_silently_fall_back() -> None:
     )
     assert any("Bústaðarvegur" in row for row in address_rows), (
         f"§11 has no mailing address at all: {address_rows}"
+    )
+
+
+@pytest.mark.vcr
+def test_top_level_site_log_is_a_faithful_delegator() -> None:
+    """`gps_metadata_functions.site_log` must BE the legacy renderer, byte for byte.
+
+    F2 reduced the top-level copy (612 dead lines) to a delegator rather than
+    deleting it, so the name stays resolvable and forwards the WIDER legacy
+    signature. This asserts that claim instead of trusting it.
+
+    It also restores what the delegation took away from the mutation harness:
+    before F2, pointing `core/site_log.py` at the top-level module produced a
+    TypeError, so "the delegator points at the dead copy" was a detectable
+    mutation. Now that the top-level copy forwards correctly, that mutation is
+    *harmlessly* green — which is the right behaviour but leaves the claim
+    untested. This test is what makes it checkable.
+    """
+    import tostools.gps_metadata_functions as top_level
+    from tostools.api.tos_client import TOSClient
+    from tostools.core.agencies import resolve_sitelog_agencies
+    from tostools.legacy.gps_metadata_functions import site_log as live
+
+    # `agencies` must be passed explicitly here. Calling the renderer DIRECTLY
+    # bypasses `build_site_log`, which is where resolution happens — without
+    # it both sides render the legacy TOS-contact §11 fallback, which
+    # `_assert_publishable` rejects (it requires the resolved section header).
+    # Caught exactly that way while writing this test.
+    client = TOSClient()
+    meta = client.get_complete_station_metadata("RHOF")
+    assert meta, "RHOF metadata empty — re-record the cassette"
+
+    # `report_type` / `previous_log` / `agencies` are arguments the
+    # PRE-delegation top-level signature could not accept at all — so this both
+    # proves equivalence and proves the wider signature reaches the live
+    # renderer.
+    kwargs = dict(
+        loglevel=logging.CRITICAL,
+        report_type="UPDATE",
+        previous_log="rhof00isl_20250101.log",
+        agencies=resolve_sitelog_agencies(client, meta),
+    )
+    delegated = top_level.site_log("RHOF", **kwargs)
+    direct = live("RHOF", **kwargs)
+
+    _assert_publishable(delegated, "RHOF")
+    assert delegated == direct, (
+        "the top-level site_log delegator does not reproduce the live renderer"
+    )
+
+
+@pytest.mark.vcr
+def test_top_level_print_station_info_is_a_faithful_delegator() -> None:
+    """Same contract for the GAMIT `station.info` producer.
+
+    `print_station_info` matters beyond its line count: it emits
+    `station.info` records, an externally consumed artefact like the site log.
+    `skip_validation` is the discriminator — `tosGPS.py:2070` passes it, and
+    only the legacy signature accepts it, so a delegator that dropped kwargs
+    would raise here rather than pass quietly.
+    """
+    import tostools.gps_metadata_functions as top_level
+    from tostools import gps_metadata_qc as gpsqc
+    from tostools.legacy.gps_metadata_functions import print_station_info as live
+
+    station = gpsqc.gps_metadata("RHOF", gpsqc.URL_REST_TOS, loglevel=logging.CRITICAL)
+    assert station, "RHOF metadata empty — re-record the cassette"
+
+    delegated = top_level.print_station_info(
+        station, loglevel=logging.CRITICAL, skip_validation=True
+    )
+    direct = live(station, loglevel=logging.CRITICAL, skip_validation=True)
+
+    assert delegated, "delegator produced no station.info lines"
+    assert delegated == direct, (
+        "the top-level print_station_info delegator does not reproduce the "
+        "live implementation"
     )
 
 

@@ -135,24 +135,52 @@ MUTATIONS = [
         "test_scrub_only_touches_the_generation_date",
         False,
     ),
+    # ---- THE F2 MUTATIONS ------------------------------------------------
+    # Every mutation above edits the renderer body. F2's own failure mode is
+    # the DELEGATION LAYER — and it changed shape when F2 landed.
+    #
+    # Before F2, pointing `core/site_log.py` at the top-level module raised a
+    # TypeError (that signature accepted none of report_type/previous_log/
+    # agencies/monument_number), so "points at the dead copy" was a detectable
+    # mutation and this harness carried it. After F2 the top-level copy is a
+    # faithful delegator, so the identical mutation now renders identical
+    # output and is CORRECTLY harmless — it went NOT DETECTED, which is the
+    # right answer to the wrong question.
+    #
+    # Kept honest rather than deleted: the equivalence claim moved into
+    # `test_top_level_site_log_is_a_faithful_delegator`, and the mutations
+    # moved to the hazard that actually survives delegation — `build_site_log`
+    # silently DROPPING a caller's argument. That is the exact bug it was
+    # created to prevent; its own docstring records that the two publishers
+    # previously called the renderer with different argument sets and "agreed
+    # only because the omitted arguments happened to share defaults".
     (
-        # THE F2 MUTATION. Every other one edits the renderer body; F2's actual
-        # failure mode is a delegator pointed at the WRONG COPY — exactly what
-        # unifying the fork risks getting backwards. `core/site_log.py`'s import
-        # is the single line that decides which of the two `site_log`s runs, and
-        # the whole oracle is worthless if that line is not under test.
-        #
-        # It fails as a TypeError, because the top-level signature accepts none
-        # of report_type/previous_log/agencies/monument_number. That is worth
-        # pinning too: it is positive evidence the top-level copy cannot serve
-        # this call site, which is why F2 reduces it to a delegator rather than
-        # promoting it.
-        "the delegator points at the DEAD top-level copy",
-        "    from ..legacy.gps_metadata_functions import site_log as _render",
-        "    from ..gps_metadata_functions import site_log as _render",
-        "test_site_log_matches_snapshot",
+        "build_site_log drops the caller's previous_log (§0 silently stays NEW)",
+        "        previous_log=previous_log,",
+        '        previous_log="",',
+        "test_m3g_publish_shape_matches_snapshot",
         False,
         DELEGATOR,
+    ),
+    (
+        "build_site_log drops the caller's agencies (§11 silently falls back)",
+        "        agencies=agencies,",
+        "        agencies=None,",
+        "test_m3g_publish_shape_matches_snapshot",
+        False,
+        DELEGATOR,
+    ),
+    (
+        "the top-level site_log delegator stops forwarding kwargs",
+        "    from .legacy.gps_metadata_functions import site_log as _live\n"
+        "\n"
+        "    return _live(*args, **kwargs)",
+        "    from .legacy.gps_metadata_functions import site_log as _live\n"
+        "\n"
+        "    return _live(*args)",
+        "test_top_level_site_log_is_a_faithful_delegator",
+        False,
+        REPO / "src/tostools/gps_metadata_functions.py",
     ),
 ]
 
@@ -201,9 +229,11 @@ def _refuse_if_pytest_is_running():
 
 _refuse_if_pytest_is_running()
 
+TOPLEVEL = REPO / "src/tostools/gps_metadata_functions.py"
 ORIGINALS = {
     RENDER: RENDER.read_text(),
     DELEGATOR: DELEGATOR.read_text(),
+    TOPLEVEL: TOPLEVEL.read_text(),
     REPO / ORACLE: (REPO / ORACLE).read_text(),
 }
 SNAPSHOT_BACKUP = REPO / "tests/_oracle_outputs/.sitelog_backup"
