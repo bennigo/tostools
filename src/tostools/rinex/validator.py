@@ -311,7 +311,14 @@ def compare_rinex_to_tos(
                 "exceeds_tolerance": distance > coord_tolerance,
             }
 
-            if distance > coord_tolerance:
+            # (0,0,0) is the converter's "no position metadata" placeholder —
+            # a MISSING position, not "recorded elsewhere". Fill it from TOS
+            # and never flag foreign_site (FIM2 2010-2012 Trimble raw: 260
+            # files with a zero position that were refused as another site's).
+            # Mirrors the same fix in corrector._guard_position_correction.
+            if math.sqrt(sum(v * v for v in rinex_xyz)) < 1.0:
+                comparison_result["corrections"]["APPROX POSITION XYZ"] = tos_xyz
+            elif distance > coord_tolerance:
                 comparison_result["discrepancies"]["coordinates"] = {
                     "rinex": rinex_xyz,
                     "tos": tos_xyz,
