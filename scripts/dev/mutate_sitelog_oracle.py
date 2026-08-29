@@ -54,6 +54,7 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 RENDER = REPO / "src/tostools/legacy/gps_metadata_functions.py"
+DELEGATOR = REPO / "src/tostools/core/site_log.py"
 ORACLE = "tests/test_sitelog_oracle.py"
 SNAPSHOTS = REPO / "tests/_oracle_outputs/sitelog"
 
@@ -134,7 +135,30 @@ MUTATIONS = [
         "test_scrub_only_touches_the_generation_date",
         False,
     ),
+    (
+        # THE F2 MUTATION. Every other one edits the renderer body; F2's actual
+        # failure mode is a delegator pointed at the WRONG COPY — exactly what
+        # unifying the fork risks getting backwards. `core/site_log.py`'s import
+        # is the single line that decides which of the two `site_log`s runs, and
+        # the whole oracle is worthless if that line is not under test.
+        #
+        # It fails as a TypeError, because the top-level signature accepts none
+        # of report_type/previous_log/agencies/monument_number. That is worth
+        # pinning too: it is positive evidence the top-level copy cannot serve
+        # this call site, which is why F2 reduces it to a delegator rather than
+        # promoting it.
+        "the delegator points at the DEAD top-level copy",
+        "    from ..legacy.gps_metadata_functions import site_log as _render",
+        "    from ..gps_metadata_functions import site_log as _render",
+        "test_site_log_matches_snapshot",
+        False,
+        DELEGATOR,
+    ),
 ]
+
+#: Mutations default to the renderer; only the F2 delegation mutation names a
+#: different file. Normalised here so the loop stays a single shape.
+MUTATIONS = [(m + (RENDER,))[:6] if len(m) == 5 else m for m in MUTATIONS]
 
 
 def _refuse_if_pytest_is_running():
@@ -177,14 +201,17 @@ def _refuse_if_pytest_is_running():
 
 _refuse_if_pytest_is_running()
 
-ORIGINAL_SRC = RENDER.read_text()
-ORIGINAL_TEST = (REPO / ORACLE).read_text()
+ORIGINALS = {
+    RENDER: RENDER.read_text(),
+    DELEGATOR: DELEGATOR.read_text(),
+    REPO / ORACLE: (REPO / ORACLE).read_text(),
+}
 SNAPSHOT_BACKUP = REPO / "tests/_oracle_outputs/.sitelog_backup"
 
 
 def restore():
-    RENDER.write_text(ORIGINAL_SRC)
-    (REPO / ORACLE).write_text(ORIGINAL_TEST)
+    for path, text in ORIGINALS.items():
+        path.write_text(text)
     if SNAPSHOT_BACKUP.exists():
         shutil.rmtree(SNAPSHOTS, ignore_errors=True)
         shutil.copytree(SNAPSHOT_BACKUP, SNAPSHOTS)
@@ -247,7 +274,7 @@ shutil.copytree(SNAPSHOTS, SNAPSHOT_BACKUP)
 
 bad = []
 try:
-    for name, old, new, selector, resnapshot in MUTATIONS:
+    for name, old, new, selector, resnapshot, target in MUTATIONS:
         restore()
         if old is None:
             # The scrub-widening mutation targets the TEST's own regex: a
@@ -259,7 +286,7 @@ try:
                 REPO / ORACLE,
             )
         else:
-            applied = apply_mutation(old, new)
+            applied = apply_mutation(old, new, target)
         if not applied:
             print(f"⚠️  {name}: ANCHOR NOT FOUND — mutation never applied")
             bad.append(name)

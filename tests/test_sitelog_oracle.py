@@ -107,6 +107,14 @@ _REQUIRED_SECTIONS = (
 #: empty IGS template stub the renderer always emits last. Matching the stub
 #: as if it were data is how a station that rendered NOTHING would look
 #: fully populated.
+#:
+#: NOTE the trailing `(\S.*?)` requires a non-empty device model. The renderer
+#: emits `device.get("model") or ""`, so a block for a device with no model in
+#: TOS is invisible to these counts — and the contiguity check below would then
+#: report a confusing `[1, 2, 4] != [1, 2, 3]`. None of the four fixture
+#: stations has such a device. If a future fixture does, that gap is the
+#: reason; fix it by capturing the number and model separately, not by
+#: loosening the contiguity assertion.
 _RECEIVER_BLOCK_RE = re.compile(r"^3\.(\d+)\s+Receiver Type\s*:\s*(\S.*?)\s*$", re.MULTILINE)
 _ANTENNA_BLOCK_RE = re.compile(r"^4\.(\d+)\s+Antenna Type\s*:\s*(\S.*?)\s*$", re.MULTILINE)
 
@@ -202,6 +210,143 @@ def test_site_log_matches_snapshot(station: str) -> None:
         f"{station}: rendered site log differs from its snapshot. This is a "
         f"change to a PUBLISHED artefact — review the diff, then re-snapshot "
         f"deliberately with SITELOG_ORACLE_UPDATE=1."
+    )
+
+
+@pytest.mark.vcr
+def test_m3g_publish_shape_matches_snapshot() -> None:
+    """The receivers/M3G argument shape, which the tests above do NOT cover.
+
+    ``build_site_log(station)`` with defaults is the ``tosGPS sitelog`` path:
+    ``previous_log=""`` (so ``report_type`` resolves to ``NEW``),
+    ``modified_sections="1"``, ``monument_number="00"``, ``country_code="ISL"``,
+    agencies auto-resolved. Receivers' publish call
+    (``dissemination/sitelogs.py``) passes a *different* set — a real
+    ``previous_log`` from ``find_previous_site_log`` (so ``UPDATE``), explicit
+    ``monument_number``/``country_code``, and agencies resolved by the caller
+    so an injected resolver is honoured.
+
+    That difference is the reason ``build_site_log`` exists at all: the two
+    publishers used to call the renderer directly with different arguments and
+    agreed only because the omitted ones shared defaults. Locking one shape and
+    calling the renderer covered would leave §0's dated-series chain
+    ("Previous Site Log", "Modified/Added Sections") pinned at exactly one
+    value — two of the regions F2 will edit.
+    """
+    from tostools.api.tos_client import TOSClient
+    from tostools.core.agencies import resolve_sitelog_agencies
+
+    client = TOSClient()
+    meta = client.get_complete_station_metadata("RHOF")
+    assert meta, "RHOF metadata empty — re-record the cassette"
+    agencies = resolve_sitelog_agencies(client, meta)
+
+    log = build_site_log(
+        "RHOF",
+        client=client,
+        agencies=agencies,
+        previous_log="rhof00isl_20250101.log",
+        monument_number="00",
+        country_code="ISL",
+        loglevel=logging.CRITICAL,
+    )
+    _assert_publishable(log, "RHOF")
+
+    # §0 must reflect the chained-series call, not the default NEW log.
+    assert "rhof00isl_20250101.log" in log, "§0 lost the previous-log chain"
+    report_types = re.findall(r"^\s*Report Type\s*:\s*(\S+)", log, re.MULTILINE)
+    assert report_types == ["UPDATE"], (
+        f"§0 Report Type is {report_types}, expected ['UPDATE'] — a non-empty "
+        f"previous_log must flip the log out of NEW"
+    )
+
+    snapshot_path = SNAPSHOTS / "RHOF_m3g.log"
+    actual = _scrub_volatile(log)
+    if os.environ.get("SITELOG_ORACLE_UPDATE"):
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(actual, encoding="utf-8")
+        pytest.skip(f"snapshot rewritten: {snapshot_path}")
+    if not snapshot_path.exists():
+        pytest.fail(
+            f"Snapshot missing: {snapshot_path}\n"
+            f"  SITELOG_ORACLE_UPDATE=1 pytest tests/test_sitelog_oracle.py"
+        )
+    assert actual == snapshot_path.read_text(encoding="utf-8"), (
+        "the M3G publish shape's rendered log differs from its snapshot"
+    )
+
+
+@pytest.mark.vcr
+def test_threaded_metadata_renders_identically_to_the_self_fetch() -> None:
+    """Pre-fetched metadata must not change a single published byte.
+
+    ``station``/``device_sessions`` (threaded through ``build_site_log`` by
+    tostools ``93c432c``) exist so a caller that already holds the metadata —
+    or a test — can render without touching TOS. Their entire contract is that
+    they are a *transport* change, not a behaviour change.
+
+    The failure this pins is specific and was called out when the seam was
+    added: the obvious thing to thread in is
+    ``client.get_complete_station_metadata``'s device sessions, but that client
+    once composed with the NARROW attribute list while the renderer composes
+    with the wide ``SITELOG_GPS_ATTRIBUTE_CODES``. Substituting one for the
+    other drops §3 constellation sub-periods from a log published to M3G. Both
+    now use the wide list, so this passes — and if anything ever re-narrows
+    one of them, this is what goes red.
+    """
+    from tostools import gps_metadata_qc as gpsqc
+    from tostools.api.tos_client import TOSClient
+    from tostools.devices import SITELOG_GPS_ATTRIBUTE_CODES
+    from tostools.devices import device_sessions as compose_device_sessions
+
+    self_fetched = build_site_log("RHOF", loglevel=logging.CRITICAL)
+
+    client = TOSClient(base_url=gpsqc.URL_REST_TOS)
+    station, devices_history = gpsqc.get_station_metadata(
+        "RHOF", gpsqc.URL_REST_TOS, loglevel=logging.CRITICAL
+    )
+    sessions = compose_device_sessions(
+        client, devices_history, codes=SITELOG_GPS_ATTRIBUTE_CODES
+    )
+    assert sessions, "composed no device sessions — the fixture proves nothing"
+
+    threaded = build_site_log(
+        "RHOF",
+        loglevel=logging.CRITICAL,
+        station_metadata=station,
+        device_sessions=sessions,
+    )
+    _assert_publishable(threaded, "RHOF")
+    assert threaded == self_fetched, (
+        "threading pre-fetched metadata changed the rendered site log; it is "
+        "a transport seam and must be byte-neutral"
+    )
+
+
+@pytest.mark.vcr
+def test_agency_resolution_did_not_silently_fall_back() -> None:
+    """§11 must be the RESOLVED agency rendering, not the legacy fallback.
+
+    ``build_site_log`` resolves §11/§12/§13 best-effort and, on any failure,
+    falls back to the legacy TOS-contact rendering — logging a warning that
+    every test here suppresses with ``loglevel=CRITICAL``. The two renderings
+    genuinely differ (verified: the fallback comma-joins the mailing address
+    onto one line; the resolved form emits IGS continuation rows), and §11 is
+    the section M3G takes from the agency record.
+
+    So without this, a snapshot could quietly capture the fallback and the
+    oracle would lock a rendering production does not publish.
+    """
+    log = build_site_log("RHOF", loglevel=logging.CRITICAL)
+    section = log.split("11.")[1].split("\n12.")[0]
+
+    address_rows = re.findall(r"^\s*(?:Mailing Address\s*)?:\s*(\S.*)$", section, re.MULTILINE)
+    assert "Bústaðarvegur 7-9, 105 Reykjavík, Iceland" not in section, (
+        "§11 mailing address is comma-joined on one line — that is the legacy "
+        "TOS-contact FALLBACK rendering, so agency resolution failed silently"
+    )
+    assert any("Bústaðarvegur" in row for row in address_rows), (
+        f"§11 has no mailing address at all: {address_rows}"
     )
 
 
