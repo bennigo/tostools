@@ -49,11 +49,20 @@ Re-recording and re-snapshotting are deliberately **two** steps, because
 they answer different questions ("has TOS changed?" vs "have we accepted a
 new published output?")::
 
+    rm tests/cassettes/test_sitelog_oracle/<the-test>.yaml   # see the trap below
     pytest tests/test_sitelog_oracle.py --record-mode=once   # refresh cassettes
     SITELOG_ORACLE_UPDATE=1 pytest tests/test_sitelog_oracle.py
 
 Review the snapshot diff as part of the change — it is the published
 artefact.
+
+**Delete the target cassette first; do not rely on ``once``.** ``--record-mode=once``
+records only when the file is ABSENT, so a cassette written during a run that
+later failed is silently reused. If the test then makes an extra request — or
+the same request one more time than was recorded, since VCR replays each
+interaction once — playback fails with ``CannotOverwriteExistingCassette`` and
+reads as a code bug rather than a stale fixture. Cost real time here once
+already.
 """
 
 from __future__ import annotations
@@ -432,6 +441,20 @@ def test_top_level_print_station_info_is_a_faithful_delegator() -> None:
     assert delegated == direct, (
         "the top-level print_station_info delegator does not reproduce the "
         "live implementation"
+    )
+
+    # The DEFAULT path (`skip_validation=False`) is a genuine behaviour change
+    # that nothing else here would see: the retired top-level copy had no such
+    # parameter, so it had no validation path at all, and every caller that
+    # would exercise the default is either the skipped smoke test or absent.
+    # Delegation silently routes `print_station_info(station)` into legacy's
+    # validation for the first time — assert it rather than leave it unexercised.
+    delegated_default = top_level.print_station_info(station, loglevel=logging.CRITICAL)
+    direct_default = live(station, loglevel=logging.CRITICAL)
+    assert delegated_default, "delegator produced no lines on the default path"
+    assert delegated_default == direct_default, (
+        "the delegator diverges from the live implementation when "
+        "skip_validation is left at its default"
     )
 
 
