@@ -267,7 +267,23 @@ def device_attribute_history(
     module_logger.info("sub_sessions: %s" % sub_sessions)
 
     module_logger.debug("dates_from: %s" % dates_from)
-    for sub_session in sub_sessions:
+    # Iterate in DATE order, not set order. An unordered set iteration here made
+    # this function's output depend on PYTHONHASHSEED: the sub-session windows
+    # are visited in arbitrary order and later writes overwrite earlier ones, so
+    # which attribute VALUE lands in a given window varied between processes.
+    # `print_station_history` renders those attributes as its device-table
+    # columns, so operator output changed run to run.
+    #
+    # Published site logs were unaffected (that renderer sorts sessions itself),
+    # which is why this survived: the externally-facing artefact was safe and
+    # the visible symptom looked merely cosmetic.
+    #
+    # The same None-safe sort is already applied to the second `sub_sessions`
+    # set below (an open period has date_to=None, which is not orderable against
+    # a string) — this is that fix applied to the twin that was missed.
+    for sub_session in sorted(
+        sub_sessions, key=lambda s: (s[0] or "", s[1] or "9999")
+    ):
         module_logger.info("sub_session: %s", sub_session)
 
         # NOTE: only want session within session_start and session_end

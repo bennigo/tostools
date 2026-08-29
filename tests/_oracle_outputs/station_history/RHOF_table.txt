@@ -1,11 +1,11 @@
 contact    tectonic_plate    geological_characteristic      date_start     lon  altitude    bedrock_condition    in_network_epos       name  lat      bedrock_type    is_near_fault_zones    marker
 ---------  ----------------  ---------------------------  ------------  ------  ----------  -------------------  -----------------  -------  -------  --------------  ---------------------  ---------
 Eurasia    bedrock           2001-07-19 00:00                 -15.9467  78.764  weathered   true                 Raufarhöfn         66.4611  igneous  nei             rhof                   10216M001
-Role      Name
---------  ------------------
-Owner     Veðurstofa Íslands
-Operator  Veðurstofa Íslands
-Owner     Veðurstofa Íslands
+Hlutverk               Nafn
+---------------------  ------------------
+Eigandi stöðvar        Veðurstofa Íslands
+Rekstraraðili stöðvar  Veðurstofa Íslands
+Eigandi stöðvar        Veðurstofa Íslands
 ----------------------------------------------------------------------------------------------------
                                           | gnss_receiver                                       | antenna                                      | monument                  | radome
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

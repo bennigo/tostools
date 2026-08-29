@@ -65,11 +65,16 @@ ORACLE_STATIONS = ["RHOF", "AUST", "VMEY"]
 RAW_MODES = [False, True]
 
 
-def _capture(fn, station, raw_format: bool) -> str:
-    """Return everything ``fn`` prints. It renders to stdout and returns None."""
+def _capture(fn, station, raw_format: bool, **kwargs) -> str:
+    """Return everything ``fn`` prints. It renders to stdout and returns None.
+
+    ``**kwargs`` is forwarded so a caller can vary ``language`` — omitting it
+    exercises the DEFAULT, which is a distinct case worth reaching explicitly
+    rather than by passing the default's value.
+    """
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        fn(station, raw_format=raw_format, loglevel=logging.CRITICAL)
+        fn(station, raw_format=raw_format, loglevel=logging.CRITICAL, **kwargs)
     return buf.getvalue()
 
 
@@ -134,48 +139,137 @@ def test_working_implementation_matches_snapshot(station: str, raw_format: bool)
 
 
 @pytest.mark.vcr
+@pytest.mark.parametrize("raw_format", RAW_MODES, ids=["table", "raw"])
 @pytest.mark.parametrize("station", ORACLE_STATIONS)
-def test_the_live_default_path_is_broken(station: str) -> None:
-    """RECORDS A PRODUCTION BUG — this test is expected to be INVERTED by the fix.
+def test_the_route_tosGPS_takes_renders_and_agrees(station: str, raw_format: bool) -> None:
+    """The INVERSION of this file's original crash test — and F2 step 2's proof.
 
-    ``tosGPS``'s ``PrintTOS --format table`` reaches the legacy copy, which
-    raises on every station tried. Pinning it here means: (a) the bug is
-    reproduced in the suite rather than asserted in a commit message, and
-    (b) when F2 step 2 repoints the call site, this test must be rewritten to
-    assert success — so the fix cannot land while quietly leaving the crash in
-    place, and the crash cannot creep back unnoticed afterwards.
+    Before the fix this asserted ``pytest.raises((ValueError, IndexError))``:
+    ``tosGPS``'s ``PrintTOS --format table`` reached the legacy copy, which
+    raised for 8/8 stations. It was written as an ordinary test rather than an
+    ``xfail`` precisely so the fix could not land while leaving the crash in
+    place — an xfail that starts passing is silent.
 
-    Deliberately NOT an ``xfail``: an xfail that starts passing is silent by
-    default, and this needs to be loud in both directions.
-    """
-    from tostools.legacy import gps_metadata_functions as legacy
+    It now asserts the two things the fix has to deliver together:
 
-    with pytest.raises((ValueError, IndexError)):
-        _capture(legacy.print_station_history, _station(station), raw_format=False)
+    1. the route ``tosGPS`` actually takes renders at all, on BOTH modes;
+    2. it byte-equals the route ``__init__._LAZY_EXPORTS`` publishes.
 
-
-@pytest.mark.vcr
-@pytest.mark.parametrize("station", ORACLE_STATIONS)
-def test_both_copies_agree_on_the_raw_path(station: str) -> None:
-    """Scopes the divergence: ``--raw`` is NOT where the two copies differ badly.
-
-    Both render it without raising, so if the outputs were identical here the
-    fork would be cosmetic. They are not — this pins the fact that the
-    difference is real on BOTH paths, so repointing the call site is a
-    user-visible output change on ``--raw`` too, not only on the broken
-    default. That is the thing to check against a runbook before shipping.
+    (2) is what makes this a unification rather than two copies that happen to
+    agree today: the assertion fails the moment they diverge again.
     """
     import tostools.gps_metadata_functions as top_level
     from tostools.legacy import gps_metadata_functions as legacy
 
     st = _station(station)
-    legacy_out = _capture(legacy.print_station_history, st, raw_format=True)
-    top_out = _capture(top_level.print_station_history, st, raw_format=True)
+    via_tosgps = _capture(legacy.print_station_history, st, raw_format)
+    via_package = _capture(top_level.print_station_history, st, raw_format)
 
-    _assert_rendered(legacy_out, station, True)
-    _assert_rendered(top_out, station, True)
-    assert legacy_out != top_out, (
-        "the two copies now agree on the raw path — if that is intended, this "
-        "test has done its job and should be replaced by a byte-equality "
-        "assertion rather than deleted"
+    _assert_rendered(via_tosgps, station, raw_format)
+    assert via_tosgps == via_package, (
+        f"{station}: the tosGPS route and the package export have diverged "
+        f"again — F2 step 2 unified them onto one implementation"
     )
+
+
+@pytest.mark.vcr
+def test_the_default_contact_language_is_unchanged_from_before_the_fix() -> None:
+    """Unifying is a CRASH fix; it must not silently re-language operator output.
+
+    The working implementation rendered contacts in English (``Role``/``Name``,
+    ``.title()``-ed ``role``); the copy ``tosGPS`` executed rendered them in
+    Icelandic (``Hlutverk``/``Nafn``, raw ``role_is``). Taking the working copy
+    wholesale would have changed every operator's ``--raw`` output as a side
+    effect of fixing a crash — output people diff against runbooks.
+
+    So the default stays Icelandic and English is opt-in. This pins the
+    default; `test_english_contact_language` pins that the option works.
+    """
+    import tostools.gps_metadata_functions as top_level
+
+    out = _capture(top_level.print_station_history, _station("RHOF"), raw_format=True)
+    assert "Hlutverk" in out and "Nafn" in out, (
+        "the default contact table is no longer Icelandic — that is a "
+        "user-visible change to tosGPS output, not a refactor"
+    )
+    assert "Eigandi" in out, "role_is values are no longer shown by default"
+    assert "Role      Name" not in out, "the English header leaked into the default"
+
+
+@pytest.mark.vcr
+def test_english_contact_language() -> None:
+    """``--lang en`` selects the English TOS role field, headers included.
+
+    Asserts the VALUES change too, not just the headers: `role` and `role_is`
+    are different TOS fields, so a language switch that moved the headers but
+    kept reading `role_is` would look right and show Icelandic data under
+    English labels.
+    """
+    import tostools.gps_metadata_functions as top_level
+
+    out = _capture(
+        top_level.print_station_history,
+        _station("RHOF"),
+        raw_format=True,
+        language="en",
+    )
+    assert "Role" in out and "Name" in out, "English headers missing"
+    assert "Owner" in out, "the English `role` values were not used"
+    assert "Hlutverk" not in out, "Icelandic header survived --lang en"
+    assert "Eigandi" not in out, "Icelandic role_is values survived --lang en"
+
+
+# ---------------------------------------------------------------------------
+# KNOWN COVERAGE GAP — the hash-seed non-determinism has NO dedicated guard.
+#
+# While building this file, AUST's snapshot passed twice and failed the third
+# time from a different process. Cause: `device_attribute_history`
+# (`gps_metadata_qc.py`) iterated an unordered `set` of sub-session windows.
+# Windows are visited in arbitrary order and later writes overwrite earlier
+# ones, so which attribute VALUE landed in which window depended on
+# PYTHONHASHSEED, and `print_station_history` renders those attributes as its
+# device-table columns. The twin `sub_sessions` set later in the SAME function
+# was already sorted — the fix had been applied to one of two identical sites.
+# Published site logs were never affected (that renderer sorts sessions
+# itself), which is why something this visible survived unnoticed.
+#
+# FIXED (the sort is now on both sites) and verified by hand: AUST renders
+# identically under PYTHONHASHSEED 0-5, and `test_sitelog_oracle` passes
+# unchanged, proving no published site log moved.
+#
+# But it is NOT guarded, and that is recorded here rather than papered over.
+# THREE candidate guards were written and each was discarded after being shown
+# to prove nothing — every one of them passed with the fix reverted:
+#
+#   1. "sub-sessions come back in date order" — they do either way; the
+#      function's output is already canonical.
+#   2. "permute the input attribute order" — all 120 permutations produce one
+#      identical result. Input order is not what varies; hash seed is.
+#   3. "pickle the station and re-render in subprocesses under 4 seeds" — the
+#      composition happens in the TEST process, so the non-determinism is
+#      already baked into the pickled dict before the subprocess starts.
+#
+# A real guard has to re-run the COMPOSITION (not the render) across processes,
+# which needs the raw TOS payloads plumbed into a subprocess. Worth doing; not
+# done here.
+#
+# What stands in the meantime: the six snapshots in this file. A regression
+# makes them fail intermittently rather than never — flaky, but not silent.
+# ---------------------------------------------------------------------------
+
+
+
+@pytest.mark.vcr
+def test_an_unknown_language_falls_back_rather_than_raising() -> None:
+    """A bad ``--lang`` must not take down a metadata dump.
+
+    argparse constrains the CLI to is/en, but the function is public and
+    reachable from `from tostools import print_station_history`, so the
+    fallback is the library-level contract.
+    """
+    import tostools.gps_metadata_functions as top_level
+
+    st = _station("RHOF")
+    out = _capture(top_level.print_station_history, st, raw_format=True, language="xx")
+    default = _capture(top_level.print_station_history, st, raw_format=True)
+    assert out == default, "an unknown language did not fall back to the default"
