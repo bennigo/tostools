@@ -28,6 +28,8 @@ from tostools.search import (
     as_day,
     attribute_inventory,
     attribute_periods,
+    coord_frame,
+    coord_frame_names,
     device_in_namespace,
     device_values,
     devices_satisfy,
@@ -2240,3 +2242,117 @@ class TestProjectionColumns:
             _station(100, "VMEY", "Vestmannaeyjar", in_epos="true"),
             _station(101, "RHOF", "Raufarhöfn", in_epos="true"),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Coordinate columns (--show coord.*, geofunc)
+# ---------------------------------------------------------------------------
+
+# REYK surveyed values (WGS 84) and their known transforms — see
+# geofunc/tests/test_coords.py.
+_REYK = {"lat": "64.138788", "lon": "-21.955490", "altitude": "93.028"}
+
+
+def _station_with_coords(sid: int, marker: str, *, coords: Optional[dict] = None):
+    extra = []
+    for code in ("lat", "lon", "altitude"):
+        if coords and code in coords:
+            extra.append(_attr(code, coords[code]))
+    return _station(sid, marker, marker.title(), extra=extra)
+
+
+class TestCoordColumns:
+    def _fleet(self):
+        return [
+            _station_with_coords(100, "REYK", coords=_REYK),
+            _station(101, "GAPS", "No coords here"),  # lat/lon/altitude absent
+        ]
+
+    @staticmethod
+    def _station_by_marker(result, marker):
+        return next(
+            s for s in result.stations if open_value(s, "marker") == marker
+        )
+
+    def test_engine_coord_columns_and_values(self):
+        client = FakeClient(self._fleet())
+        result = search_stations(client, [], coord_frames=["itrf2008", "isn2016"])
+        assert result.coord_columns == [
+            ("itrf2008", "x"),
+            ("itrf2008", "y"),
+            ("itrf2008", "z"),
+            ("isn2016", "east"),
+            ("isn2016", "north"),
+            ("isn2016", "h"),
+        ]
+        reyk = self._station_by_marker(result, "REYK")
+        assert result.coord_value(reyk, "itrf2008", "x") == pytest.approx(
+            2587383.87, abs=0.05
+        )
+        assert result.coord_value(reyk, "itrf2008", "y") == pytest.approx(
+            -1043033.57, abs=0.05
+        )
+        assert result.coord_value(reyk, "isn2016", "east") == pytest.approx(
+            2556148.998, abs=0.01
+        )
+        assert result.coord_value(reyk, "isn2016", "north") == pytest.approx(
+            207354.677, abs=0.01
+        )
+
+    def test_missing_coords_render_none(self):
+        client = FakeClient(self._fleet())
+        result = search_stations(client, [], coord_frames=["itrf2008"])
+        gaps = self._station_by_marker(result, "GAPS")
+        assert result.coord_value(gaps, "itrf2008", "x") is None
+
+    def test_unknown_frame_raises(self):
+        with pytest.raises(KeyError):
+            coord_frame("bogus")
+
+    def test_coord_frame_names(self):
+        names = coord_frame_names()
+        assert "itrf2008" in names and "isn2016" in names and "wgs84" in names
+
+    def test_cli_table(self, capsys):
+        rc, out = _run_cli(
+            ["marker = REYK", "--show", "coord.itrf2008,coord.isn2016"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        # Rich truncates wide headers/values to the test terminal width, so
+        # assert on the frame-name prefix + a short value that survives.
+        assert "ITRF2008" in out
+        assert "ISN2016" in out
+        assert "2556148.998" in out
+
+    def test_cli_json(self, capsys):
+        rc, out = _run_cli(
+            ["marker = REYK", "--show", "coord.itrf2008", "--json"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 0
+        payload = json.loads(out)
+        coords = payload["stations"][0]["coordinates"]
+        assert set(coords["itrf2008"]) == {"x", "y", "z"}
+        assert coords["itrf2008"]["x"] == pytest.approx(2587383.87, abs=0.05)
+
+    def test_cli_unknown_frame_rc2(self, capsys):
+        rc, out = _run_cli(
+            ["marker = REYK", "--show", "coord.bogus"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 2
+        assert "unknown coordinate frame" in out
+
+    def test_cli_coord_in_expression_rc2(self, capsys):
+        # coord.* is projection-only — it must not parse as a filter predicate.
+        rc, out = _run_cli(
+            ["coord.itrf2008 = 1"],
+            self._fleet(),
+            capsys=capsys,
+        )
+        assert rc == 2
+        assert "unknown device namespace" in out

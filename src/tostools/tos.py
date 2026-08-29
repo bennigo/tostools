@@ -15035,7 +15035,12 @@ def _search_main(argv, profile=None):
             "are always shown). Repeatable, and comma-separated lists are "
             "accepted. Takes the same selector grammar as an expression's "
             "left-hand side, so device selectors work: "
-            "--show receiver.firmware_version,receiver.software_version"
+            "--show receiver.firmware_version,receiver.software_version. "
+            "The 'coord.' namespace projects computed coordinates — one "
+            "geofunc frame, three columns (--show coord.itrf2008 → "
+            "ITRF2008.X/.Y/.Z): wgs84 (lon/lat/h), itrf2008/itrf2014/"
+            "itrf2020 (X/Y/Z ECEF), isn93/isn2004/isn2016 (E/N Lambert). "
+            "TOS lat/lon/altitude are treated as WGS 84."
         ),
     )
     time_grp = p.add_argument_group("time")
@@ -15243,12 +15248,15 @@ def _search_main(argv, profile=None):
     # ---- Build predicates ----------------------------------------------
     predicates = []
     show_codes = []
+    coord_frames = []
     try:
         for expr in args.expressions:
             predicates.append(search_mod.parse_expression(expr))
         # --show takes the same selector grammar as an expression's LHS.
         # Validate here so an unknown namespace is a usage error rather
-        # than an empty column.
+        # than an empty column. The 'coord.' namespace is projection-only
+        # and expands to a frame's three axes, so it is intercepted here
+        # rather than handed to parse_selector (which would reject it).
         for entry in args.show or []:
             # Attribute codes never contain a comma, so splitting is safe
             # and lets --show take a list the way the sketch wanted.
@@ -15256,10 +15264,31 @@ def _search_main(argv, profile=None):
                 raw = raw.strip()
                 if not raw:
                     continue
+                if raw.startswith(search_mod.COORD_NAMESPACE + "."):
+                    frame = raw[len(search_mod.COORD_NAMESPACE) + 1 :].strip().lower()
+                    if not frame:
+                        raise ValueError(
+                            f"selector {raw!r} has no frame after "
+                            f"'{search_mod.COORD_NAMESPACE}.'"
+                        )
+                    search_mod.coord_frame(frame)  # validates; raises KeyError
+                    if frame not in coord_frames:
+                        coord_frames.append(frame)
+                    continue
                 namespace, code = search_mod.parse_selector(raw)
                 show_codes.append(f"{namespace}.{code}" if namespace else code)
     except ValueError as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
+        return 2
+    except KeyError as exc:
+        print(f"{_prog} search: {exc}", file=sys.stderr)
+        return 2
+    except ImportError as exc:
+        print(
+            f"{_prog} search: --show coord.* needs the geofunc package "
+            f"({exc}); it is not installed",
+            file=sys.stderr,
+        )
         return 2
 
     # ---- Profile gate -----------------------------------------------------
@@ -15403,6 +15432,7 @@ def _search_main(argv, profile=None):
             progress=progress,
             at=args.at,
             history=args.history,
+            coord_frames=coord_frames,
         )
     except SnapshotMiss as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
@@ -15545,6 +15575,19 @@ def _search_main(argv, profile=None):
                         f"visit.{code}": result.visit_values(st, code)
                         for code in result.visit_columns
                     },
+                    **(
+                        {
+                            "coordinates": {
+                                frame: {
+                                    axis: result.coord_value(st, frame, axis)
+                                    for axis in search_mod.coord_frame(frame).axis
+                                }
+                                for frame in result.coord_frames
+                            }
+                        }
+                        if result.coord_frames
+                        else {}
+                    ),
                     "devices": (
                         [
                             _device_summary(d)
@@ -15598,8 +15641,17 @@ def _search_main(argv, profile=None):
         table.add_column(f"contact.{code}".upper(), no_wrap=True)
     for code in result.visit_columns:
         table.add_column(f"visit.{code}".upper(), no_wrap=True)
+    for frame, axis in result.coord_columns:
+        table.add_column(f"{frame}.{axis}".upper(), no_wrap=True)
     if result.device_filters_active and not result.history:
         table.add_column("MATCHED DEVICES", no_wrap=True)
+
+    def _coord_cell(st, frame, axis, at=None):
+        v = result.coord_value(st, frame, axis, at=at)
+        if v is None:
+            return "—"
+        kind = search_mod.coord_frame(frame).kind
+        return f"{v:.7f}" if kind == "geographic" else f"{v:.3f}"
 
     if result.history:
         # The predicates select STATIONS; every period of a selected station
@@ -15625,6 +15677,8 @@ def _search_main(argv, profile=None):
                     row.append(result.contact_column_value(st, code))
                 for code in result.visit_columns:
                     row.append(result.visit_column_value(st, code))
+                for frame, axis in result.coord_columns:
+                    row.append(_coord_cell(st, frame, axis, at=seg_from))
                 rows.append(row)
                 marks.append(
                     all(
@@ -15668,6 +15722,8 @@ def _search_main(argv, profile=None):
             row.append(result.contact_column_value(st, code))
         for code in result.visit_columns:
             row.append(result.visit_column_value(st, code))
+        for frame, axis in result.coord_columns:
+            row.append(_coord_cell(st, frame, axis))
         if result.device_filters_active:
             devices = result.devices_by_id.get(st.get("id_entity"), [])
             hits = []

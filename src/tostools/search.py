@@ -42,6 +42,41 @@ from .utils.logging import get_logger
 logger = get_logger(__name__, logging.WARNING)
 
 # ---------------------------------------------------------------------------
+# Coordinate frames (geofunc) — the computed ``--show coord.*`` columns
+# ---------------------------------------------------------------------------
+
+_coord_frame_cache: Dict[str, Any] = {}
+
+
+def coord_frame(name: str) -> Any:
+    """The geofunc :class:`CoordFrame` registered under ``name``.
+
+    ``geofunc`` is a hard dependency of tostools, but the import is deferred
+    so ``tostools.search`` stays importable in contexts that never touch
+    ``--show coord.*`` (e.g. a minimal test environment without geofunc).
+
+    Raises:
+        KeyError: if ``name`` is unknown, with the valid frames listed.
+    """
+    if name not in _coord_frame_cache:
+        from geofunc.coords import FRAMES
+
+        if name not in FRAMES:
+            valid = ", ".join(sorted(FRAMES))
+            raise KeyError(
+                f"unknown coordinate frame {name!r}; valid frames: {valid}"
+            )
+        _coord_frame_cache[name] = FRAMES[name]
+    return _coord_frame_cache[name]
+
+
+def coord_frame_names() -> List[str]:
+    """Sorted names of every registered geofunc frame (for ``--show coord.*``)."""
+    from geofunc.coords import frame_names
+
+    return list(frame_names())
+
+# ---------------------------------------------------------------------------
 # Value normalization
 # ---------------------------------------------------------------------------
 
@@ -181,6 +216,12 @@ CONTACT_FIELD_CODES = ("organization", "name", "email")
 
 #: Every code the ``contact.`` namespace accepts.
 CONTACT_CODES = frozenset(CONTACT_ROLE_CODES + CONTACT_FIELD_CODES)
+
+#: The coordinate-frame namespace — ``--show coord.<frame>`` projects a
+#: station's lat/lon/altitude into a geofunc frame (three columns, one per
+#: axis). Projection-only: ``parse_selector`` rejects it, so it can never
+#: appear in a filter expression.
+COORD_NAMESPACE = "coord"
 
 #: The contact fields that read an ORGANISATION — these get abbreviation
 #: expansion (``contact.owner ~ IES`` resolves to the full org name).
@@ -1357,6 +1398,7 @@ class SearchResult:
     contacts_by_id: Dict[int, List[dict]] = field(default_factory=dict)
     at: Optional[str] = None
     history: bool = False
+    coord_frames: List[str] = field(default_factory=list)
 
     @property
     def device_filters_active(self) -> bool:
@@ -1489,6 +1531,43 @@ class SearchResult:
         vals = self.visit_values(station, code)
         return ", ".join(vals) if vals else "—"
 
+    @property
+    def coord_columns(self) -> List[tuple]:
+        """COORDINATE columns as ``(frame, axis)`` — three per frame.
+
+        A frame projects to one column per axis: geocentric → ``X``/``Y``/``Z``,
+        projected → ``E``/``N``/``H``, geographic → ``LON``/``LAT``/``H``.
+        The rendered header is ``FRAME.AXIS`` (e.g. ``ITRF2008.X``).
+        """
+        cols: List[tuple] = []
+        for frame in self.coord_frames:
+            for axis in coord_frame(frame).axis:
+                cols.append((frame, axis))
+        return cols
+
+    def coord_value(
+        self, station: dict, frame: str, axis: str, *, at: Optional[str] = None
+    ) -> Optional[float]:
+        """One transformed coordinate component for one station.
+
+        Reads TOS ``lat`` / ``lon`` / ``altitude`` (WGS 84) as of ``at`` and
+        transforms them to ``frame`` via geofunc, returning the component
+        named by ``axis``. ``None`` when any source attribute is missing or
+        non-numeric (the caller renders ``—``).
+        """
+        from geofunc.coords import transform
+
+        frame_obj = coord_frame(frame)
+        when = at if at is not None else self.at
+        try:
+            lat = float(value_at(station, "lat", when))
+            lon = float(value_at(station, "lon", when))
+            alt = float(value_at(station, "altitude", when))
+        except (TypeError, ValueError):
+            return None
+        vals = transform(lon, lat, alt, src="wgs84", dst=frame)
+        return float(vals[frame_obj.axis.index(axis)])
+
     def timeline(self, station: dict) -> List[tuple]:
         """Segment a station's timeline at every boundary of every column.
 
@@ -1533,6 +1612,7 @@ def search_stations(
     max_workers: int = 8,
     at: Optional[str] = None,
     history: bool = False,
+    coord_frames: Optional[List[str]] = None,
 ) -> SearchResult:
     """Run the full pipeline: bulk fetch → attribute filter → device walk.
 
@@ -1662,4 +1742,5 @@ def search_stations(
         contacts_by_id=contacts_by_id,
         at=at,
         history=history,
+        coord_frames=list(coord_frames or []),
     )
