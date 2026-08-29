@@ -1170,6 +1170,7 @@ def station_sessions(
     *,
     subtypes: Sequence[str] = DEFAULT_GPS_SUBTYPES,
     coalesce: bool = True,
+    station_history: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Per-station-session rows for one station.
 
@@ -1230,7 +1231,8 @@ def station_sessions(
        never merges across real equipment / firmware / serial
        changes — those need TOS data cleanup, not synthesis logic.
     """
-    station_history = client.get_entity_history(station_id)
+    if station_history is None:
+        station_history = client.get_entity_history(station_id)
     if station_history is None:
         return []
 

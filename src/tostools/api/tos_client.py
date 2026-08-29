@@ -249,16 +249,23 @@ class TOSClient:
             self.logger.warning(f"No station data found for {station_identifier}")
             return None
 
-        # Step 2: Process device sessions (makes additional API calls)
-        device_sessions = self.get_device_sessions(device_history)
+        # Step 2+3: Build the station history with station_sessions — the
+        # fine-grained view that splits a device's JOIN at every attribute-epoch
+        # boundary (firmware upgrades, antenna_height changes, …). The legacy
+        # _build_history_from_connections collapsed attribute epochs within a
+        # join (the VMEY antenna_height 0.07-vs-0.0 bug: one join, two epochs,
+        # the first won). Fall back to the legacy path only when the station
+        # id_entity is missing.
+        from ..devices import station_sessions
 
-        self.logger.info(
-            f"Found {len(device_sessions)} device sessions for {station_identifier}"
-        )
-
-        # Step 3: Build station history from connection periods (bypasses legacy
-        # pairing algorithm which breaks when start/end counts coincide).
-        built_history = self._build_history_from_connections(device_sessions)
+        station_id = device_history.get("id_entity")
+        if station_id:
+            built_history = station_sessions(
+                self, int(station_id), station_history=device_history
+            )
+        else:
+            device_sessions = self.get_device_sessions(device_history)
+            built_history = self._build_history_from_connections(device_sessions)
 
         # Step 4: Create final station structure
         final_station = self._create_legacy_station_structure(

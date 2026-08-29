@@ -461,7 +461,10 @@ def test_resolve_parent_id_rejects_non_station_hits():
             "id_entity": 999,
         }
     ]
-    with patch.object(client, "basic_search", return_value=hits):
+    with (
+        patch.object(client, "search_stations", return_value=[]),
+        patch.object(client, "basic_search", return_value=hits),
+    ):
         assert _resolve_parent_id(client, station_marker="SAVI") is None
 
 
