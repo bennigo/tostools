@@ -2438,6 +2438,12 @@ class TestSplitExpressionList:
     def test_empty_entries_dropped(self):
         assert split_expression_list("a = 1, , b = 2") == ["a = 1", "b = 2"]
 
+    def test_unbalanced_quote_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            split_expression_list('receiver.firmware != 5.7.0", receiver.model ~ "SEPT POLARX5"')
+
 
 class TestCommaSeparatedExpressionCli:
     def _fleet(self):

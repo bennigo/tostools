@@ -478,6 +478,13 @@ def split_expression_list(raw: str) -> List[str]:
             buf = []
         else:
             buf.append(ch)
+    if quote is not None:
+        raise ValueError(
+            f"unbalanced quote in {raw!r} — a stray quote breaks comma "
+            "splitting (check for a missing/extra \" or ')"
+        )
+    if depth:
+        raise ValueError(f"unbalanced '[' in {raw!r}")
     parts.append("".join(buf).strip())
     return [p for p in parts if p]
 
