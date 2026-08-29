@@ -15260,6 +15260,7 @@ def _search_main(argv, profile=None):
     predicates = []
     show_codes = []
     coord_frames = []
+    show_order = []
     try:
         for expr in args.expressions:
             for part in search_mod.split_expression_list(expr):
@@ -15285,9 +15286,21 @@ def _search_main(argv, profile=None):
                     search_mod.coord_frame(frame)  # validates; raises KeyError
                     if frame not in coord_frames:
                         coord_frames.append(frame)
+                    show_order.append(("coord", frame))
                     continue
                 namespace, code = search_mod.parse_selector(raw)
                 show_codes.append(f"{namespace}.{code}" if namespace else code)
+                if namespace is None:
+                    if code in ("marker", "name"):
+                        show_order.append((code,))
+                    else:
+                        show_order.append(("attr", code))
+                elif namespace == search_mod.VISIT_NAMESPACE:
+                    show_order.append(("visit", code))
+                elif namespace == search_mod.CONTACT_NAMESPACE:
+                    show_order.append(("contact", code))
+                else:
+                    show_order.append(("device", namespace, code))
     except ValueError as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
         return 2
@@ -15445,6 +15458,7 @@ def _search_main(argv, profile=None):
             history=args.history,
             coord_frames=coord_frames,
             project_only=args.only or bool(args.show),
+            show_order=show_order,
         )
     except SnapshotMiss as exc:
         print(f"{_prog} search: {exc}", file=sys.stderr)
@@ -15637,26 +15651,6 @@ def _search_main(argv, profile=None):
     attr_cols = [c for c in result.attribute_codes if c not in fixed]
 
     table = Table(box=None, show_edge=False, pad_edge=False)
-    table.add_column("MARKER", no_wrap=True)
-    if result.history:
-        # One row per period: NAME is dropped to make room for the span,
-        # which is the point of the mode.
-        table.add_column("FROM", no_wrap=True)
-        table.add_column("TO", no_wrap=True)
-    else:
-        table.add_column("NAME", no_wrap=True)
-    for code in attr_cols:
-        table.add_column(code.upper(), no_wrap=True)
-    for namespace, code in result.device_columns:
-        table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
-    for code in result.contact_columns:
-        table.add_column(f"contact.{code}".upper(), no_wrap=True)
-    for code in result.visit_columns:
-        table.add_column(f"visit.{code}".upper(), no_wrap=True)
-    for frame, axis in result.coord_columns:
-        table.add_column(f"{frame}.{axis}".upper(), no_wrap=True)
-    if result.device_filters_active and not result.history:
-        table.add_column("MATCHED DEVICES", no_wrap=True)
 
     def _coord_cell(st, frame, axis, at=None):
         v = result.coord_value(st, frame, axis, at=at)
@@ -15664,6 +15658,29 @@ def _search_main(argv, profile=None):
             return "—"
         kind = search_mod.coord_frame(frame).kind
         return f"{v:.7f}" if kind == "geographic" else f"{v:.3f}"
+
+    if result.history:
+        # One row per period: NAME is dropped to make room for the span,
+        # which is the point of the mode.
+        table.add_column("MARKER", no_wrap=True)
+        table.add_column("FROM", no_wrap=True)
+        table.add_column("TO", no_wrap=True)
+        for code in attr_cols:
+            table.add_column(code.upper(), no_wrap=True)
+        for namespace, code in result.device_columns:
+            table.add_column(f"{namespace}.{code}".upper(), no_wrap=True)
+        for code in result.contact_columns:
+            table.add_column(f"contact.{code}".upper(), no_wrap=True)
+        for code in result.visit_columns:
+            table.add_column(f"visit.{code}".upper(), no_wrap=True)
+        for frame, axis in result.coord_columns:
+            table.add_column(f"{frame}.{axis}".upper(), no_wrap=True)
+    else:
+        # --show order is authoritative; MARKER/NAME are NOT auto-added.
+        for desc in result.ordered_columns:
+            table.add_column(result.column_header(desc), no_wrap=True)
+        if result.device_filters_active:
+            table.add_column("MATCHED DEVICES", no_wrap=True)
 
     if result.history:
         # The predicates select STATIONS; every period of a selected station
@@ -15722,20 +15739,7 @@ def _search_main(argv, profile=None):
         return 0
 
     for st in stations:
-        row = [
-            (search_mod.open_value(st, "marker") or "?").upper(),
-            search_mod.open_value(st, "name") or "—",
-        ]
-        for code in attr_cols:
-            row.append(search_mod.value_at(st, code, result.at) or "—")
-        for namespace, code in result.device_columns:
-            row.append(result.device_column_value(st, namespace, code))
-        for code in result.contact_columns:
-            row.append(result.contact_column_value(st, code))
-        for code in result.visit_columns:
-            row.append(result.visit_column_value(st, code))
-        for frame, axis in result.coord_columns:
-            row.append(_coord_cell(st, frame, axis))
+        row = [result.column_value(st, desc) for desc in result.ordered_columns]
         if result.device_filters_active:
             devices = result.devices_by_id.get(st.get("id_entity"), [])
             hits = []

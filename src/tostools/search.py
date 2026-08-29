@@ -1460,6 +1460,7 @@ class SearchResult:
     history: bool = False
     coord_frames: List[str] = field(default_factory=list)
     project_only: bool = False
+    show_order: List[tuple] = field(default_factory=list)
 
     @property
     def device_filters_active(self) -> bool:
@@ -1633,6 +1634,90 @@ class SearchResult:
         vals = transform(lon, lat, alt, src="wgs84", dst=frame)
         return float(vals[frame_obj.axis.index(axis)])
 
+    @property
+    def ordered_columns(self) -> List[tuple]:
+        """Ordered table columns as descriptors, honouring ``--show`` order.
+
+        Each descriptor is one of ``(kind, ...)``:
+
+        * ``("marker",)`` / ``("name",)`` — identity columns
+        * ``("attr", code)`` — bare station attribute
+        * ``("device", namespace, code)`` / ``("contact", code)`` /
+          ``("visit", code)`` — selector columns
+        * ``("coord", frame, axis)`` — one geofunc frame axis (a ``coords.``
+          entry expands to three)
+
+        When ``--show`` was given (``show_order`` non-empty), the columns are
+        EXACTLY the requested selectors in the requested order — MARKER/NAME
+        are NOT auto-added. With no ``--show``, the default is MARKER, NAME,
+        then the auto-projected predicate columns.
+        """
+        if self.show_order:
+            cols: List[tuple] = []
+            for desc in self.show_order:
+                if desc[0] == "coord":
+                    frame = desc[1]
+                    for axis in coord_frame(frame).axis:
+                        cols.append(("coord", frame, axis))
+                else:
+                    cols.append(desc)
+            return cols
+        cols = [("marker",), ("name",)]
+        for code in self.attribute_codes:
+            if code not in ("marker", "name"):
+                cols.append(("attr", code))
+        for namespace, code in self.device_columns:
+            cols.append(("device", namespace, code))
+        for code in self.contact_columns:
+            cols.append(("contact", code))
+        for code in self.visit_columns:
+            cols.append(("visit", code))
+        for frame, axis in self.coord_columns:
+            cols.append(("coord", frame, axis))
+        return cols
+
+    def column_header(self, desc: tuple) -> str:
+        """Rendered table header for one column descriptor."""
+        kind = desc[0]
+        if kind == "marker":
+            return "MARKER"
+        if kind == "name":
+            return "NAME"
+        if kind == "attr":
+            return desc[1].upper()
+        if kind == "device":
+            return f"{desc[1]}.{desc[2]}".upper()
+        if kind == "contact":
+            return f"contact.{desc[1]}".upper()
+        if kind == "visit":
+            return f"visit.{desc[1]}".upper()
+        if kind == "coord":
+            return f"{desc[1]}.{desc[2]}".upper()
+        raise ValueError(f"unknown column kind {kind!r}")
+
+    def column_value(self, station: dict, desc: tuple, *, at: Optional[str] = None) -> str:
+        """Rendered table cell for one column descriptor."""
+        kind = desc[0]
+        if kind == "marker":
+            return (open_value(station, "marker") or "?").upper()
+        if kind == "name":
+            return open_value(station, "name") or "—"
+        if kind == "attr":
+            return value_at(station, desc[1], at if at is not None else self.at) or "—"
+        if kind == "device":
+            return self.device_column_value(station, desc[1], desc[2], at=at)
+        if kind == "contact":
+            return self.contact_column_value(station, desc[1])
+        if kind == "visit":
+            return self.visit_column_value(station, desc[1])
+        if kind == "coord":
+            v = self.coord_value(station, desc[1], desc[2], at=at)
+            if v is None:
+                return "—"
+            fmt = ".7f" if coord_frame(desc[1]).kind == "geographic" else ".3f"
+            return format(v, fmt)
+        raise ValueError(f"unknown column kind {kind!r}")
+
     def timeline(self, station: dict) -> List[tuple]:
         """Segment a station's timeline at every boundary of every column.
 
@@ -1679,6 +1764,7 @@ def search_stations(
     history: bool = False,
     coord_frames: Optional[List[str]] = None,
     project_only: bool = False,
+    show_order: Optional[List[tuple]] = None,
 ) -> SearchResult:
     """Run the full pipeline: bulk fetch → attribute filter → device walk.
 
@@ -1810,4 +1896,5 @@ def search_stations(
         history=history,
         coord_frames=list(coord_frames or []),
         project_only=project_only,
+        show_order=list(show_order or []),
     )

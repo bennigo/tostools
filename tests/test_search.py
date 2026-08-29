@@ -2417,6 +2417,27 @@ class TestCoordColumns:
         attrs = payload["stations"][0]["attributes"]
         assert "in_network_epos" not in attrs
 
+    def test_ordered_columns_respect_show_order_no_auto_name(self):
+        client = FakeClient(self._fleet())
+        result = search_stations(
+            client,
+            [],
+            show_codes=["marker"],
+            coord_frames=["itrf2008"],
+            show_order=[("coord", "itrf2008"), ("marker",)],
+        )
+        descs = result.ordered_columns
+        assert [d[0] for d in descs] == ["coord", "coord", "coord", "marker"]
+        headers = [result.column_header(d) for d in descs]
+        assert headers == ["ITRF2008.X", "ITRF2008.Y", "ITRF2008.Z", "MARKER"]
+        assert "NAME" not in headers
+
+    def test_default_columns_without_show(self):
+        client = FakeClient(self._fleet())
+        result = search_stations(client, [Predicate("marker", "=", "REYK")])
+        headers = [result.column_header(d) for d in result.ordered_columns]
+        assert headers[0] == "MARKER" and headers[1] == "NAME"
+
 
 class TestSplitExpressionList:
     def test_plain(self):
