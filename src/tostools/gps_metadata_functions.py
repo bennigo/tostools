@@ -41,13 +41,50 @@ def get_data_file_path(filename):
     return str(data_path("station_config", filename))
 
 
-def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
-    """
-    print station history
+#: Contact-table rendering per language. TOS carries the role under BOTH an
+#: Icelandic (`role_is`, "Eigandi stöðvar") and an English (`role`, "owner")
+#: key, so this is a choice of which TOS field to surface — not a translation
+#: table we have to maintain. Add a language by adding a row.
+CONTACT_TABLE_LANGUAGES = {
+    #  lang: (headers,               role key,  transform)
+    "is": (["Hlutverk", "Nafn"], "role_is", lambda v: v),
+    "en": (["Role", "Name"], "role", lambda v: v.title()),
+}
+DEFAULT_CONTACT_LANGUAGE = "is"
+
+
+def print_station_history(
+    station, raw_format=False, loglevel=logging.WARNING, language=None
+):
+    """Print a station's attribute table, contacts and device history.
+
+    THE live implementation for both routes as of F2 step 2 — ``tosGPS``
+    (via a delegator in ``legacy``) and ``from tostools import
+    print_station_history`` (via ``__init__._LAZY_EXPORTS``) now reach this
+    one function. Before F2 they reached two different ones, and the legacy
+    copy **crashed** on the default ``--format table`` path for every station
+    tried (8/8), with ``ValueError: Unknown format code 'f'`` or
+    ``IndexError``, while this copy rendered all of them. The fix lived here,
+    in the module nothing executed.
+
+    ``language`` selects the contact table's rendering, and defaults to
+    ``DEFAULT_CONTACT_LANGUAGE`` — Icelandic, which is what ``tosGPS`` printed
+    before F2. That default is deliberate: unifying the implementations is a
+    crash fix, and it should not also silently re-language operator output
+    that people diff against runbooks. Pass ``language="en"`` (``tos PrintTOS
+    --lang en``) for the English rendering.
+
+    An unknown language falls back to the default rather than raising — this
+    is a display path, and a bad ``--lang`` should not take down a metadata
+    dump.
     """
 
     # logging settings
     module_logger = get_logger(__name__, loglevel)
+    headers, role_key, transform = CONTACT_TABLE_LANGUAGES.get(
+        language or DEFAULT_CONTACT_LANGUAGE,
+        CONTACT_TABLE_LANGUAGES[DEFAULT_CONTACT_LANGUAGE],
+    )
 
     station_headers = [key for key in station.keys() if key != "device_history"]
     station_attributes = tuple(
@@ -66,14 +103,17 @@ def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
     print(tabulate([station_attributes], headers=station_headers))
     contact_info = [
         (
-            station["contact"][item]
-            .get("role", station["contact"][item]["role_is"])
-            .title(),
+            # `role_is` is always present; `role` may not be, so the Icelandic
+            # value is the fallback for BOTH languages rather than a crash.
+            transform(
+                station["contact"][item].get(role_key)
+                or station["contact"][item]["role_is"]
+            ),
             station["contact"][item]["name"],
         )
         for item in station["contact"].keys()
     ]
-    print(tabulate(contact_info, headers=["Role", "Name"]))
+    print(tabulate(contact_info, headers=headers))
     print("-" * 100)
     device_list = ["gnss_receiver", "antenna", "monument", "radome"]
     print(

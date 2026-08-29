@@ -97,167 +97,33 @@ def get_data_file_path(filename):
     return str(data_path("station_config", filename))
 
 
-def print_station_history(station, raw_format=False, loglevel=logging.WARNING):
+def print_station_history(*args, **kwargs):
+    """Delegator to the WORKING implementation in :mod:`tostools.gps_metadata_functions`.
+
+    F2 step 2. This is the one place in the fork where the live copy was the
+    WRONG one to keep, so the delegation points the opposite way to
+    :func:`site_log` and :func:`print_station_info` in the sibling module.
+
+    The 161-line implementation that stood here is what ``tosGPS``'s
+    ``PrintTOS --format table`` executed, and it raised on every station tried
+    — 8/8, ``ValueError: Unknown format code 'f' for object of type 'str'`` at
+    the old ``print(string.format(*value))``, or ``IndexError``. The top-level
+    copy had already replaced that hand-rolled format-string rendering with
+    ``tabulate`` ("avoiding string formatting bugs", its own comment) and
+    rendered all of them — but nothing executed it, because ``tosGPS`` imports
+    THIS module and only ``__init__._LAZY_EXPORTS`` published the other.
+
+    Both routes now resolve to one implementation. The contact table keeps its
+    Icelandic rendering by default, so this is a crash fix and not also a
+    silent re-languaging of operator output; ``language="en"`` selects the
+    English one.
+
+    Function-local import: the top-level module imports ``gps_metadata_qc``,
+    which this package's import graph routes back through here.
     """
-    print station history
-    """
+    from ..gps_metadata_functions import print_station_history as _live
 
-    # logging settings
-    module_logger = get_logger(name=__name__)
-    module_logger.setLevel(loglevel)
-
-    station_headers = [key for key in station.keys() if key != "device_history"]
-    station_attributes = tuple(
-        value
-        for key, value in station.items()
-        if key not in ["contact", "device_history"]
-    )
-    module_logger.info("Station: {}".format(station))
-    print(tabulate([station_attributes], headers=station_headers))
-    contact_info = [
-        (station["contact"][item]["role_is"], station["contact"][item]["name"])
-        for item in station["contact"].keys()
-    ]
-    print(tabulate(contact_info, headers=["Hlutverk", "Nafn"]))
-    print("-" * 100)
-    device_list = ["gnss_receiver", "antenna", "monument", "radome"]
-    print(
-        " " * 42
-        + f"| {device_list[0]}"
-        + " " * 39
-        + f"| {device_list[1]}"
-        + " " * 38
-        + f"| {device_list[2]}"
-        + " " * 18
-        + f"| {device_list[3]}"
-    )
-
-    headers_list = []
-    devices_list = []
-    device_types_list = []
-    attributes_string_list = []
-
-    for item in station["device_history"]:
-        devices = [key for key in item.keys() if key not in ["time_from", "time_to"]]
-
-        header_list = ["time_from", "time_to"]
-        if item["time_from"] is None:
-            time_from = "None"
-        else:
-            time_from = item["time_from"].strftime("%Y-%m-%d %H:%M:%S")
-
-        if item["time_to"] is None:
-            time_to = "None"
-        else:
-            time_to = item["time_to"].strftime("%Y-%m-%d %H:%M:%S")
-
-        attributes_list = [time_from, time_to]
-
-        print_attributes_string = "{:<19}  {:<19}  "
-        print_header_string = "{:<19}  {:<19}  "
-
-        for device in device_list:
-            if device in item.keys():
-                device_headers = list(key for key in item[device].keys())
-                device_attributes = [value for _, value in item[device].items()]
-                # make the labels nicer
-                if device == "monument":
-                    module_logger.debug("device_headers: %s", device_headers)
-                    dev_index = device_headers.index("serial_number")
-                    device_headers.remove("serial_number")
-                    del device_attributes[dev_index]
-
-                    # dev_index = device_headers.index("model")
-                    # device_headers.remove("model")
-                    # del device_attributes[dev_index]
-
-                if raw_format is False:
-                    if "antenna_height" in device_headers:
-                        device_headers[device_headers.index("antenna_height")] = (
-                            "Height"
-                        )
-                    if "antenna_reference_point" in device_headers:
-                        device_headers[
-                            device_headers.index("antenna_reference_point")
-                        ] = "Ref."
-
-                    if "monument_height" in device_headers:
-                        device_headers[device_headers.index("monument_height")] = (
-                            "Height"
-                        )
-                    if "monument_offset_north" in device_headers:
-                        device_headers[
-                            device_headers.index("monument_offset_north")
-                        ] = "North"
-                    if "monument_offset_east" in device_headers:
-                        device_headers[device_headers.index("monument_offset_east")] = (
-                            "East"
-                        )
-
-                    if "serial_number" in device_headers:
-                        device_headers[device_headers.index("serial_number")] = "SN"
-                    if "model" in device_headers:
-                        device_headers[device_headers.index("model")] = "Model"
-                    if "time_from" in device_headers:
-                        device_headers[device_headers.index("time_from")] = "Start time"
-                    if "time_to" in device_headers:
-                        device_headers[device_headers.index("time_to")] = "End time"
-
-                try:
-                    for i, n in enumerate(device_attributes):
-                        if n is None:
-                            device_attributes[i] = "None"
-                except:
-                    pass
-
-                if device == "gnss_receiver":
-                    hstring = (
-                        "| " + "{:14.14} " * (len(device_headers) - 1) + " {:5.5} "
-                    )
-                    string = "| " + "{:14.14} " * (len(device_headers) - 1) + " {:5.5} "
-                elif device == "antenna":
-                    hstring = "| " + "{:14.14} {:15.15} {:>7.4} {:>7.4} {:>7.4} {:5.5} "
-                    string = (
-                        "| " + "{:14.14} {:15.15} {:>7.4f} {:>7.4f} {:>7.4f} {:5.5} "
-                    )
-                elif device == "monument":
-                    hstring = "| " + "{:25.25} {:7.7} {:7.7} {:7.7}   "
-                    string = "| " + "{:25.25} {:>7.4f} {:>7.4f} {:>7.4f}   "
-                else:
-                    string = "| " + "{} " * (len(device_headers)) + "  "
-
-                print_header_string += hstring
-                header_list += device_headers
-
-                print_attributes_string += string
-                attributes_list += device_attributes
-
-        device_types_list.append(devices)
-        attributes_string_list.append(print_attributes_string)
-        headers_list.append(header_list)
-        devices_list.append(attributes_list)
-
-    # print(print_string)
-    # print( print_header_string.format(*header_list) )
-    # print( print_attributes_string.format(*attributes_list) )
-    if raw_format:
-        print("+" * 200)
-        for devices, headers, values in zip(
-            device_types_list, headers_list, devices_list
-        ):
-            print(tabulate([devices], tablefmt="plain"))
-            # print(tabulate([headers]))
-            print(tabulate([values], tablefmt="fancy"))
-        print("+" * 200)
-    else:
-        # print(print_header_string)
-        # print(headers_list)
-        # print(print_header_string.format(*headers_list[0]))
-        print("-" * 200)
-        # print(attributes_string_list)
-        for string, value in zip(attributes_string_list, devices_list):
-            # print(string)
-            print(string.format(*value))
+    return _live(*args, **kwargs)
 
 
 def getSession(station, session_nr, loglevel=logging.WARNING):

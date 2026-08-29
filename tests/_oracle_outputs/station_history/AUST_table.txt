@@ -1,0 +1,136 @@
+contact    is_near_fault_zones    bedrock_condition    in_network_epos      marker      lon  altitude        name     geological_characteristic      bedrock_type  lat               date_start
+---------  ---------------------  -------------------  -----------------  --------  -------  --------------  -------  ---------------------------  --------------  ----------------  -------------
+true       weathered              true                 aust               -19.0806  1438.36  Austmannsbunga  bedrock  igneous                             63.6744  1993-06-08 00:00  North America
+Hlutverk         Nafn
+---------------  ------------------
+Eigandi stöðvar  Veðurstofa Íslands
+Eigandi stöðvar  Veðurstofa Íslands
+Eigandi stöðvar  Veðurstofa Íslands
+----------------------------------------------------------------------------------------------------
+                                          | gnss_receiver                                       | antenna                                      | monument                  | radome
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, antenna, monument
+time_from            time_to              Model             Serial Number  firmware_version      software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  --------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+1993-06-10 00:00:00  1993-06-14 00:00:00  TRIMBLE 4000ST             2361  NP 4.64 / SP 1.15                 4.64  TRM14532.00             7008         0                -0.0033                 -0.0056  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: antenna, monument
+time_from            time_to              Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+1994-05-26 00:00:00  1994-05-29 00:00:00  TRM14532.00  antenna-AUST-19940526     0.858                -0.0033                 -0.0056  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, monument, antenna
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2000-03-26 00:00:00  2000-04-03 00:00:00  TRIMBLE 4000SSI            26093  NP 7.29 / SP 3.07                 7.29  TRM33429.00+GP           156516         0                -0.0023                 -0.0035  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: antenna, monument, gnss_receiver
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2000-07-06 00:00:00  2000-07-08 00:00:00  TRIMBLE 4000SST             2459  4.83 / 1.15                       4.83  TRM33429.20+GP           156024    0.8433                -0.0024                 -0.0036  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2001-03-26 00:00:00  2000-07-10 00:00:00  TRIMBLE 4000SSI            25148  NP 7.29 / SP 3.07                 7.29  TRM33429.00+GP           156516    1.0636                      0                       0  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, monument, antenna
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2001-06-12 00:00:00  2001-04-03 00:00:00  TRIMBLE 4000SSI            15404  NP 7.19 / SP 3.04                 7.19  TRM29659.00           190269         0                -0.0023                  0.0002  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, monument, antenna
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2002-05-22 00:00:00  2001-06-14 00:00:00  TRIMBLE 4000SSI            26094  NP 7.29 / SP 3.07                 7.29  TRM33429.20+GP           168784    1.0262                      0                       0  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: antenna, gnss_receiver, monument
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2003-03-04 00:00:00  2001-06-14 12:00:00  TRIMBLE 4000SSI            25148  NP 7.29 / SP 3.07                 7.29  TRM33429.00+GP           156516    1.3771                      0                       0  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, monument, antenna
+time_from            time_to              Model              Serial Number  firmware_version    software_version    Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------
+2003-06-18 00:00:00  2002-05-26 00:00:00  TRIMBLE 4000SSI            25992  NP 7.19 / SP 3.04   None                TRM33429.20+GP           171774     0.954                      0                       0  DHARP          0        0       0
+----------------------------------------------------------------------------------------------------
+Device types: gnss_receiver, antenna, monument
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2003-06-19 00:00:00  2003-03-10 00:00:00  TRIMBLE 4000SSI            25992  NP 7.19 / SP 3.04                 7.19  TRM33429.20+GP           171774     0.954                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: antenna, gnss_receiver, monument
+time_from            time_to              Model              Serial Number  firmware_version      software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2004-01-27 00:00:00  2003-06-19 00:00:00  TRIMBLE 4000SSI            25148  NP 7.29 / SP 3.07                 7.29  TRM33429.20+GP           171774         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: antenna, monument, gnss_receiver
+time_from            time_to              Model              Serial Number    firmware_version  software_version    Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2004-02-03 00:00:00  2003-06-21 00:00:00  TRIMBLE 4000SSI            14629                7.19  None                TRM33429.20+GP           221333         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model              Serial Number    firmware_version    software_version  Model             Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ---------------  ---------------  ------------------  ------------------  --------------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2004-06-14 00:00:00  2004-01-31 00:00:00  TRIMBLE 4000SSI            14629                7.19                7.19  TRM33429.20+GP           171774         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model           Serial Number    firmware_version    software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2005-02-17 00:00:00  2004-02-09 00:00:00  TRIMBLE 5700       0220325904                2.01                2.01  TRM41249.00         12605840         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model           Serial Number    firmware_version  software_version    Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2006-03-13 00:00:00  2004-06-19 00:00:00  TRIMBLE 5700       0220331856                2.01  None                TRM41249.00         12605840         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model         Serial Number    firmware_version    software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ----------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2007-03-05 00:00:00  2005-02-23 00:00:00  TRIMBLE R7       0220330305                2.01                2.01  TRM41249.00  antenna-AUST-20070305         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model          Serial Number    firmware_version      software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2008-07-18 00:00:00  2006-03-17 00:00:00  TRIMBLE NETRS  None             1.1-3                             1.13  TRM41249.00           196282         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model         Serial Number    firmware_version    software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ----------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2009-03-22 00:00:00  2007-03-20 00:00:00  TRIMBLE R7       0220390338                 2.3                 2.3  TRM41249.00           223471         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model            Serial Number  firmware_version      software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2010-04-28 00:00:00  2008-07-21 00:00:00  TRIMBLE NETRS       4752143431  1.2-5                             1.25  TRM41249.00         60220780         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model          Serial Number      firmware_version    software_version  Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2011-06-21 00:00:00  2009-03-31 00:00:00  TRIMBLE NETR9  None                           4.41                4.41  TRM41249.00         60220780         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model          Serial Number      firmware_version    software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2011-09-19 00:00:00  2011-06-13 00:00:00  TRIMBLE NETR9  None                           4.41                4.41  TRM57971.00  antenna-AUST-20110621         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model          Serial Number      firmware_version    software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2014-06-01 00:00:00  2011-09-19 00:00:00  TRIMBLE NETR9  None                           4.81                4.81  TRM57971.00  antenna-AUST-20110621         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver, antenna
+time_from            time_to              Model          Serial Number    firmware_version      software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  -------------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2016-02-12 14:00:00  2013-12-09 00:00:00  TRIMBLE NETR9  5212K83333       NP 4.81 / SP 4.81                 4.81  TRM57971.00  antenna-AUST-20110621         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model           Serial Number  firmware_version      software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ------------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2019-06-05 00:00:00  2014-09-30 00:00:00  SEPT POLARX5          3047787  5.5.0                              5.5  TRM57971.00  antenna-AUST-20110621         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, gnss_receiver
+time_from            time_to              Model           Serial Number  firmware_version      software_version  Model        Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North     East
+-------------------  -------------------  ------------  ---------------  ------------------  ------------------  -----------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  -------
+2026-08-26 00:00:00  2019-01-20 00:00:00  SEPT POLARX5          3047787  5.7.0                              5.7  TRM57971.00  antenna-AUST-20110621         0                      0                       0  DHARP      0.971   0.0001  -0.0001
+----------------------------------------------------------------------------------------------------

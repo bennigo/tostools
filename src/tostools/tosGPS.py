@@ -551,6 +551,17 @@ Examples:
     print_options.add_argument(
         "--raw", action="store_true", help="Include detailed raw metadata"
     )
+    print_options.add_argument(
+        "--lang",
+        choices=["is", "en"],
+        default="is",
+        help=(
+            "Language for the contact table's role column (default: is). TOS "
+            "carries each role under both an Icelandic (role_is) and an "
+            "English (role) key, so this selects which TOS field is shown "
+            "rather than translating anything."
+        ),
+    )
 
     # Display control options
     display_group = print_options.add_argument_group("Display options")
@@ -1204,7 +1215,12 @@ def _handle_print_subcommand(args, stations, url, log_level):
 
         if pformat == "table":
             gpsf.print_station_history(
-                station_info, raw_format=raw, loglevel=log_level.value
+                station_info,
+                raw_format=raw,
+                loglevel=log_level.value,
+                # `--lang` only exists on PrintTOS; the non-PrintTOS default
+                # path never reaches here (it forces pformat="rich").
+                language=getattr(args, "lang", None),
             )
         elif pformat == "rich":
             # Use new rich formatter with full flag support
