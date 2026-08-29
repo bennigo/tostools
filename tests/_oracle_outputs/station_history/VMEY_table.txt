@@ -1,0 +1,61 @@
+contact    is_near_fault_zones    geological_characteristic      bedrock_condition  lat             name       iers_domes_number    tectonic_plate    marker    in_network_epos    bedrock_type        date_start     lon
+---------  ---------------------  ---------------------------  -------------------  --------------  ---------  -------------------  ----------------  --------  -----------------  ----------------  ------------  ------
+Nei        bedrock                weathered                                 63.427  Vestmannaeyjar  10217M001  Eurasia              vmey              true      igneous            2000-07-26 00:00      -20.2936  135.28
+Role    Name
+------  ------------------
+Owner   Veðurstofa Íslands
+Owner   Veðurstofa Íslands
+Owner   Veðurstofa Íslands
+----------------------------------------------------------------------------------------------------
+                                          | gnss_receiver                                       | antenna                                      | monument                  | radome
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Device types: radome, monument, antenna
+time_from            time_to              Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2000-07-26 00:00:00  2003-11-11 11:50:00  TRM29659.00           148018      0.07                      0                       0  DHARP      0.999        0       0  SCIS     radome-VMEY-20000726
+----------------------------------------------------------------------------------------------------
+Device types: radome, monument
+time_from            time_to                Height    North    East  Model    Serial Number
+-------------------  -------------------  --------  -------  ------  -------  --------------------
+2000-07-27 00:00:00  2013-01-01 00:00:00     0.999        0       0  SCIS     radome-VMEY-20000726
+----------------------------------------------------------------------------------------------------
+Device types: radome, monument, antenna
+time_from            time_to              Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2003-11-11 11:50:00  2017-07-11 00:00:00  TRM29659.00           148018         0                      0                       0  DHARP      0.999        0       0  SCIS     radome-VMEY-20000726
+----------------------------------------------------------------------------------------------------
+Device types: radome, monument, antenna
+time_from            time_to              Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2013-10-29 00:00:00  2019-10-15 00:00:00  TRM29659.00           148018         0                      0                       0  DHARP      0.999        0       0  SCIS     radome-VMEY-20000726
+----------------------------------------------------------------------------------------------------
+Device types: radome, monument, antenna
+time_from            time_to              Model          Serial Number    Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -----------  ---------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2017-07-11 00:00:00  2023-01-11 00:00:00  TRM29659.00           148018         0                      0                       0  DHARP      0.999        0       0  SCIS     radome-VMEY-20000726
+----------------------------------------------------------------------------------------------------
+Device types: monument, gnss_receiver
+time_from            time_to              Model           Serial Number  firmware_version      software_version    Height    North    East
+-------------------  -------------------  ------------  ---------------  ------------------  ------------------  --------  -------  ------
+2019-10-15 00:00:00  2023-07-02 00:00:00  SEPT POLARX5          3018426  5.3.0                              5.3     0.999        0       0
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, radome
+time_from            time_to              Model          Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -------------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2023-01-11 00:00:00  2025-10-28 00:00:00  SEPCHOKE_B3E6  antenna-VMEY-20230111         0                      0                       0  DHARP      0.999        0       0  SPKE     radome-VMEY-20230111
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, radome
+time_from            time_to              Model          Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  -------------------  -------------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2023-07-02 00:00:00  2026-08-20 00:00:00  SEPCHOKE_B3E6  antenna-VMEY-20230111         0                      0                       0  DHARP      0.999        0       0  SPKE     radome-VMEY-20230111
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, radome, gnss_receiver
+time_from            time_to    Model           Serial Number  firmware_version      software_version  Model          Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  ---------  ------------  ---------------  ------------------  ------------------  -------------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2025-10-28 00:00:00  None       SEPT POLARX5          3018426  5.7.0                              5.7  SEPCHOKE_B3E6  antenna-VMEY-20230111         0                      0                       0  DHARP      0.999        0       0  SPKE     radome-VMEY-20230111
+----------------------------------------------------------------------------------------------------
+Device types: monument, antenna, radome, gnss_receiver
+time_from            time_to    Model           Serial Number  firmware_version      software_version  Model          Serial Number            Height    antenna_offset_east    antenna_offset_north  Ref.      Height    North    East  Model    Serial Number
+-------------------  ---------  ------------  ---------------  ------------------  ------------------  -------------  ---------------------  --------  ---------------------  ----------------------  ------  --------  -------  ------  -------  --------------------
+2026-08-20 00:00:00  None       SEPT POLARX5          3018426  5.7.0                              5.7  SEPCHOKE_B3E6  antenna-VMEY-20230111         0                      0                       0  DHARP      0.999        0       0  SPKE     radome-VMEY-20230111
+----------------------------------------------------------------------------------------------------

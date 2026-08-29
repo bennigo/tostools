@@ -16,6 +16,9 @@ tmp/
 # this negation the snapshots are silently uncommittable and the oracle fails on
 # a fresh clone with "Snapshot missing" — a gate that never guards anything.
 !tests/_oracle_outputs/sitelog/*.log
+# ...and the station-history oracle's captured terminal output (`*.txt` is not
+# ignored, but keep the two oracle snapshot dirs listed together).
+!tests/_oracle_outputs/station_history/*.txt
 *.D
 *.D.Z
 
