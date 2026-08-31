@@ -161,6 +161,78 @@ def correct_rinex_from_tos(
     return corrected_file
 
 
+#: Header label whose value TOS owns outright, on both the config and TOS paths.
+_ANTENNA_DELTA = "ANTENNA: DELTA H/E/N"
+
+
+def _overlay_tos_antenna_delta(
+    corrections: Dict[str, Any],
+    station_id: str,
+    observation_date: Optional[datetime],
+    loglevel: int,
+    logger: logging.Logger,
+    tos_metadata_cache: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Re-source ``ANTENNA: DELTA H/E/N`` from TOS on the ``stations.cfg`` path.
+
+    stations.cfg is structurally incapable of producing this field. It carries a
+    single ``antenna_height`` composite and NO eccentricity at all, so the config
+    branch hardcoded ``[height, 0.0, 0.0]`` — correct only for the stations whose
+    true eccentricity happens to be zero. TOS splits the mark→ARP vector across a
+    monument and an antenna entity and is the only source that holds all three
+    axes, which is why the IGS site log reads TOS and why a config-path header
+    silently disagreed with the site log it is supposed to match.
+
+    Ownership, stated once: config owns the descriptive fields (marker, observer,
+    agency); TOS owns device geometry. Only the geometry field moves here — the
+    antenna and receiver IDENTITY fields keep their config-branch guards (notably
+    the placeholder-serial guard) rather than being re-routed in the same change.
+
+    On a TOS miss the config value is LEFT IN PLACE with a warning. The config
+    path exists so a daily conversion does not hard-depend on the network; making
+    it abort on a TOS blip would stop production for the whole fleet to avoid an
+    error the file already has today. Degraded, never worse than the status quo.
+    """
+    try:
+        tos_corrections = _get_corrections_from_tos(
+            station_id, observation_date, loglevel, tos_metadata_cache
+        )
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - see docstring
+        # tostools' station lookup does sys.exit(1) on a connection error, which
+        # is a SystemExit and would otherwise sail past `except Exception` and
+        # kill the run. The config path must survive an unreachable TOS.
+        logger.warning(
+            "%s: TOS unreachable while re-sourcing %s (%s) — keeping the "
+            "stations.cfg value, which cannot carry an eccentricity",
+            station_id,
+            _ANTENNA_DELTA,
+            exc,
+        )
+        return corrections
+
+    delta = tos_corrections.get(_ANTENNA_DELTA) if tos_corrections else None
+    if delta is None:
+        logger.warning(
+            "%s: TOS returned no %s for %s — keeping the stations.cfg value",
+            station_id,
+            _ANTENNA_DELTA,
+            observation_date.date() if observation_date else "unknown date",
+        )
+        return corrections
+
+    previous = corrections.get(_ANTENNA_DELTA)
+    if previous is not None and list(previous) != list(delta):
+        logger.info(
+            "%s: %s re-sourced from TOS: %s -> %s",
+            station_id,
+            _ANTENNA_DELTA,
+            previous,
+            delta,
+        )
+    corrections[_ANTENNA_DELTA] = delta
+    return corrections
+
+
 def resolve_corrections(
     rinex_file: Path,
     station_id: str,
@@ -212,6 +284,16 @@ def resolve_corrections(
     # Get metadata from appropriate source
     if use_config and station_config:
         corrections = _get_corrections_from_config(station_id, station_config, logger)
+        # stations.cfg cannot express an antenna eccentricity; TOS owns the
+        # geometry on every path. See _overlay_tos_antenna_delta.
+        corrections = _overlay_tos_antenna_delta(
+            corrections,
+            station_id,
+            observation_date,
+            loglevel,
+            logger,
+            tos_metadata_cache=tos_metadata_cache,
+        )
     else:
         logger.debug(f"Querying TOS for {station_id} metadata")
         corrections = _get_corrections_from_tos(
@@ -375,7 +457,14 @@ def _get_corrections_from_config(
         ant_type_full = f"{ant_type:<15} {ant_radome:<4}" if ant_type else ""
         corrections["ANT # / TYPE"] = [ant_serial, ant_type_full]
 
-    # ANTENNA: DELTA H/E/N
+    # ANTENNA: DELTA H/E/N — PLACEHOLDER ONLY, overwritten from TOS.
+    #
+    # stations.cfg has no eccentricity fields, so this branch can only ever
+    # produce a zeroed E/N. resolve_corrections() re-sources the whole triple
+    # from TOS via _overlay_tos_antenna_delta(); the value built here survives
+    # solely as the fallback for an unreachable TOS. Do NOT "fix" the zeros by
+    # inventing cfg keys — the mark->ARP vector is split across the TOS monument
+    # and antenna entities and a single cfg number cannot represent it.
     ant_height = float(antenna_cfg.get("height", 0) or 0)
     corrections["ANTENNA: DELTA H/E/N"] = [ant_height, 0.0, 0.0]
 
@@ -523,18 +612,35 @@ def _get_corrections_from_tos(
                 ant_serial = "0000"
             corrections["ANT # / TYPE"] = [ant_serial, ant_type_full]
 
-        # ANTENNA: DELTA H/E/N (composite up + east/north eccentricity)
-        ant_height = float(antenna.get("antenna_height", 0) or 0) if antenna else 0.0
+        # ANTENNA: DELTA H/E/N — a composite on ALL THREE axes.
+        #
+        # TOS splits the mark→ARP vector across two entities: the monument
+        # (mark → monument top) and the antenna (monument top → ARP). The
+        # published value is their sum. This function always summed the UP
+        # axis and, until 2026-08-31, took EAST/NORTH from the antenna entity
+        # alone — so any station whose offset lives on the MONUMENT record
+        # published a zeroed eccentricity while its IGS site log, which does
+        # sum all three (legacy/gps_metadata_functions.py:196-204), published
+        # the real one. ISAK is the canary: antenna E/N are 0.0/0.0, monument
+        # E/N are 0.0001/0.0002, header read 0.0000 against a site log of
+        # 0.0002. Fleet-wide the split is genuinely used, so read both.
         monument = session.get("monument", {})
+        ant_height = float(antenna.get("antenna_height", 0) or 0) if antenna else 0.0
         mon_height = float(monument.get("monument_height", 0) or 0) if monument else 0.0
         ant_east = float(antenna.get("antenna_offset_east", 0) or 0) if antenna else 0.0
         ant_north = (
             float(antenna.get("antenna_offset_north", 0) or 0) if antenna else 0.0
         )
+        mon_east = (
+            float(monument.get("monument_offset_east", 0) or 0) if monument else 0.0
+        )
+        mon_north = (
+            float(monument.get("monument_offset_north", 0) or 0) if monument else 0.0
+        )
         corrections["ANTENNA: DELTA H/E/N"] = [
             ant_height + mon_height,
-            ant_east,
-            ant_north,
+            ant_east + mon_east,
+            ant_north + mon_north,
         ]
 
         # APPROX POSITION XYZ ← TOS surveyed lat/lon/altitude → ECEF.
