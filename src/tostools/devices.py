@@ -1212,8 +1212,10 @@ def station_sessions(
     3. For each window, slot-fill each subtype from a covering
        sub-session — ``date_from <= start`` and (``date_to`` is None or
        ``date_to >= end``) for closed windows; sub-session must itself
-       be open for the trailing window. Drop windows where no subtype
-       got filled (pure gaps).
+       be open for the trailing window. A window is emitted ONLY when a
+       ``gnss_receiver`` covers it — monument-only / antenna-less windows
+       are dormant periods (no receiver installed) and are dropped, not
+       listed as sessions.
 
     For clean stations this yields the same windows as the legacy zip
     (the byte-equality oracle test on RHOF locks that invariant). For
@@ -1286,7 +1288,8 @@ def station_sessions(
                     continue
 
             record[dev["code_entity_subtype"]] = _device_structure(dev)
-            filled = True
+            if dev["code_entity_subtype"] == "gnss_receiver":
+                filled = True
 
         if filled:
             pivoted.append(record)
