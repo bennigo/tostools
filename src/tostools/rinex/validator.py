@@ -38,6 +38,11 @@ def _parse_time_of_first_obs(value: Any) -> Any:
 #: distance (the closest such case measured, ISAK Aug-2016, was 210 km).
 _MAX_POSITION_CORRECTION_M = 1000.0
 
+#: Decimal places ANTENNA: DELTA H/E/N is stored in (RINEX F14.4 = 0.1 mm).
+#: Both sides of the comparison are rounded here so the check matches the
+#: field's real precision instead of a coarser hand-picked tolerance.
+_DELTA_DECIMALS = 4
+
 
 def compare_rinex_to_tos(
     rinex_info: Dict[str, str],
@@ -270,11 +275,29 @@ def compare_rinex_to_tos(
                         antenna_info.get("antenna_offset_north") or 0.0
                     ) + float(monument_info.get("monument_offset_north") or 0.0)
 
+                    # Compare at the precision the FIELD ACTUALLY STORES.
+                    #
+                    # ANTENNA: DELTA H/E/N is F14.4 — the header holds 0.1 mm, so
+                    # 0.0002 is exactly representable and exactly comparable to
+                    # TOS's 0.0002. This used a 1 mm tolerance, which is an order
+                    # of magnitude coarser than the storage: a real, exactly
+                    # representable disagreement was reported as a MATCH and
+                    # --fix-headers skipped the file it was pointed at. ISAK's
+                    # 0.2 mm monument eccentricity is precisely that case.
+                    #
+                    # Rounding both sides to 4 dp (rather than dropping the
+                    # tolerance to 0) is what keeps float noise out: tos_h is a
+                    # SUM of two TOS numbers and lands on 1.0046999999999999 as
+                    # readily as 1.0047. antenna_timeline._parse_delta already
+                    # compares this field exactly this way, for exactly this
+                    # reason — "no sub-precision jitter creates phantom
+                    # boundaries". This makes the two agree.
+                    _dp = _DELTA_DECIMALS
                     if (
-                        abs(rinex_h - tos_h) > 0.001
-                        or abs(rinex_e - tos_e) > 0.001
-                        or abs(rinex_n - tos_n) > 0.001
-                    ):  # 1mm tolerance on any component
+                        round(rinex_h, _dp) != round(tos_h, _dp)
+                        or round(rinex_e, _dp) != round(tos_e, _dp)
+                        or round(rinex_n, _dp) != round(tos_n, _dp)
+                    ):
                         comparison_result["discrepancies"]["antenna_height"] = {
                             "rinex": [rinex_h, rinex_e, rinex_n],
                             "tos": [tos_h, tos_e, tos_n],

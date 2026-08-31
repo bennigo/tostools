@@ -295,11 +295,9 @@ class TestTheComparatorSeesTheMonumentOffsetToo:
     zeroed header correct -- and, worse, called a CORRECT header discrepant and
     offered a correction that would zero it.
 
-    Offsets here are 15 mm, deliberately above the comparator's 1 mm threshold,
-    so these assertions test the composite and not the tolerance. (ISAK's real
-    offset is 0.2 mm, i.e. below it -- which is why its archive files are not
-    reachable by fix-headers even now. That is a tolerance question, tracked
-    separately, not a bug in this composite.)
+    Offsets here are 15 mm so these assertions test the composite and nothing
+    else. ISAK's real 0.2 mm offset is covered separately, in
+    TestTheDeltaIsComparedAtTheFieldsOwnPrecision.
     """
 
     @staticmethod
@@ -361,3 +359,74 @@ class TestTheComparatorSeesTheMonumentOffsetToo:
     def test_a_genuinely_centered_antenna_still_matches(self):
         got = self._compare(self._header(1.0, 0.0, 0.0), self._session(mon_h=1.0))
         assert "antenna_height" in got["matches"]
+
+
+class TestTheDeltaIsComparedAtTheFieldsOwnPrecision:
+    """A 1 mm tolerance on an F14.4 field hid real, representable disagreements.
+
+    ANTENNA: DELTA H/E/N is written 3F14.4 -- the header stores 0.1 mm. So
+    0.0002 is exactly representable, exactly what TOS holds, and exactly what
+    the site log publishes. Comparing it with a 1 mm tolerance meant a genuine
+    disagreement ten times coarser than the storage was reported as a MATCH,
+    and --fix-headers skipped the file it had been pointed at. ISAK is that
+    case: header 0.0000 against TOS 0.0002, called equal.
+
+    Rounding to 4 dp rather than comparing raw floats is deliberate -- tos_h is
+    a SUM of two TOS numbers and lands on 1.0046999999999999 as readily as
+    1.0047. Only APPROX POSITION XYZ keeps an epsilon tolerance
+    (``coord_tolerance``); it measures a physical distance, not a stored field.
+    """
+
+    _mk = TestTheComparatorSeesTheMonumentOffsetToo
+
+    def _compare(self, header, session, **kw):
+        from tostools.rinex.validator import compare_rinex_to_tos
+
+        return compare_rinex_to_tos(header, session, loglevel=logging.CRITICAL, **kw)
+
+    def test_isaks_real_two_tenths_of_a_millimetre_is_now_flagged(self):
+        """The canary, at its true magnitude -- not an inflated stand-in."""
+        got = self._compare(
+            self._mk._header(1.0047, 0.0, 0.0),
+            self._mk._session(mon_e=0.0001, mon_n=0.0002, mon_h=1.0047),
+        )
+        assert "antenna_height" in got["discrepancies"], (
+            "0.2 mm is exactly representable in F14.4 and is exactly what the "
+            "site log publishes — the comparator must not call it a match"
+        )
+        assert got["corrections"][_DELTA] == pytest.approx([1.0047, 0.0001, 0.0002])
+
+    def test_float_jitter_from_the_composite_sum_is_not_a_discrepancy(self):
+        """0.15 + 1.0 is 1.1500000000000001 in binary floating point."""
+        got = self._compare(
+            self._mk._header(1.15, 0.0, 0.0),
+            self._mk._session(ant_h=0.15, mon_h=1.0),
+        )
+        assert "antenna_height" in got["matches"], (
+            f"sub-precision float noise created a phantom discrepancy: "
+            f"{got['discrepancies'].get('antenna_height')}"
+        )
+
+    def test_a_difference_below_the_stored_precision_is_still_a_match(self):
+        """0.04 mm cannot be written to F14.4 at all; it is not a disagreement."""
+        got = self._compare(
+            self._mk._header(1.0047, 0.0, 0.0),
+            self._mk._session(mon_n=0.00004, mon_h=1.0047),
+        )
+        assert "antenna_height" in got["matches"]
+
+    def test_coordinates_keep_their_epsilon_tolerance(self):
+        """Only the position check measures a distance, so only it gets an epsilon."""
+        session = dict(self._mk._session(mon_h=1.0047))
+        session.update({"lat": 64.1234, "lon": -21.4321, "altitude": 100.0})
+        header = dict(self._mk._header(1.0047, 0.0, 0.0))
+        from tostools.gps_metadata_qc import wgs84toitrf08
+
+        x, y, z = wgs84toitrf08.transform(64.1234, -21.4321, 100.0)
+        header["APPROX POSITION XYZ"] = f"{x + 3.0:14.4f}{y:14.4f}{z:14.4f}"
+        got = self._compare(header, session, coord_tolerance=10.0)
+        assert "coordinates" not in got["discrepancies"], (
+            "a 3 m a-priori offset is within the 10 m coordinate tolerance and "
+            "must not be flagged — the position check is a distance, not a "
+            "stored-field equality"
+        )
