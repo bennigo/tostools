@@ -660,6 +660,29 @@ def satellite_system_from_toggles(device):
     return "+".join(codes) if codes else "GPS"
 
 
+# TOS monument `model` → (IGS §3.1 "Monument Description", "Monument Foundation").
+# IS→EN translation — attribute_codes.yaml `infrastructure_type` documents this gap
+# (the renderer used to hardcode STEEL MAST / STEEL RODS for every monument).
+# Foundation values are best-effort — confirm per-mark (mostly basalt bedrock in IS).
+MONUMENT_MODEL_TO_IGS = {
+    "GPS stál-fjórfótur": ("STEEL QUADRIPOD", "BEDROCK"),
+    "GPS stál-staur": ("STEEL MAST", "BEDROCK"),
+    "steyptur stöpull": ("PILLAR", "CONCRETE"),
+    "pinni": ("ROCK PIN", "BEDROCK"),
+    "Shallow Drilled Braced Monument": (
+        "SCIGN SHORT DRILL-BRACED STAINLESS STEEL",
+        "BASALT BEDROCK",
+    ),
+    "Short Drilled Braced Monument (SDBM)": (
+        "SCIGN SHORT DRILL-BRACED STAINLESS STEEL",
+        "BASALT BEDROCK",
+    ),
+    "stál stöng": ("STEEL ROD", "BEDROCK"),
+    "GPS stöng á þaki": ("STEEL ROD", "ROOF"),
+    "stöng á bolta á hrauni": ("STEEL ROD", "LAVA BEDROCK"),
+}
+
+
 def site_log(
     station_identifier,
     loglevel=logging.WARNING,
@@ -786,8 +809,9 @@ def site_log(
 
             monument_height = f"{monument_height_fl} m"
             monument_inscription = device.get("inscription", "")
-            monument_description = device.get("description", "STEEL MAST")
-            foundation = device.get("foundation", "STEEL RODS")
+            monument_description, foundation = MONUMENT_MODEL_TO_IGS.get(
+                device.get("model") or "", ("STEEL MAST", "STEEL RODS")
+            )
             foundation_depth = device.get("foundation_depth", "(m)")
             if not foundation_depth == "(m)":
                 foundation_depth = foundation_depth + " m"
