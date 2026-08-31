@@ -557,10 +557,12 @@ Key dependencies managed through `pyproject.toml`:
 
 ### ⚠️ Known Issues & TODOs
 
-- **Contact Management**: Hardcoded IMO fallback needs architectural review
-- **Group Header Alignment**: Minor fine-tuning needed in rich formatter
-- **CLI Feature Gaps**: Missing `--no-static`, `--contact` flags
-- **Standards Documentation**: Need comprehensive GPS/GNSS standards repository
+**Canonical todo list lives in the vault, not in this file:**
+[[1788084388-tostools-todos|Tostools Todos]] in `1.Projects/Work_GPS_Receivers/`.
+Add new tostools-specific items there. Pre-2026-08-30 items are split between that note
+and [[1778505454-receivers-todos|Receivers Todos]] (the shared `Work_GPS_Receivers` list) —
+check both. This section keeps only design context needed to interpret todos (the *why*,
+not the *what to do*); "Next Phase Tasks" below is the refactor roadmap.
 
 ## Future Development Priorities
 
@@ -641,5 +643,5 @@ Integration with VS Code Todo Tree and Neovim todo-comments.nvim available.
 
 ---
 
-_Last updated: 2026-08-24_ (added `visit.*` + `contact.*` selectors, `--owner` flag, `tos visit search`, abbreviation expansion)
+_Last updated: 2026-08-30_ (routed TODOs to vault note [[1788084388-tostools-todos]]; prev: ENTC campaign todo + visit/contact selectors)
 
