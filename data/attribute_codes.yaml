@@ -297,14 +297,14 @@ devices:
     # monument already carries as 'GPS stál-fjórfótur'. Requirement moved to
     # `model` (which now lists monument in gps_required_for).
     gps_required_for: []
-    default_value: "GPS stál-fjórfótur"
+    default_value: ~  # REQUIRED user input — audit emits FILL_VALUE, no auto-default
     applies_to: [monument]
     gps_relevance: "yes"
     subtypes_observed: []
     sample_values: []
     n_devices: 0
     walked: false
-    why: "Single source of truth for monument type. Sitelog renderer at legacy/gps_metadata_functions.py:777 reads a 'foundation' key with 'STEEL RODS' fallback — that key is just the English-flavored alias for THIS attribute at render time, NOT a separate TOS code. When wiring infrastructure_type into the renderer, replace the hardcoded literal with the IS→EN translation of the actual stored value (or this default if missing)."
+    why: "Single source of truth for monument type. Sitelog renderer at legacy/gps_metadata_functions.py reads the monument `model` and translates it via MONUMENT_MODEL_TO_IGS (wired 2026-08-30 — was a hardcoded STEEL MAST/STEEL RODS placeholder). The old 'foundation'/'description' keys were just English-flavored aliases for `model` at render time, NOT separate TOS codes."
 
   inscription:
     icelandic_label: Áletrun
