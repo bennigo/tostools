@@ -284,3 +284,80 @@ def test_isaks_real_tos_record_pins_the_published_eccentricity(rinex_stub):
         "record carries 0.0001/0.0002 and the site log publishes it"
     )
     assert h == pytest.approx(1.0047), "the UP composite regressed"
+
+
+class TestTheComparatorSeesTheMonumentOffsetToo:
+    """The DETECTION half. A correct write path is inert if the diff is blind.
+
+    ``compare_rinex_to_tos`` is what ``--fix-headers`` asks "does this file
+    disagree with TOS?". It composited H and read E/N off the antenna entity
+    alone, so for a monument-stored eccentricity it computed 0.0 and called a
+    zeroed header correct -- and, worse, called a CORRECT header discrepant and
+    offered a correction that would zero it.
+
+    Offsets here are 15 mm, deliberately above the comparator's 1 mm threshold,
+    so these assertions test the composite and not the tolerance. (ISAK's real
+    offset is 0.2 mm, i.e. below it -- which is why its archive files are not
+    reachable by fix-headers even now. That is a tolerance question, tracked
+    separately, not a bug in this composite.)
+    """
+
+    @staticmethod
+    def _session(ant_e=0.0, ant_n=0.0, ant_h=0.0, mon_e=0.0, mon_n=0.0, mon_h=1.0):
+        return {
+            "antenna": {
+                "antenna_height": ant_h,
+                "antenna_offset_east": ant_e,
+                "antenna_offset_north": ant_n,
+            },
+            "monument": {
+                "monument_height": mon_h,
+                "monument_offset_east": mon_e,
+                "monument_offset_north": mon_n,
+            },
+        }
+
+    @staticmethod
+    def _header(h, e, n):
+        return {"ANTENNA: DELTA H/E/N": f"{h:14.4f}{e:14.4f}{n:14.4f}"}
+
+    def _compare(self, header, session):
+        from tostools.rinex.validator import compare_rinex_to_tos
+
+        return compare_rinex_to_tos(header, session, loglevel=logging.CRITICAL)
+
+    def test_a_zeroed_header_is_flagged_when_the_monument_carries_the_offset(self):
+        got = self._compare(
+            self._header(1.0, 0.0, 0.0),
+            self._session(mon_e=0.015, mon_n=-0.015, mon_h=1.0),
+        )
+        assert "antenna_height" in got["discrepancies"], (
+            "comparator saw no disagreement — a monument-stored eccentricity "
+            "was treated as zero, so --fix-headers would skip the file"
+        )
+        assert got["corrections"][_DELTA] == pytest.approx([1.0, 0.015, -0.015])
+
+    def test_a_correct_header_is_not_flagged_for_rewrite(self):
+        """The dangerous direction: the blind comparator would ZERO a good file."""
+        got = self._compare(
+            self._header(1.0, 0.015, -0.015),
+            self._session(mon_e=0.015, mon_n=-0.015, mon_h=1.0),
+        )
+        assert "antenna_height" not in got["discrepancies"], (
+            f"a correct header was flagged discrepant; the comparator would "
+            f"have offered {got['corrections'].get(_DELTA)} and destroyed it"
+        )
+        assert "antenna_height" in got["matches"]
+
+    def test_offsets_on_both_entities_are_summed(self):
+        got = self._compare(
+            self._header(1.15, 0.0, 0.0),
+            self._session(
+                ant_e=0.02, ant_n=0.01, ant_h=0.15, mon_e=0.015, mon_n=-0.015, mon_h=1.0
+            ),
+        )
+        assert got["corrections"][_DELTA] == pytest.approx([1.15, 0.035, -0.005])
+
+    def test_a_genuinely_centered_antenna_still_matches(self):
+        got = self._compare(self._header(1.0, 0.0, 0.0), self._session(mon_h=1.0))
+        assert "antenna_height" in got["matches"]

@@ -253,11 +253,22 @@ def compare_rinex_to_tos(
                     if mon_h is None:
                         mon_h = monument_info.get("antenna_height")  # legacy fallback
                     tos_h = float(antenna_info["antenna_height"]) + float(mon_h or 0.0)
-                    # E/N: the TOS antenna eccentricity (0.0 for a centered antenna,
-                    # but stored per-station so a real offset is honoured, not
-                    # assumed 0 — a non-zero header E/N that TOS says is 0 is an error).
-                    tos_e = float(antenna_info.get("antenna_offset_east") or 0.0)
-                    tos_n = float(antenna_info.get("antenna_offset_north") or 0.0)
+                    # E/N: a COMPOSITE too, for exactly the reason H is. TOS
+                    # splits the mark->ARP vector across both entities on all
+                    # three axes, so an offset recorded on the MONUMENT record
+                    # is just as real as one on the antenna — and this read the
+                    # antenna alone, under a comment claiming it honoured real
+                    # offsets. It did not: ISAK's eccentricity lives entirely on
+                    # its monument (E/N 0.0001/0.0002, antenna 0.0/0.0), so the
+                    # comparator computed 0.0 and pronounced a zeroed header
+                    # correct while the site log published the offset. The
+                    # detection half of the same defect as the corrector's.
+                    tos_e = float(
+                        antenna_info.get("antenna_offset_east") or 0.0
+                    ) + float(monument_info.get("monument_offset_east") or 0.0)
+                    tos_n = float(
+                        antenna_info.get("antenna_offset_north") or 0.0
+                    ) + float(monument_info.get("monument_offset_north") or 0.0)
 
                     if (
                         abs(rinex_h - tos_h) > 0.001
