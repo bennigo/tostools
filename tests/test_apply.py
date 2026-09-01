@@ -2827,6 +2827,40 @@ def test_default_apply_commit_message_uses_station_dir_and_count():
     assert msg == "gran: apply gran_fix.txt (2 action(s))"
 
 
+def test_default_apply_commit_message_marks_a_partial_apply():
+    """A PARTIAL apply is committed too, so the subject must say so.
+
+    Refusing to commit a partial apply left real TOS writes with no
+    provenance (HAMR 2026-09-01: 168 writes landed, 3 expected failures, and
+    nothing was recorded until it was committed by hand). The record must not
+    read as a clean run.
+    """
+    from pathlib import Path
+
+    msg = _default_apply_commit_message(
+        Path("hamr/hamr_audit_20260901.txt"), 168, n_failed=3
+    )
+    assert msg == "hamr: apply hamr_audit_20260901.txt (168 action(s), 3 failed)"
+
+
+def test_default_apply_commit_message_flags_a_guard_violation():
+    from pathlib import Path
+
+    msg = _default_apply_commit_message(
+        Path("hamr/x.txt"), 5, n_failed=1, guard_flagged=True
+    )
+    assert msg == "hamr: apply x.txt (5 action(s), 1 failed, guard flagged)"
+
+
+def test_default_apply_commit_message_clean_run_is_unchanged_by_new_kwargs():
+    """Backward compatibility: a fully-successful apply renders as before."""
+    from pathlib import Path
+
+    assert _default_apply_commit_message(
+        Path("gran/gran_fix.txt"), 2, n_failed=0, guard_flagged=False
+    ) == _default_apply_commit_message(Path("gran/gran_fix.txt"), 2)
+
+
 # ---------------------------------------------------------------------------
 # add-attribute-period — parse + dispatch (multi-period history primitive)
 # ---------------------------------------------------------------------------

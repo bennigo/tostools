@@ -13412,34 +13412,69 @@ def _apply_main(args) -> int:
                 "  --commit: ignored on dry-run (re-run with --apply to commit).",
                 file=sys.stderr,
             )
-        elif not ok:
-            n_failed = sum(1 for r in results if r.status == "failed")
-            reason = (
-                f"{n_failed} action(s) failed"
-                if n_failed
-                else "a post-apply guard violation"
-            )
-            print(
-                f"⚠ --commit: NOT committing {path} — apply did not fully "
-                f"succeed ({reason}).",
-                file=sys.stderr,
-            )
         else:
             n_ok = sum(1 for r in results if r.status == "ok")
-            msg = args.commit_message or _default_apply_commit_message(path, n_ok)
-            _git_commit_file(path, message=msg)
+            n_failed = sum(1 for r in results if r.status == "failed")
+            guard_flagged = bool(post_violations or preflight_warnings)
+            if n_ok == 0:
+                # Nothing landed in TOS, so there is no write to account for.
+                reason = (
+                    f"{n_failed} action(s) failed"
+                    if n_failed
+                    else "a post-apply guard violation"
+                )
+                print(
+                    f"⚠ --commit: NOT committing {path} — no action was "
+                    f"applied ({reason}); there is nothing to record.",
+                    file=sys.stderr,
+                )
+            else:
+                # PARTIAL applies are the normal case (deliberate skips,
+                # zero-duration periods, ambiguous patches), and they are
+                # precisely the runs worth recording: writes DID land in TOS,
+                # so refusing to commit leaves those writes with no provenance
+                # and the repo accumulating untracked files. Commit, and put
+                # the outcome in the subject so the record is not mistaken for
+                # a clean run.
+                if not ok:
+                    print(
+                        f"ℹ --commit: apply was PARTIAL ({n_ok} applied, "
+                        f"{n_failed} failed) — committing anyway so the "
+                        f"applied writes are on record.",
+                        file=sys.stderr,
+                    )
+                msg = args.commit_message or _default_apply_commit_message(
+                    path, n_ok, n_failed=n_failed, guard_flagged=guard_flagged
+                )
+                _git_commit_file(path, message=msg)
 
     return 0 if ok else 1
 
 
-def _default_apply_commit_message(path: Path, n_ok: int) -> str:
+def _default_apply_commit_message(
+    path: Path,
+    n_ok: int,
+    *,
+    n_failed: int = 0,
+    guard_flagged: bool = False,
+) -> str:
     """Auto commit subject for ``tos audit apply --commit``.
 
     ``<station-dir>: apply <file> (<n> action(s))`` — matches the
     gps-tos-corrections per-station commit convention (triage files live one
     level deep, ``<station>/<file>.txt``).
+
+    A PARTIAL apply is still committed (see the caller), so the subject must
+    say so — otherwise the record reads as a clean run. ``n_failed`` and
+    ``guard_flagged`` are appended when non-default, e.g.
+    ``hamr: apply hamr_audit_20260901.txt (168 action(s), 3 failed)``.
     """
-    return f"{path.parent.name}: apply {path.name} ({n_ok} action(s))"
+    bits = f"{n_ok} action(s)"
+    if n_failed:
+        bits += f", {n_failed} failed"
+    if guard_flagged:
+        bits += ", guard flagged"
+    return f"{path.parent.name}: apply {path.name} ({bits})"
 
 
 def _git_commit_file(path: Path, *, message: str) -> bool:
