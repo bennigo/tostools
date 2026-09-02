@@ -227,6 +227,7 @@ def print_station_info(station, loglevel=logging.WARNING, skip_validation=False)
 
         else:
             antenna_height = 0.0000
+            monument_height = 0.0
             antenna_reference_point = "DHARP"
             antenna_N = 0.0000
             antenna_E = 0.0000

@@ -58,6 +58,14 @@ RECEIVER_IGS: dict[str, str] = {
     "PolaRX2E": "SEPT POLARX2E",
     "PolaRx2E": "SEPT POLARX2E",
     "POLARX2E": "SEPT POLARX2E",
+    # Trimble 4000 family (historical campaign receivers 1992-2005; seen in
+    # GAMIT station.info campaign occupations, e.g. HAMR/VOTT):
+    "TRIMBLE 4000ST": "TRIMBLE 4000ST",
+    "4000ST": "TRIMBLE 4000ST",
+    "TRIMBLE 4000SSE": "TRIMBLE 4000SSE",
+    "4000SSE": "TRIMBLE 4000SSE",
+    "TRIMBLE 4000SSI": "TRIMBLE 4000SSI",
+    "4000SSI": "TRIMBLE 4000SSI",
     # Trimble 5700 (historical campaign receiver; seen in GAMIT station.info
     # campaign occupations, e.g. VOTT 2012/2016):
     "TRIMBLE 5700": "TRIMBLE 5700",
@@ -92,6 +100,7 @@ RECEIVER_IGS: dict[str, str] = {
 
 ANTENNA_IGS: dict[str, str] = {
     # Trimble choke-ring antennas ----------------------------------------------
+    "TRM14532.00": "TRM14532.00",  # early Trimble (1992-1998 campaign era; HAMR/VOTT)
     "TRM29659.00": "TRM29659.00",  # identity — already IGS
     "TRM33429.20+GP": "TRM33429.20+GP",
     "TRM41249.00": "TRM41249.00",
