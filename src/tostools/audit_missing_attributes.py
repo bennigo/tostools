@@ -981,7 +981,7 @@ def audit_station_missing_attributes(
             windows = sorted(
                 (
                     _date_only(str(j["time_from"])),
-                    _date_only(str(j["time_to"])) if j.get("time_to") else None,
+                    _occupation_end_date(j),
                 )
                 for j in audited_joins
                 if j.get("time_from")
@@ -1304,3 +1304,29 @@ def _emit_stale_open_block(
                 f"{stale.code} {stale.date_from} {stale.removal_date}"
             )
             lines.append("")
+
+
+def _occupation_end_date(join: Dict[str, Any]) -> Optional[str]:
+    """Exclusive-end occupation date for a join.
+
+    ``_period_covers_window`` treats ``window_to`` as the half-open end of
+    the occupation ([from, to)). ``date_only(time_to)`` is that end only when
+    the removal happened at midnight; a sub-day occupation (e.g. HAMR antenna
+    4540: 1995-09-01T00:00 -> 1995-09-01T16:30, the first half of a split
+    session) ends *inside* its calendar day, so the exclusive end is the NEXT
+    day. Without the bump the window is the empty [09-01, 09-01) and no fill
+    starting on 09-01 can ever satisfy it — the audit re-flags a covered
+    attribute forever.
+    """
+    raw_to = join.get("time_to")
+    if not raw_to:
+        return None
+    to = str(raw_to)
+    day = _date_only(to)
+    if to[len(day) :].strip() in ("", "T00:00:00", "00:00:00", "00:00"):
+        return day  # midnight end: [from, day) is the correct half-open span
+    # mid-day end: the occupation occupies part of `day`, so [from, day+1)
+    from datetime import date as _date, timedelta as _td
+
+    y, m, d = (int(x) for x in day.split("-"))
+    return (_date(y, m, d) + _td(days=1)).isoformat()

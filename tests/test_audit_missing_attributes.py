@@ -907,3 +907,25 @@ def test_triage_groups_station_first_then_devices(catalog_path: Path):
     station_idx = out.index("# --- geophysical id_entity=100")
     device_idx = out.index("# --- gnss_receiver id_entity=200")
     assert station_idx < device_idx
+
+
+def test_occupation_end_date_midday_end_bumps_to_next_day():
+    """A sub-day occupation (e.g. HAMR antenna 4540: 1995-09-01T00:00 ->
+    1995-09-01T16:30, the first half of a split session) must yield an
+    EXCLUSIVE end of the next day, else the half-open window is the empty
+    [09-01, 09-01) and no same-day fill can ever satisfy it.
+    """
+    from tostools.audit_missing_attributes import _occupation_end_date
+
+    assert _occupation_end_date({"time_to": "1995-09-01T16:30:00"}) == "1995-09-02"
+    # midnight end: date itself is the correct exclusive end
+    assert _occupation_end_date({"time_to": "1995-09-10T00:00:00"}) == "1995-09-10"
+    # open join
+    assert _occupation_end_date({}) is None
+
+
+def test_audit_windows_use_midday_bump():
+    from tostools.audit_missing_attributes import _occupation_end_date as f
+
+    j = {"time_from": "1995-09-01T00:00:00", "time_to": "1995-09-01T16:30:00"}
+    assert f(j) == "1995-09-02"
