@@ -295,7 +295,7 @@ def synthetic_serial(subtype: str, station: str, date_start: str) -> str:
 #: digits, ``antenna-`` (21) loses one, ``radome-`` (20) fits exactly. Going
 #: lower starts eating real serials — ``antenna-part-1234`` is a genuine one.
 _SYNTHETIC_SERIAL_RE = re.compile(
-    r"^(antenna|radome|monument)-[a-z0-9]{4}-\d{6,8}$", re.IGNORECASE
+    r"^(antenna|radome|monument|receiver|tripod)-[a-z0-9]{4}-\d{6,8}$", re.IGNORECASE
 )
 
 

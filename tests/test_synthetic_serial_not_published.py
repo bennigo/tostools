@@ -93,3 +93,17 @@ class TestSiteLogRendering:
         import tostools.legacy.gps_metadata_functions as legacy
 
         assert hasattr(legacy, "is_synthetic_serial")
+
+    def test_synthetic_subtype_roundtrip_covers_receiver_and_tripod(self):
+        """receiver- and tripod- prefixes are synthetics too (2026-09-03:
+        HAMR's receiver-HAMR-19990718 reached the M3G sitelog because the
+        predicate missed the receiver- prefix; tripod-HAMR-* monuments would
+        have leaked the same way once tripods render)."""
+        from tostools.device import is_synthetic_serial
+
+        for value in (
+            "receiver-HAMR-19990718",
+            "receiver-HAMR-19991107",
+            "tripod-HAMR-19920808",
+        ):
+            assert is_synthetic_serial(value), f"{value!r} not recognised"

@@ -992,7 +992,7 @@ def site_log(
         # answer in an optional field is unknown, try to learn the answer for the
         # next log update" -- so the correct published value is an empty field.
         if is_synthetic_serial(serial_number):
-            serial_number = ""
+            serial_number = "000000"
         firmware_version = device.get("firmware_version") or ""
         elevation_cuttoff = device.get("elevation_cuttoff") or "0 deg"
         date_installed = _fmt_igs_date(device.get("date_from"))
